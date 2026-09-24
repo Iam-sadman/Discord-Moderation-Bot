@@ -132,4 +132,4 @@ View real-time bot execution logs or search for specific user actions directly v
 ---
 
 ## 👥 Maintainer
-Developed and maintained by **gekiye**.
+Developed and maintained by **Sadman**.
