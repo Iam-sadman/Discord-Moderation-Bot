@@ -1,691 +1,2841 @@
+import asyncio
+import logging
+import os
+from collections import OrderedDict
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+import aiosqlite
 import discord
 from discord import app_commands
 from discord.ext import commands
-from datetime import datetime, timedelta
+
 from config import Config
-from utils.embed_builder import EmbedBuilder
 
 
-class Logger(commands.Cog):
-    """📋 Server Logger — tracks all server activity with detailed audit information."""
+# ============================================================
+# LOGGER CONFIG
+# ============================================================
 
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
+logger = logging.getLogger("discord_logger")
 
-    async def _get_log_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
-        """Get the configured log channel for a guild."""
-        channel_id = await Config.get_guild_setting(guild.id, "log_channel_id")
-        if channel_id:
-            return guild.get_channel(int(channel_id))
-        return None
+DB_PATH = "data/logs.db"
 
-    async def _is_module_enabled(self, guild_id: int) -> bool:
-        """Check if logger module is enabled."""
-        enabled = await Config.get_guild_setting(guild_id, "module_logger_enabled", True)
-        return enabled
+MESSAGE_CACHE_SIZE = 5000
+HISTORY_PAGE_SIZE = 4
 
-    async def _get_filtered_users(self, guild_id: int) -> list[int]:
-        """Get list of user IDs being tracked."""
-        return await Config.get_guild_setting(guild_id, "log_filtered_users", [])
+AUDIT_LOG_LIMIT = 25
 
-    async def _should_log_user(self, guild_id: int, user_id: int) -> bool:
-        """Check if a specific user is being tracked. If no filters set, log everyone."""
-        filters = await self._get_filtered_users(guild_id)
-        if not filters:  # No filter = log everything
-            return True
-        return user_id in filters
+# ------------------------------------------------------------
+# Generic audit lookup
+# ------------------------------------------------------------
 
-    async def _get_audit_entry(self, guild: discord.Guild, action: discord.AuditLogAction,
-                                target=None, retry=True) -> discord.AuditLogEntry | None:
-        """Try to find a recent audit log entry for an action."""
+AUDIT_LOOKUP_WINDOW = 20.0
+
+# ------------------------------------------------------------
+# Voice audit lookup
+#
+# Discord can create MEMBER_MOVE / MEMBER_DISCONNECT audit
+# entries noticeably after the Gateway voice event.
+#
+# Total move wait:
+#     16 * 0.65 ~= 10.4 sec
+#
+# Total disconnect wait:
+#     14 * 0.65 ~= 9.1 sec
+# ------------------------------------------------------------
+
+VOICE_MOVE_ATTEMPTS = 16
+VOICE_MOVE_DELAY = 0.65
+VOICE_MOVE_WINDOW = 20.0
+
+VOICE_DISCONNECT_ATTEMPTS = 14
+VOICE_DISCONNECT_DELAY = 0.65
+VOICE_DISCONNECT_WINDOW = 20.0
+
+# ------------------------------------------------------------
+# Role / other audit events
+# ------------------------------------------------------------
+
+ROLE_AUDIT_ATTEMPTS = 10
+ROLE_AUDIT_DELAY = 0.60
+ROLE_AUDIT_WINDOW = 20.0
+
+SEEN_AUDIT_CACHE_SIZE = 3000
+
+
+# ============================================================
+# MESSAGE CACHE
+# ============================================================
+
+class MessageCache:
+
+    def __init__(self, maxsize: int = MESSAGE_CACHE_SIZE):
+        self.cache = OrderedDict()
+        self.maxsize = maxsize
+
+    def add(self, message_id: int, message_data: dict):
+
+        if message_id in self.cache:
+            self.cache.move_to_end(message_id)
+
+        self.cache[message_id] = message_data
+
+        while len(self.cache) > self.maxsize:
+            self.cache.popitem(last=False)
+
+    def get(self, message_id: int):
+
+        data = self.cache.get(message_id)
+
+        if data is not None:
+            self.cache.move_to_end(message_id)
+
+        return data
+
+    def remove(self, message_id: int):
+        self.cache.pop(message_id, None)
+
+
+class HistoryPaginationView(discord.ui.View):
+    """Load matching history rows from SQLite as the user changes pages."""
+
+    def __init__(
+        self,
+        cog,
+        user: discord.Member,
+        guild_id: int,
+        days: int,
+        cutoff: str,
+        total_count: int,
+        *,
+        timeout: float = 180
+    ):
+        super().__init__(timeout=timeout)
+        self.cog = cog
+        self.user = user
+        self.guild_id = guild_id
+        self.days = days
+        self.cutoff = cutoff
+        self.total_count = total_count
+        self.page_index = 0
+        self.page_count = max(
+            1,
+            (total_count + HISTORY_PAGE_SIZE - 1) // HISTORY_PAGE_SIZE
+        )
+        self.message: Optional[discord.Message] = None
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.previous_page.disabled = self.page_index <= 0
+        self.next_page.disabled = self.page_index >= self.page_count - 1
+
+    async def _show_page(self, interaction: discord.Interaction, page_index: int):
+        self.page_index = max(0, min(page_index, self.page_count - 1))
+        offset = self.page_index * HISTORY_PAGE_SIZE
+
         try:
-            async for entry in guild.audit_logs(limit=5, action=action):
-                # Only consider entries from the last 10 seconds
-                if entry.created_at.timestamp() > (datetime.utcnow().timestamp() - 10):
-                    if target is None or (entry.target and entry.target.id == target.id):
-                        return entry
-        except discord.Forbidden:
-            pass
-        return None
+            rows = await self.cog._fetch_user_history_page(
+                self.guild_id,
+                self.user.id,
+                self.cutoff,
+                offset
+            )
+        except Exception:
+            logger.exception("Failed to load a logger history page")
+            await interaction.response.send_message(
+                "❌ Failed to load this history page.",
+                ephemeral=True
+            )
+            return
 
-    async def _send_log(self, guild: discord.Guild, embed: discord.Embed):
-        """Send an embed to the log channel."""
-        channel = await self._get_log_channel(guild)
-        if channel:
+        embed = self.cog._build_history_embed(
+            self.user,
+            self.days,
+            self.total_count,
+            self.page_index,
+            rows
+        )
+        self._update_buttons()
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self
+        )
+
+    @discord.ui.button(
+        label="Previous",
+        style=discord.ButtonStyle.secondary,
+        disabled=True
+    )
+    async def previous_page(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        await self._show_page(interaction, self.page_index - 1)
+
+    @discord.ui.button(
+        label="Next",
+        style=discord.ButtonStyle.secondary
+    )
+    async def next_page(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        await self._show_page(interaction, self.page_index + 1)
+
+    async def on_timeout(self):
+        self.previous_page.disabled = True
+        self.next_page.disabled = True
+
+        if self.message is not None:
             try:
-                await channel.send(embed=embed)
-            except discord.Forbidden:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
                 pass
 
-    # ──── Slash Commands ────
 
-    log_group = app_commands.Group(name="log", description="Configure server logging")
-    log_filter = app_commands.Group(name="logfilter", description="Manage user-based log filtering")
+# ============================================================
+# LOGGER COG
+# ============================================================
 
-    @log_group.command(name="setup", description="Set the channel for log messages")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(channel="The channel to send logs to")
-    async def log_setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        await Config.set_guild_setting(interaction.guild_id, "log_channel_id", channel.id)
-        await interaction.response.send_message(f"✅ Log channel set to {channel.mention}", ephemeral=True)
+class Logger(commands.Cog):
 
-    @log_group.command(name="disable", description="Disable logging")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def log_disable(self, interaction: discord.Interaction):
-        await Config.set_guild_setting(interaction.guild_id, "log_channel_id", None)
-        await interaction.response.send_message("✅ Logging disabled", ephemeral=True)
+    log_group = app_commands.Group(
+        name="log",
+        description="Logger commands"
+    )
 
-    @log_group.command(name="status", description="View current logging configuration")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def log_status(self, interaction: discord.Interaction):
-        channel = await self._get_log_channel(interaction.guild)
-        filters = await self._get_filtered_users(interaction.guild_id)
+    def __init__(self, bot: commands.Bot):
 
-        embed = discord.Embed(title="📋 Logger Status", color=discord.Color.blue())
-        embed.add_field(name="Log Channel", value=channel.mention if channel else "Not configured", inline=False)
-        embed.add_field(name="Module Enabled", value="✅ Yes" if await self._is_module_enabled(interaction.guild_id) else "❌ No", inline=True)
+        self.bot = bot
 
-        if filters:
-            user_mentions = []
-            for uid in filters:
-                member = interaction.guild.get_member(uid)
-                user_mentions.append(member.mention if member else f"<@{uid}>")
-            embed.add_field(name="Tracked Users", value=", ".join(user_mentions), inline=False)
-        else:
-            embed.add_field(name="Tracked Users", value="All users (no filter)", inline=False)
+        self.db: Optional[aiosqlite.Connection] = None
+        self.read_db: Optional[aiosqlite.Connection] = None
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        self.message_cache = MessageCache()
 
-    @log_filter.command(name="add", description="Add a user to the tracking filter")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(user="User to track")
-    async def filter_add(self, interaction: discord.Interaction, user: discord.Member):
-        filters = await self._get_filtered_users(interaction.guild_id)
-        if user.id not in filters:
-            filters.append(user.id)
-            await Config.set_guild_setting(interaction.guild_id, "log_filtered_users", filters)
-            await interaction.response.send_message(f"✅ Now tracking {user.mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"ℹ️ {user.mention} is already being tracked", ephemeral=True)
+        self._db_ready = asyncio.Event()
 
-    @log_filter.command(name="remove", description="Remove a user from the tracking filter")
-    @app_commands.checks.has_permissions(administrator=True)
-    @app_commands.describe(user="User to stop tracking")
-    async def filter_remove(self, interaction: discord.Interaction, user: discord.Member):
-        filters = await self._get_filtered_users(interaction.guild_id)
-        if user.id in filters:
-            filters.remove(user.id)
-            await Config.set_guild_setting(interaction.guild_id, "log_filtered_users", filters)
-            await interaction.response.send_message(f"✅ Stopped tracking {user.mention}", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"ℹ️ {user.mention} is not being tracked", ephemeral=True)
+        self._db_task = asyncio.create_task(
+            self._init_db()
+        )
 
-    @log_filter.command(name="list", description="List all tracked users")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def filter_list(self, interaction: discord.Interaction):
-        filters = await self._get_filtered_users(interaction.guild_id)
-        if not filters:
-            await interaction.response.send_message("ℹ️ No user filter active — logging all users", ephemeral=True)
+        # Audit entries already consumed by this logger.
+        self._seen_audit_entries = OrderedDict()
+
+    # ========================================================
+    # DATABASE
+    # ========================================================
+
+    async def _init_db(self):
+
+        try:
+
+            os.makedirs(
+                os.path.dirname(DB_PATH),
+                exist_ok=True
+            )
+
+            self.db = await aiosqlite.connect(
+                DB_PATH,
+                timeout=30
+            )
+
+            # SQLite performance / concurrency.
+            await self.db.execute(
+                "PRAGMA journal_mode=WAL"
+            )
+
+            await self.db.execute(
+                "PRAGMA synchronous=NORMAL"
+            )
+
+            await self.db.execute(
+                "PRAGMA busy_timeout=30000"
+            )
+
+            await self.db.execute("""
+                CREATE TABLE IF NOT EXISTS audit_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    user_id INTEGER,
+                    actor_id INTEGER,
+                    action_type TEXT NOT NULL,
+                    details TEXT NOT NULL,
+                    created_at TIMESTAMP NOT NULL
+                )
+            """)
+
+            # ------------------------------------------------
+            # Search indexes
+            # ------------------------------------------------
+
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS
+                idx_audit_guild_user_time
+                ON audit_history(
+                    guild_id,
+                    user_id,
+                    created_at DESC,
+                    id DESC
+                )
+            """)
+
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS
+                idx_audit_guild_actor_time
+                ON audit_history(
+                    guild_id,
+                    actor_id,
+                    created_at DESC,
+                    id DESC
+                )
+            """)
+
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS
+                idx_audit_guild_action_time
+                ON audit_history(
+                    guild_id,
+                    action_type,
+                    created_at DESC,
+                    id DESC
+                )
+            """)
+
+            # Useful for general recent guild history.
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS
+                idx_audit_guild_time
+                ON audit_history(
+                    guild_id,
+                    created_at DESC,
+                    id DESC
+                )
+            """)
+
+            await self.db.commit()
+
+            # Keep history reads off the frequently committed write connection.
+            # WAL allows this read-only connection to run alongside log inserts.
+            self.read_db = await aiosqlite.connect(
+                DB_PATH,
+                timeout=30
+            )
+            await self.read_db.execute(
+                "PRAGMA busy_timeout=30000"
+            )
+            await self.read_db.execute(
+                "PRAGMA query_only=ON"
+            )
+
+            logger.info(
+                "Logger database initialized: %s",
+                DB_PATH
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Failed to initialize logger database"
+            )
+
+        finally:
+
+            self._db_ready.set()
+
+    async def cog_load(self):
+
+        await self._db_ready.wait()
+
+    async def cog_unload(self):
+
+        if (
+            self._db_task
+            and not self._db_task.done()
+        ):
+
+            self._db_task.cancel()
+
+            try:
+                await self._db_task
+            except asyncio.CancelledError:
+                pass
+
+        if self.read_db:
+
+            try:
+                await self.read_db.close()
+            except Exception:
+                logger.exception(
+                    "Failed to close logger read database"
+                )
+            self.read_db = None
+
+        if self.db:
+
+            try:
+                await self.db.close()
+            except Exception:
+                logger.exception(
+                    "Failed to close logger database"
+                )
+            self.db = None
+
+    # ========================================================
+    # DATABASE SAVE
+    # ========================================================
+
+    async def _save_log_to_db(
+        self,
+        guild_id: int,
+        user_id: Optional[int],
+        actor_id: Optional[int],
+        action_type: str,
+        details: str
+    ):
+
+        await self._db_ready.wait()
+
+        if self.db is None:
+
+            logger.error(
+                "Logger DB is unavailable"
+            )
+
             return
 
-        user_mentions = []
-        for uid in filters:
-            member = interaction.guild.get_member(uid)
-            user_mentions.append(member.mention if member else f"<@{uid}>")
+        created_at = datetime.now(
+            timezone.utc
+        ).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
 
-        embed = discord.Embed(title="👤 Tracked Users", description="\n".join(user_mentions), color=discord.Color.blue())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
 
-    @log_filter.command(name="clear", description="Clear all user filters (log everyone)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def filter_clear(self, interaction: discord.Interaction):
-        await Config.set_guild_setting(interaction.guild_id, "log_filtered_users", [])
-        await interaction.response.send_message("✅ All filters cleared — logging all users", ephemeral=True)
+            await self.db.execute(
+                """
+                INSERT INTO audit_history
+                (
+                    guild_id,
+                    user_id,
+                    actor_id,
+                    action_type,
+                    details,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    guild_id,
+                    user_id,
+                    actor_id,
+                    action_type,
+                    details,
+                    created_at
+                )
+            )
 
-    # ──── Message Events ────
+            await self.db.commit()
+
+        except Exception:
+
+            logger.exception(
+                "Failed to save logger DB entry"
+            )
+
+    # ========================================================
+    # AUDIT CACHE
+    # ========================================================
+
+    def _audit_seen(
+        self,
+        entry_id: int
+    ) -> bool:
+
+        return entry_id in self._seen_audit_entries
+
+    def _mark_audit_seen(
+        self,
+        entry_id: int
+    ):
+
+        self._seen_audit_entries[entry_id] = None
+
+        self._seen_audit_entries.move_to_end(
+            entry_id
+        )
+
+        while (
+            len(self._seen_audit_entries)
+            > SEEN_AUDIT_CACHE_SIZE
+        ):
+
+            self._seen_audit_entries.popitem(
+                last=False
+            )
+
+    # ========================================================
+    # FETCH AUDIT LOG
+    # ========================================================
+
+    async def _fetch_audit_entries(
+        self,
+        guild: discord.Guild,
+        action: discord.AuditLogAction
+    ):
+
+        try:
+
+            return [
+                entry
+                async for entry in guild.audit_logs(
+                    limit=AUDIT_LOG_LIMIT,
+                    action=action
+                )
+            ]
+
+        except discord.Forbidden:
+
+            logger.warning(
+                "Missing View Audit Log permission "
+                "in guild %s",
+                guild.id
+            )
+
+        except discord.HTTPException as exc:
+
+            logger.warning(
+                "Audit log HTTP error in guild %s: %s",
+                guild.id,
+                exc
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Unexpected audit log error "
+                "in guild %s",
+                guild.id
+            )
+
+        return []
+
+    # ========================================================
+    # GENERIC AUDIT FINDER
+    # ========================================================
+
+    async def _find_audit_entry(
+        self,
+        guild: discord.Guild,
+        action: discord.AuditLogAction,
+        target_id: Optional[int] = None,
+        window: float = AUDIT_LOOKUP_WINDOW,
+        mark_seen: bool = True
+    ):
+
+        now = datetime.now(timezone.utc)
+
+        entries = await self._fetch_audit_entries(
+            guild,
+            action
+        )
+
+        best_entry = None
+        best_age = None
+
+        for entry in entries:
+
+            if not entry.created_at:
+                continue
+
+            age = (
+                now - entry.created_at
+            ).total_seconds()
+
+            if age < -2:
+                continue
+
+            if age > window:
+                continue
+
+            if self._audit_seen(entry.id):
+                continue
+
+            if target_id is not None:
+
+                entry_target_id = getattr(
+                    entry.target,
+                    "id",
+                    None
+                )
+
+                if entry_target_id != target_id:
+                    continue
+
+            if (
+                best_age is None
+                or abs(age) < abs(best_age)
+            ):
+
+                best_entry = entry
+                best_age = age
+
+        if best_entry and mark_seen:
+
+            self._mark_audit_seen(
+                best_entry.id
+            )
+
+        return best_entry
+
+    # ========================================================
+    # VOICE AUDIT HELPERS
+    # ========================================================
+
+    @staticmethod
+    def _audit_age(
+        event_time: datetime,
+        created_at: datetime
+    ) -> float:
+
+        return (
+            event_time - created_at
+        ).total_seconds()
+
+    # ========================================================
+    # FIND VOICE MOVE ACTOR
+    #
+    # This is intentionally separate from the generic finder.
+    #
+    # Why?
+    #
+    # MEMBER_MOVE is one of the audit events where Discord
+    # frequently produces the audit entry after the Gateway
+    # voice_state_update event.
+    #
+    # We therefore:
+    #
+    # 1. Retry.
+    # 2. Require target member ID.
+    # 3. Compare audit timestamp with original event time.
+    # 4. Prefer matching destination channel if Discord
+    #    exposes it.
+    # 5. Never mark unrelated audit entries as consumed.
+    # ========================================================
+
+    async def _find_voice_move_actor(
+        self,
+        guild: discord.Guild,
+        member: discord.Member,
+        before_channel: discord.VoiceChannel,
+        after_channel: discord.VoiceChannel,
+        event_time: datetime
+    ):
+
+        for attempt in range(
+            VOICE_MOVE_ATTEMPTS
+        ):
+
+            entries = await self._fetch_audit_entries(
+                guild,
+                discord.AuditLogAction.member_move
+            )
+
+            candidates = []
+
+            for entry in entries:
+
+                if not entry.created_at:
+                    continue
+
+                if self._audit_seen(entry.id):
+                    continue
+
+                # --------------------------------------------
+                # HARD REQUIREMENT:
+                # Audit target must be the moved member.
+                # --------------------------------------------
+
+                target_id = getattr(
+                    entry.target,
+                    "id",
+                    None
+                )
+
+                if target_id != member.id:
+                    continue
+
+                age = self._audit_age(
+                    event_time,
+                    entry.created_at
+                )
+
+                # Audit event must not be substantially newer
+                # than our Gateway event.
+                if age < -3:
+                    continue
+
+                if age > VOICE_MOVE_WINDOW:
+                    continue
+
+                # --------------------------------------------
+                # SCORING
+                # --------------------------------------------
+
+                score = 1000
+
+                # Closer timestamp is better.
+                score -= min(
+                    500,
+                    int(abs(age) * 20)
+                )
+
+                # --------------------------------------------
+                # Destination channel
+                # --------------------------------------------
+
+                extra = getattr(
+                    entry,
+                    "extra",
+                    None
+                )
+
+                audit_channel = getattr(
+                    extra,
+                    "channel",
+                    None
+                )
+
+                audit_channel_id = getattr(
+                    audit_channel,
+                    "id",
+                    None
+                )
+
+                if audit_channel_id == after_channel.id:
+                    score += 500
+
+                candidates.append(
+                    (
+                        score,
+                        abs(age),
+                        entry
+                    )
+                )
+
+            if candidates:
+
+                candidates.sort(
+                    key=lambda item: (
+                        -item[0],
+                        item[1]
+                    )
+                )
+
+                selected = candidates[0][2]
+
+                self._mark_audit_seen(
+                    selected.id
+                )
+
+                return selected
+
+            # --------------------------------------------
+            # Give Discord time to publish audit entry.
+            # --------------------------------------------
+
+            if attempt < (
+                VOICE_MOVE_ATTEMPTS - 1
+            ):
+
+                await asyncio.sleep(
+                    VOICE_MOVE_DELAY
+                )
+
+        return None
+
+    # ========================================================
+    # FIND VOICE DISCONNECT ACTOR
+    #
+    # MEMBER_DISCONNECT can also arrive after the Gateway
+    # voice event.
+    #
+    # The old implementation did only one lookup.
+    # That is the main reason administrator/moderator names
+    # were frequently shown as Unknown.
+    # ========================================================
+
+    async def _find_voice_disconnect_actor(
+        self,
+        guild: discord.Guild,
+        member: discord.Member,
+        event_time: datetime
+    ):
+
+        for attempt in range(
+            VOICE_DISCONNECT_ATTEMPTS
+        ):
+
+            entries = await self._fetch_audit_entries(
+                guild,
+                discord.AuditLogAction.member_disconnect
+            )
+
+            candidates = []
+
+            for entry in entries:
+
+                if not entry.created_at:
+                    continue
+
+                if self._audit_seen(entry.id):
+                    continue
+
+                target_id = getattr(
+                    entry.target,
+                    "id",
+                    None
+                )
+
+                if target_id != member.id:
+                    continue
+
+                age = self._audit_age(
+                    event_time,
+                    entry.created_at
+                )
+
+                if age < -3:
+                    continue
+
+                if age > VOICE_DISCONNECT_WINDOW:
+                    continue
+
+                score = 1000
+
+                score -= min(
+                    500,
+                    int(abs(age) * 20)
+                )
+
+                candidates.append(
+                    (
+                        score,
+                        abs(age),
+                        entry
+                    )
+                )
+
+            if candidates:
+
+                candidates.sort(
+                    key=lambda item: (
+                        -item[0],
+                        item[1]
+                    )
+                )
+
+                selected = candidates[0][2]
+
+                self._mark_audit_seen(
+                    selected.id
+                )
+
+                return selected
+
+            if attempt < (
+                VOICE_DISCONNECT_ATTEMPTS - 1
+            ):
+
+                await asyncio.sleep(
+                    VOICE_DISCONNECT_DELAY
+                )
+
+        return None
+
+    # ========================================================
+    # VOICE STATE UPDATE
+    # ========================================================
 
     @commands.Cog.listener()
-    async def on_message_delete(self, message: discord.Message):
-        if message.author.bot or not message.guild:
-            return
-        if not await self._is_module_enabled(message.guild.id):
-            return
-        if not await self._should_log_user(message.guild.id, message.author.id):
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState
+    ):
+
+        if member.bot:
             return
 
-        # Find who deleted the message
-        deleter = None
-        entry = await self._get_audit_entry(message.guild, discord.AuditLogAction.message_delete, message.author)
-        if entry and entry.user.id != message.author.id:
-            deleter = entry.user
+        guild = member.guild
 
-        embed = EmbedBuilder.create(
-            title="🗑️ Message Deleted",
-            color_key="log_message_delete",
-            author=message.author,
-            footer=f"Channel: #{message.channel.name} | Message ID: {message.id}"
+        if guild is None:
+            return
+
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
+
+        # ====================================================
+        # JOIN / LEAVE / MOVE
+        # ====================================================
+
+        if before.channel != after.channel:
+
+            # ------------------------------------------------
+            # JOIN
+            # ------------------------------------------------
+
+            if (
+                before.channel is None
+                and after.channel is not None
+            ):
+
+                await self._save_log_to_db(
+                    guild.id,
+                    member.id,
+                    member.id,
+                    "voice_join",
+                    f"Joined {after.channel.name}"
+                )
+
+                embed = discord.Embed(
+                    title="🔊 Voice Join",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+
+                embed.add_field(
+                    name="User",
+                    value=member.mention,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="Channel",
+                    value=after.channel.mention,
+                    inline=True
+                )
+
+                await self._send_log(
+                    guild,
+                    embed
+                )
+
+                return
+
+            # ------------------------------------------------
+            # LEAVE / DISCONNECT
+            # ------------------------------------------------
+
+            if (
+                before.channel is not None
+                and after.channel is None
+            ):
+
+                event_time = datetime.now(
+                    timezone.utc
+                )
+
+                entry = await self._find_voice_disconnect_actor(
+                    guild=guild,
+                    member=member,
+                    event_time=event_time
+                )
+
+                actor = (
+                    entry.user
+                    if entry
+                    else None
+                )
+
+                # ------------------------------------------------
+                # IMPORTANT:
+                #
+                # Do NOT set actor = member when audit lookup
+                # fails.
+                #
+                # A self-leave has no moderator disconnect actor.
+                # A moderator disconnect has MEMBER_DISCONNECT
+                # audit entry.
+                #
+                # Therefore:
+                #
+                # actor found  -> actual moderator
+                # actor absent -> Self / Unknown
+                # ------------------------------------------------
+
+                if actor:
+                    disconnected_by = actor.mention
+                    actor_id = actor.id
+                    detection = "Discord Audit Log"
+                else:
+                    disconnected_by = "Self / Unknown"
+                    actor_id = member.id
+                    detection = "No matching audit entry"
+
+                await self._save_log_to_db(
+                    guild.id,
+                    member.id,
+                    actor_id,
+                    "voice_leave",
+                    f"Left {before.channel.name}"
+                )
+
+                embed = discord.Embed(
+                    title="🔇 Voice Leave",
+                    color=discord.Color.red(),
+                    timestamp=event_time
+                )
+
+                embed.add_field(
+                    name="User",
+                    value=member.mention,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="Channel",
+                    value=before.channel.mention,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="Disconnected By",
+                    value=disconnected_by,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="Detection",
+                    value=detection,
+                    inline=False
+                )
+
+                await self._send_log(
+                    guild,
+                    embed
+                )
+
+                return
+
+            # ------------------------------------------------
+            # MOVE / DRAG
+            # ------------------------------------------------
+
+            if (
+                before.channel is not None
+                and after.channel is not None
+            ):
+
+                event_time = datetime.now(
+                    timezone.utc
+                )
+
+                entry = await self._find_voice_move_actor(
+                    guild=guild,
+                    member=member,
+                    before_channel=before.channel,
+                    after_channel=after.channel,
+                    event_time=event_time
+                )
+
+                actor = (
+                    entry.user
+                    if entry
+                    else None
+                )
+
+                if actor:
+
+                    moved_by = actor.mention
+                    actor_id = actor.id
+                    detection = "Discord Audit Log"
+
+                else:
+
+                    moved_by = "Self / Unknown"
+                    actor_id = member.id
+                    detection = "No matching audit entry"
+
+                await self._save_log_to_db(
+                    guild.id,
+                    member.id,
+                    actor_id,
+                    "voice_move",
+                    (
+                        f"Moved "
+                        f"{before.channel.name} -> "
+                        f"{after.channel.name}"
+                    )
+                )
+
+                embed = discord.Embed(
+                    title="🔀 Voice Move",
+                    color=discord.Color.blue(),
+                    timestamp=event_time
+                )
+
+                embed.add_field(
+                    name="User",
+                    value=member.mention,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="Moved By",
+                    value=moved_by,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="From",
+                    value=before.channel.mention,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="To",
+                    value=after.channel.mention,
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="Detection",
+                    value=detection,
+                    inline=False
+                )
+
+                await self._send_log(
+                    guild,
+                    embed
+                )
+
+        # ====================================================
+        # SERVER MUTE / DEAFEN
+        # ====================================================
+
+        for (
+            attr,
+            title,
+            action_type
+        ) in (
+            (
+                "mute",
+                "Server Mute",
+                "server_mute"
+            ),
+            (
+                "deaf",
+                "Server Deafen",
+                "server_deaf"
+            )
+        ):
+
+            old_value = getattr(
+                before,
+                attr,
+                False
+            )
+
+            new_value = getattr(
+                after,
+                attr,
+                False
+            )
+
+            if old_value == new_value:
+                continue
+
+            await asyncio.sleep(0.5)
+
+            entry = await self._find_audit_entry(
+                guild,
+                discord.AuditLogAction.member_update,
+                target_id=member.id
+            )
+
+            actor = (
+                entry.user
+                if entry
+                else None
+            )
+
+            state = (
+                "Enabled"
+                if new_value
+                else "Disabled"
+            )
+
+            await self._save_log_to_db(
+                guild.id,
+                member.id,
+                actor.id if actor else None,
+                action_type,
+                f"{title} {state}"
+            )
+
+            embed = discord.Embed(
+                title=f"🎙️ {title} {state}",
+                color=discord.Color.orange(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            embed.add_field(
+                name="User",
+                value=member.mention,
+                inline=True
+            )
+
+            embed.add_field(
+                name="By",
+                value=(
+                    actor.mention
+                    if actor
+                    else "Unknown"
+                ),
+                inline=True
+            )
+
+            await self._send_log(
+                guild,
+                embed
+            )
+
+    # ========================================================
+    # MEMBER ROLE ADD / REMOVE
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_member_update(
+        self,
+        before: discord.Member,
+        after: discord.Member
+    ):
+
+        guild = after.guild
+
+        if guild is None:
+            return
+
+        if after.bot:
+            return
+
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
+
+        before_roles = {
+            role.id: role
+            for role in before.roles
+            if role != guild.default_role
+        }
+
+        after_roles = {
+            role.id: role
+            for role in after.roles
+            if role != guild.default_role
+        }
+
+        added_ids = (
+            set(after_roles)
+            - set(before_roles)
         )
-        embed.add_field(name="Author", value=message.author.mention, inline=True)
-        embed.add_field(name="Channel", value=message.channel.mention, inline=True)
 
-        if deleter:
-            embed.add_field(name="Deleted By", value=deleter.mention, inline=True)
-        else:
-            embed.add_field(name="Deleted By", value="Self or unknown", inline=True)
+        removed_ids = (
+            set(before_roles)
+            - set(after_roles)
+        )
 
-        content = message.content or "*No text content*"
+        if (
+            not added_ids
+            and not removed_ids
+        ):
+            return
+
+        entry = None
+
+        for attempt in range(
+            ROLE_AUDIT_ATTEMPTS
+        ):
+
+            entry = await self._find_audit_entry(
+                guild,
+                discord.AuditLogAction.member_role_update,
+                target_id=after.id,
+                window=ROLE_AUDIT_WINDOW
+            )
+
+            if entry:
+                break
+
+            if attempt < (
+                ROLE_AUDIT_ATTEMPTS - 1
+            ):
+
+                await asyncio.sleep(
+                    ROLE_AUDIT_DELAY
+                )
+
+        actor = (
+            entry.user
+            if entry
+            else None
+        )
+
+        actor_id = (
+            actor.id
+            if actor
+            else None
+        )
+
+        # ----------------------------------------------------
+        # ROLE ADDED
+        # ----------------------------------------------------
+
+        for role_id in added_ids:
+
+            role = after_roles.get(role_id)
+
+            if role is None:
+                continue
+
+            await self._save_log_to_db(
+                guild.id,
+                after.id,
+                actor_id,
+                "role_add",
+                f"Role {role.name} added to {after}"
+            )
+
+            embed = discord.Embed(
+                title="🟢 Role Added",
+                color=discord.Color.green(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            embed.add_field(
+                name="Member",
+                value=after.mention,
+                inline=True
+            )
+
+            embed.add_field(
+                name="Role",
+                value=role.mention,
+                inline=True
+            )
+
+            embed.add_field(
+                name="Added By",
+                value=(
+                    actor.mention
+                    if actor
+                    else "Unknown"
+                ),
+                inline=True
+            )
+
+            await self._send_log(
+                guild,
+                embed
+            )
+
+        # ----------------------------------------------------
+        # ROLE REMOVED
+        # ----------------------------------------------------
+
+        for role_id in removed_ids:
+
+            role = before_roles.get(role_id)
+
+            if role is None:
+                continue
+
+            await self._save_log_to_db(
+                guild.id,
+                after.id,
+                actor_id,
+                "role_remove",
+                f"Role {role.name} removed from {after}"
+            )
+
+            embed = discord.Embed(
+                title="🔴 Role Removed",
+                color=discord.Color.red(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            embed.add_field(
+                name="Member",
+                value=after.mention,
+                inline=True
+            )
+
+            embed.add_field(
+                name="Role",
+                value=role.mention,
+                inline=True
+            )
+
+            embed.add_field(
+                name="Removed By",
+                value=(
+                    actor.mention
+                    if actor
+                    else "Unknown"
+                ),
+                inline=True
+            )
+
+            await self._send_log(
+                guild,
+                embed
+            )
+
+    # ========================================================
+    # ROLE CREATE
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_guild_role_create(
+        self,
+        role: discord.Role
+    ):
+
+        guild = role.guild
+
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
+
+        entry = None
+
+        for attempt in range(
+            ROLE_AUDIT_ATTEMPTS
+        ):
+
+            entry = await self._find_audit_entry(
+                guild,
+                discord.AuditLogAction.role_create,
+                target_id=role.id,
+                window=ROLE_AUDIT_WINDOW
+            )
+
+            if entry:
+                break
+
+            if attempt < (
+                ROLE_AUDIT_ATTEMPTS - 1
+            ):
+
+                await asyncio.sleep(
+                    ROLE_AUDIT_DELAY
+                )
+
+        actor = (
+            entry.user
+            if entry
+            else None
+        )
+
+        await self._save_log_to_db(
+            guild.id,
+            None,
+            actor.id if actor else None,
+            "role_create",
+            f"Role created: {role.name}"
+        )
+
+        embed = discord.Embed(
+            title="🟢 Role Created",
+            color=discord.Color.green(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Role",
+            value=role.mention,
+            inline=True
+        )
+
+        embed.add_field(
+            name="Name",
+            value=f"`{role.name}`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Created By",
+            value=(
+                actor.mention
+                if actor
+                else "Unknown"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="Role ID",
+            value=str(role.id),
+            inline=False
+        )
+
+        await self._send_log(
+            guild,
+            embed
+        )
+
+    # ========================================================
+    # ROLE DELETE
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_guild_role_delete(
+        self,
+        role: discord.Role
+    ):
+
+        guild = role.guild
+
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
+
+        entry = None
+
+        for attempt in range(
+            ROLE_AUDIT_ATTEMPTS
+        ):
+
+            entry = await self._find_audit_entry(
+                guild,
+                discord.AuditLogAction.role_delete,
+                target_id=role.id,
+                window=ROLE_AUDIT_WINDOW
+            )
+
+            if entry:
+                break
+
+            if attempt < (
+                ROLE_AUDIT_ATTEMPTS - 1
+            ):
+
+                await asyncio.sleep(
+                    ROLE_AUDIT_DELAY
+                )
+
+        actor = (
+            entry.user
+            if entry
+            else None
+        )
+
+        await self._save_log_to_db(
+            guild.id,
+            None,
+            actor.id if actor else None,
+            "role_delete",
+            f"Role deleted: {role.name}"
+        )
+
+        embed = discord.Embed(
+            title="🔴 Role Deleted",
+            color=discord.Color.red(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Role",
+            value=f"`{role.name}`",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Deleted By",
+            value=(
+                actor.mention
+                if actor
+                else "Unknown"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name="Role ID",
+            value=str(role.id),
+            inline=False
+        )
+
+        await self._send_log(
+            guild,
+            embed
+        )
+
+    # ========================================================
+    # ROLE PERMISSION DIFF
+    # ========================================================
+
+    def _diff_role_permissions(
+        self,
+        before: discord.Permissions,
+        after: discord.Permissions
+    ) -> list[str]:
+
+        changes = []
+
+        if before.value == after.value:
+            return changes
+
+        for permission_name in discord.Permissions.VALID_FLAGS:
+
+            old_state = getattr(
+                before,
+                permission_name
+            )
+
+            new_state = getattr(
+                after,
+                permission_name
+            )
+
+            if old_state == new_state:
+                continue
+
+            display_name = (
+                permission_name
+                .replace("_", " ")
+                .title()
+            )
+
+            old_text = (
+                "✅ Allow"
+                if old_state
+                else "❌ Deny"
+            )
+
+            new_text = (
+                "✅ Allow"
+                if new_state
+                else "❌ Deny"
+            )
+
+            changes.append(
+                f"• **{display_name}:** "
+                f"{old_text} ➜ {new_text}"
+            )
+
+        return changes
+
+    # ========================================================
+    # ROLE UPDATE
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_guild_role_update(
+        self,
+        before: discord.Role,
+        after: discord.Role
+    ):
+
+        guild = after.guild
+
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
+
+        changes = []
+
+        if before.name != after.name:
+
+            changes.append(
+                f"**Name:** "
+                f"`{before.name}` ➜ "
+                f"`{after.name}`"
+            )
+
+        permission_changes = (
+            self._diff_role_permissions(
+                before.permissions,
+                after.permissions
+            )
+        )
+
+        if permission_changes:
+
+            changes.append(
+                "**Permissions:**\n"
+                + "\n".join(
+                    permission_changes
+                )
+            )
+
+        if before.colour != after.colour:
+
+            changes.append(
+                f"**Color:** "
+                f"`{before.colour}` ➜ "
+                f"`{after.colour}`"
+            )
+
+        if before.hoist != after.hoist:
+
+            changes.append(
+                f"**Hoisted:** "
+                f"`{before.hoist}` ➜ "
+                f"`{after.hoist}`"
+            )
+
+        if before.mentionable != after.mentionable:
+
+            changes.append(
+                f"**Mentionable:** "
+                f"`{before.mentionable}` ➜ "
+                f"`{after.mentionable}`"
+            )
+
+        if before.position != after.position:
+
+            changes.append(
+                f"**Position:** "
+                f"`{before.position}` ➜ "
+                f"`{after.position}`"
+            )
+
+        before_icon = getattr(
+            before,
+            "icon",
+            None
+        )
+
+        after_icon = getattr(
+            after,
+            "icon",
+            None
+        )
+
+        if before_icon != after_icon:
+
+            changes.append(
+                "**Role Icon:** Changed"
+            )
+
+        before_emoji = getattr(
+            before,
+            "unicode_emoji",
+            None
+        )
+
+        after_emoji = getattr(
+            after,
+            "unicode_emoji",
+            None
+        )
+
+        if before_emoji != after_emoji:
+
+            changes.append(
+                f"**Unicode Emoji:** "
+                f"`{before_emoji or 'None'}` ➜ "
+                f"`{after_emoji or 'None'}`"
+            )
+
+        if not changes:
+            return
+
+        # ----------------------------------------------------
+        # ACTOR LOOKUP
+        # ----------------------------------------------------
+
+        entry = None
+
+        for attempt in range(
+            ROLE_AUDIT_ATTEMPTS
+        ):
+
+            entry = await self._find_audit_entry(
+                guild,
+                discord.AuditLogAction.role_update,
+                target_id=after.id,
+                window=ROLE_AUDIT_WINDOW
+            )
+
+            if entry:
+                break
+
+            if attempt < (
+                ROLE_AUDIT_ATTEMPTS - 1
+            ):
+
+                await asyncio.sleep(
+                    ROLE_AUDIT_DELAY
+                )
+
+        actor = (
+            entry.user
+            if entry
+            else None
+        )
+
+        await self._save_log_to_db(
+            guild.id,
+            None,
+            actor.id if actor else None,
+            "role_update",
+            (
+                f"Role {after.name} updated: "
+                + " | ".join(changes)
+            )
+        )
+
+        embed = discord.Embed(
+            title="✏️ Role Updated",
+            color=discord.Color.orange(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Role",
+            value=after.mention,
+            inline=True
+        )
+
+        embed.add_field(
+            name="Changed By",
+            value=(
+                actor.mention
+                if actor
+                else "Unknown"
+            ),
+            inline=True
+        )
+
+        change_text = "\n".join(
+            changes
+        )
+
+        if len(change_text) > 4000:
+            change_text = (
+                change_text[:3997]
+                + "..."
+            )
+
+        embed.add_field(
+            name="Changes",
+            value=change_text,
+            inline=False
+        )
+
+        await self._send_log(
+            guild,
+            embed
+        )
+
+    # ========================================================
+    # CHANNEL OVERWRITE DIFF
+    # ========================================================
+
+    def _diff_overwrites(
+        self,
+        before_ow,
+        after_ow
+    ) -> list[str]:
+
+        differences = []
+
+        before_dict = (
+            dict(before_ow)
+            if before_ow
+            else {}
+        )
+
+        after_dict = (
+            dict(after_ow)
+            if after_ow
+            else {}
+        )
+
+        aliases = {
+            "view_channel": "View Channel",
+            "read_messages": "View Channel",
+            "send_messages": "Send Messages",
+            "connect": "Connect",
+            "speak": "Speak",
+            "stream": "Stream",
+            "use_voice_activation": "Voice Activity",
+            "manage_messages": "Manage Messages",
+            "manage_channels": "Manage Channels"
+        }
+
+        def format_value(value):
+
+            if value is True:
+                return "✅ Allow"
+
+            if value is False:
+                return "❌ Deny"
+
+            return "⚪ Neutral"
+
+        permissions = (
+            set(before_dict)
+            | set(after_dict)
+        )
+
+        for permission in sorted(
+            permissions
+        ):
+
+            old_value = before_dict.get(
+                permission
+            )
+
+            new_value = after_dict.get(
+                permission
+            )
+
+            if old_value == new_value:
+                continue
+
+            display_name = aliases.get(
+                permission,
+                permission.replace(
+                    "_",
+                    " "
+                ).title()
+            )
+
+            differences.append(
+                f"• **{display_name}:** "
+                f"{format_value(old_value)} ➜ "
+                f"{format_value(new_value)}"
+            )
+
+        return differences
+
+    # ========================================================
+    # CHANNEL UPDATE
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_guild_channel_update(
+        self,
+        before,
+        after
+    ):
+
+        guild = before.guild
+
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
+
+        changes = []
+
+        if before.name != after.name:
+
+            changes.append(
+                f"Name: `{before.name}` ➜ "
+                f"`{after.name}`"
+            )
+
+        if (
+            getattr(before, "topic", None)
+            != getattr(after, "topic", None)
+        ):
+
+            changes.append(
+                "Topic changed"
+            )
+
+        if before.overwrites != after.overwrites:
+
+            targets = (
+                set(before.overwrites.keys())
+                | set(after.overwrites.keys())
+            )
+
+            for target in targets:
+
+                old_ow = before.overwrites.get(
+                    target
+                )
+
+                new_ow = after.overwrites.get(
+                    target
+                )
+
+                if old_ow == new_ow:
+                    continue
+
+                diffs = self._diff_overwrites(
+                    old_ow,
+                    new_ow
+                )
+
+                if not diffs:
+                    continue
+
+                target_name = getattr(
+                    target,
+                    "mention",
+                    str(target)
+                )
+
+                changes.append(
+                    f"Permissions for {target_name}:\n"
+                    + "\n".join(diffs)
+                )
+
+        if not changes:
+            return
+
+        entry = None
+
+        for attempt in range(
+            8
+        ):
+
+            entry = await self._find_audit_entry(
+                guild,
+                discord.AuditLogAction.channel_update,
+                target_id=after.id
+            )
+
+            if entry:
+                break
+
+            if attempt < 7:
+                await asyncio.sleep(0.5)
+
+        if entry is None:
+
+            for action in (
+                discord.AuditLogAction.overwrite_update,
+                discord.AuditLogAction.overwrite_create,
+                discord.AuditLogAction.overwrite_delete
+            ):
+
+                entry = await self._find_audit_entry(
+                    guild,
+                    action,
+                    target_id=after.id
+                )
+
+                if entry:
+                    break
+
+        actor = (
+            entry.user
+            if entry
+            else None
+        )
+
+        await self._save_log_to_db(
+            guild.id,
+            None,
+            actor.id if actor else None,
+            "channel_update",
+            f"Channel {after.name} modified"
+        )
+
+        embed = discord.Embed(
+            title="✏️ Channel Updated",
+            color=discord.Color.purple(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Channel",
+            value=after.mention,
+            inline=True
+        )
+
+        embed.add_field(
+            name="By",
+            value=(
+                actor.mention
+                if actor
+                else "Unknown"
+            ),
+            inline=True
+        )
+
+        change_text = "\n".join(
+            changes
+        )
+
+        if len(change_text) > 1024:
+            change_text = (
+                change_text[:1021]
+                + "..."
+            )
+
+        embed.add_field(
+            name="Changes",
+            value=change_text,
+            inline=False
+        )
+
+        await self._send_log(
+            guild,
+            embed
+        )
+
+    # ========================================================
+    # MESSAGE CACHE
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_message(
+        self,
+        message: discord.Message
+    ):
+
+        if message.guild is None:
+            return
+
+        if message.author.bot:
+            return
+
+        self.message_cache.add(
+            message.id,
+            {
+                "content": message.content,
+                "attachments": [
+                    attachment.filename
+                    for attachment
+                    in message.attachments
+                ]
+            }
+        )
+
+    # ========================================================
+    # MESSAGE DELETE
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_message_delete(
+        self,
+        message: discord.Message
+    ):
+
+        if message.guild is None:
+            return
+
+        if message.author.bot:
+            return
+
+        guild = message.guild
+
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
+
+        cached = self.message_cache.get(
+            message.id
+        )
+
+        content = (
+            cached.get("content")
+            if cached
+            else message.content
+        )
+
+        content = content or "*No text*"
+
+        entry = await self._find_audit_entry(
+            guild,
+            discord.AuditLogAction.message_delete,
+            target_id=message.author.id
+        )
+
+        actor = (
+            entry.user
+            if entry
+            else None
+        )
+
+        await self._save_log_to_db(
+            guild.id,
+            message.author.id,
+            actor.id if actor else None,
+            "message_delete",
+            f"Deleted in #{message.channel.name}"
+        )
+
+        embed = discord.Embed(
+            title="🗑️ Message Deleted",
+            color=discord.Color.red(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.set_author(
+            name=str(message.author),
+            icon_url=message.author.display_avatar.url
+        )
+
+        embed.add_field(
+            name="Author",
+            value=message.author.mention,
+            inline=True
+        )
+
+        embed.add_field(
+            name="Channel",
+            value=message.channel.mention,
+            inline=True
+        )
+
+        if (
+            actor
+            and actor.id != message.author.id
+        ):
+
+            embed.add_field(
+                name="Deleted By",
+                value=actor.mention,
+                inline=True
+            )
+
         if len(content) > 1024:
             content = content[:1021] + "..."
-        embed.add_field(name="Content", value=content, inline=False)
 
-        if message.attachments:
-            att_text = "\n".join(a.filename for a in message.attachments)
-            embed.add_field(name="Attachments", value=att_text, inline=False)
+        embed.add_field(
+            name="Content",
+            value=content,
+            inline=False
+        )
 
-        await self._send_log(message.guild, embed)
+        await self._send_log(
+            guild,
+            embed
+        )
+
+        self.message_cache.remove(
+            message.id
+        )
+
+    # ========================================================
+    # MESSAGE EDIT
+    # ========================================================
 
     @commands.Cog.listener()
-    async def on_message_edit(self, before: discord.Message, after: discord.Message):
-        if before.author.bot or not before.guild:
+    async def on_message_edit(
+        self,
+        before: discord.Message,
+        after: discord.Message
+    ):
+
+        if before.guild is None:
             return
+
+        if before.author.bot:
+            return
+
         if before.content == after.content:
-            return
-        if not await self._is_module_enabled(before.guild.id):
-            return
-        if not await self._should_log_user(before.guild.id, before.author.id):
-            return
-
-        embed = EmbedBuilder.create(
-            title="✏️ Message Edited",
-            color_key="log_message_edit",
-            author=before.author,
-            footer=f"Channel: #{before.channel.name} | Message ID: {before.id}"
-        )
-        embed.add_field(name="Author", value=before.author.mention, inline=True)
-        embed.add_field(name="Channel", value=before.channel.mention, inline=True)
-        embed.add_field(name="Jump to Message", value=f"[Click Here]({after.jump_url})", inline=True)
-
-        old_content = before.content or "*Empty*"
-        new_content = after.content or "*Empty*"
-        if len(old_content) > 1024:
-            old_content = old_content[:1021] + "..."
-        if len(new_content) > 1024:
-            new_content = new_content[:1021] + "..."
-
-        embed.add_field(name="Before", value=old_content, inline=False)
-        embed.add_field(name="After", value=new_content, inline=False)
-
-        await self._send_log(before.guild, embed)
-
-    @commands.Cog.listener()
-    async def on_bulk_message_delete(self, messages: list[discord.Message]):
-        if not messages or not messages[0].guild:
-            return
-        guild = messages[0].guild
-        if not await self._is_module_enabled(guild.id):
-            return
-
-        # Try to find who performed the bulk delete
-        entry = await self._get_audit_entry(guild, discord.AuditLogAction.message_bulk_delete)
-        performer = entry.user if entry else None
-
-        embed = EmbedBuilder.create(
-            title="🗑️ Bulk Message Delete",
-            color_key="log_message_delete",
-            footer=f"Channel: #{messages[0].channel.name}"
-        )
-        embed.add_field(name="Messages Deleted", value=str(len(messages)), inline=True)
-        embed.add_field(name="Channel", value=messages[0].channel.mention, inline=True)
-        if performer:
-            embed.add_field(name="Deleted By", value=performer.mention, inline=True)
-
-        # Log first few message authors
-        authors = set(m.author.name for m in messages if not m.author.bot)
-        if authors:
-            embed.add_field(name="Authors", value=", ".join(list(authors)[:10]), inline=False)
-
-        await self._send_log(guild, embed)
-
-    # ──── Voice Events ────
-
-    @commands.Cog.listener()
-    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-        if member.bot or not member.guild:
-            return
-        if not await self._is_module_enabled(member.guild.id):
-            return
-        if not await self._should_log_user(member.guild.id, member.id):
-            return
-
-        guild = member.guild
-
-        # Join voice channel
-        if before.channel is None and after.channel is not None:
-            embed = EmbedBuilder.create(
-                title="🔊 Voice Channel Join",
-                color_key="log_voice",
-                author=member
-            )
-            embed.add_field(name="User", value=member.mention, inline=True)
-            embed.add_field(name="Channel", value=after.channel.mention, inline=True)
-            await self._send_log(guild, embed)
-
-        # Leave voice channel
-        elif before.channel is not None and after.channel is None:
-            embed = EmbedBuilder.create(
-                title="🔇 Voice Channel Leave",
-                color_key="log_voice",
-                author=member
-            )
-            embed.add_field(name="User", value=member.mention, inline=True)
-            embed.add_field(name="Channel", value=before.channel.mention, inline=True)
-
-            # Check if disconnected by someone else
-            entry = await self._get_audit_entry(guild, discord.AuditLogAction.member_disconnect, member)
-            if entry:
-                embed.add_field(name="Disconnected By", value=entry.user.mention, inline=True)
-
-            await self._send_log(guild, embed)
-
-        # Move between channels
-        elif before.channel != after.channel:
-            embed = EmbedBuilder.create(
-                title="🔀 Voice Channel Move",
-                color_key="log_voice",
-                author=member
-            )
-            embed.add_field(name="User", value=member.mention, inline=True)
-            embed.add_field(name="From", value=before.channel.mention if before.channel else "Unknown", inline=True)
-            embed.add_field(name="To", value=after.channel.mention if after.channel else "Unknown", inline=True)
-
-            entry = await self._get_audit_entry(guild, discord.AuditLogAction.member_move, member)
-            if entry:
-                embed.add_field(name="Moved By", value=entry.user.mention, inline=True)
-
-            await self._send_log(guild, embed)
-
-        # Server mute/deafen changes
-        if before.self_mute != after.self_mute or before.mute != after.mute:
-            is_server_action = before.mute != after.mute
-            muted = after.mute if is_server_action else after.self_mute
-
-            embed = EmbedBuilder.create(
-                title=f"{'🔇' if muted else '🔊'} {'Server' if is_server_action else 'Self'} {'Muted' if muted else 'Unmuted'}",
-                color_key="log_voice",
-                author=member
-            )
-            embed.add_field(name="User", value=member.mention, inline=True)
-
-            if is_server_action:
-                entry = await self._get_audit_entry(guild, discord.AuditLogAction.member_update, member)
-                if entry:
-                    embed.add_field(name="Action By", value=entry.user.mention, inline=True)
-
-            await self._send_log(guild, embed)
-
-        if before.self_deaf != after.self_deaf or before.deaf != after.deaf:
-            is_server_action = before.deaf != after.deaf
-            deafened = after.deaf if is_server_action else after.self_deaf
-
-            embed = EmbedBuilder.create(
-                title=f"{'🔇' if deafened else '🔊'} {'Server' if is_server_action else 'Self'} {'Deafened' if deafened else 'Undeafened'}",
-                color_key="log_voice",
-                author=member
-            )
-            embed.add_field(name="User", value=member.mention, inline=True)
-
-            if is_server_action:
-                entry = await self._get_audit_entry(guild, discord.AuditLogAction.member_update, member)
-                if entry:
-                    embed.add_field(name="Action By", value=entry.user.mention, inline=True)
-
-            await self._send_log(guild, embed)
-
-    # ──── Member Events ────
-
-    @commands.Cog.listener()
-    async def on_member_join(self, member: discord.Member):
-        if not await self._is_module_enabled(member.guild.id):
-            return
-        if not await self._should_log_user(member.guild.id, member.id):
-            return
-
-        embed = EmbedBuilder.create(
-            title="📥 Member Joined",
-            color_key="log_member_join",
-            author=member,
-            thumbnail=member.display_avatar.url if member.display_avatar else None
-        )
-        embed.add_field(name="User", value=f"{member.mention} ({member})", inline=False)
-        embed.add_field(name="Account Created", value=discord.utils.format_dt(member.created_at, "R"), inline=True)
-        embed.add_field(name="Member Count", value=str(member.guild.member_count), inline=True)
-
-        # Try to find which invite was used
-        # This requires tracking invites before/after, which is complex
-        # For now just log the join
-
-        await self._send_log(member.guild, embed)
-
-    @commands.Cog.listener()
-    async def on_member_remove(self, member: discord.Member):
-        if not await self._is_module_enabled(member.guild.id):
-            return
-        if not await self._should_log_user(member.guild.id, member.id):
-            return
-
-        guild = member.guild
-
-        # Check if it was a kick
-        entry = await self._get_audit_entry(guild, discord.AuditLogAction.kick, member)
-        if entry:
-            embed = EmbedBuilder.create(
-                title="👢 Member Kicked",
-                color_key="log_member_leave",
-                author=member,
-                thumbnail=member.display_avatar.url if member.display_avatar else None
-            )
-            embed.add_field(name="User", value=f"{member.mention} ({member})", inline=True)
-            embed.add_field(name="Kicked By", value=entry.user.mention, inline=True)
-            if entry.reason:
-                embed.add_field(name="Reason", value=entry.reason, inline=False)
-        else:
-            embed = EmbedBuilder.create(
-                title="📤 Member Left",
-                color_key="log_member_leave",
-                author=member,
-                thumbnail=member.display_avatar.url if member.display_avatar else None
-            )
-            embed.add_field(name="User", value=f"{member.mention} ({member})", inline=False)
-            embed.add_field(name="Roles", value=", ".join(r.mention for r in member.roles[1:]) or "None", inline=False)
-
-        embed.add_field(name="Member Count", value=str(guild.member_count), inline=True)
-        await self._send_log(guild, embed)
-
-    @commands.Cog.listener()
-    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
-        if not await self._is_module_enabled(guild.id):
-            return
-
-        entry = await self._get_audit_entry(guild, discord.AuditLogAction.ban, user)
-
-        embed = EmbedBuilder.create(
-            title="🔨 Member Banned",
-            color_key="log_member_ban",
-            thumbnail=user.display_avatar.url if user.display_avatar else None
-        )
-        embed.add_field(name="User", value=f"{user.mention} ({user})", inline=True)
-
-        if entry:
-            embed.add_field(name="Banned By", value=entry.user.mention, inline=True)
-            if entry.reason:
-                embed.add_field(name="Reason", value=entry.reason, inline=False)
-
-        await self._send_log(guild, embed)
-
-    @commands.Cog.listener()
-    async def on_member_unban(self, guild: discord.Guild, user: discord.User):
-        if not await self._is_module_enabled(guild.id):
-            return
-
-        entry = await self._get_audit_entry(guild, discord.AuditLogAction.unban, user)
-
-        embed = EmbedBuilder.create(
-            title="🔓 Member Unbanned",
-            color_key="log_member_join",
-            thumbnail=user.display_avatar.url if user.display_avatar else None
-        )
-        embed.add_field(name="User", value=f"{user.mention} ({user})", inline=True)
-
-        if entry:
-            embed.add_field(name="Unbanned By", value=entry.user.mention, inline=True)
-
-        await self._send_log(guild, embed)
-
-    @commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member):
-        if before.bot or not before.guild:
-            return
-        if not await self._is_module_enabled(before.guild.id):
-            return
-        if not await self._should_log_user(before.guild.id, before.id):
             return
 
         guild = before.guild
 
-        # Nickname change
-        if before.nick != after.nick:
-            entry = await self._get_audit_entry(guild, discord.AuditLogAction.member_update, before)
+        if not await self._is_module_enabled(
+            guild.id
+        ):
+            return
 
-            embed = EmbedBuilder.create(
-                title="📝 Nickname Changed",
-                color_key="log_channel",
-                author=after
+        old_content = (
+            before.content
+            or "*Empty*"
+        )
+
+        new_content = (
+            after.content
+            or "*Empty*"
+        )
+
+        if len(old_content) > 1020:
+            old_content = old_content[:1017] + "..."
+
+        if len(new_content) > 1020:
+            new_content = new_content[:1017] + "..."
+
+        await self._save_log_to_db(
+            guild.id,
+            before.author.id,
+            before.author.id,
+            "message_edit",
+            f"Edited in #{before.channel.name}"
+        )
+
+        embed = discord.Embed(
+            title="✏️ Message Edited",
+            color=discord.Color.gold(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.set_author(
+            name=str(before.author),
+            icon_url=before.author.display_avatar.url
+        )
+
+        embed.add_field(
+            name="Before",
+            value=old_content,
+            inline=False
+        )
+
+        embed.add_field(
+            name="After",
+            value=new_content,
+            inline=False
+        )
+
+        embed.set_footer(
+            text=f"Channel: #{before.channel.name}"
+        )
+
+        await self._send_log(
+            guild,
+            embed
+        )
+
+    # ========================================================
+    # LOGGER SETTINGS
+    # ========================================================
+
+    async def _is_module_enabled(
+        self,
+        guild_id: int
+    ) -> bool:
+
+        try:
+
+            channel_id = await Config.get_guild_setting(
+                guild_id,
+                "log_channel_id"
             )
-            embed.add_field(name="User", value=after.mention, inline=True)
-            embed.add_field(name="Before", value=before.nick or "*None*", inline=True)
-            embed.add_field(name="After", value=after.nick or "*None*", inline=True)
 
-            if entry and entry.user.id != after.id:
-                embed.add_field(name="Changed By", value=entry.user.mention, inline=True)
+            return bool(channel_id)
+
+        except Exception:
+
+            logger.exception(
+                "Failed to read log channel setting "
+                "for guild %s",
+                guild_id
+            )
+
+            return False
+
+    async def _get_log_channel(
+        self,
+        guild: discord.Guild
+    ):
+
+        try:
+
+            channel_id = await Config.get_guild_setting(
+                guild.id,
+                "log_channel_id"
+            )
+
+            if not channel_id:
+                return None
+
+            channel = guild.get_channel(
+                channel_id
+            )
+
+            if channel:
+                return channel
+
+            return await guild.fetch_channel(
+                channel_id
+            )
+
+        except discord.NotFound:
+
+            logger.warning(
+                "Configured log channel does not exist "
+                "in guild %s",
+                guild.id
+            )
+
+        except discord.Forbidden:
+
+            logger.warning(
+                "Cannot access log channel "
+                "in guild %s",
+                guild.id
+            )
+
+        except discord.HTTPException as exc:
+
+            logger.warning(
+                "Failed to fetch log channel "
+                "in guild %s: %s",
+                guild.id,
+                exc
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Unexpected log channel error "
+                "in guild %s",
+                guild.id
+            )
+
+        return None
+
+    # ========================================================
+    # SEND LOG
+    # ========================================================
+
+    async def _send_log(
+        self,
+        guild: discord.Guild,
+        embed: discord.Embed
+    ):
+
+        channel = await self._get_log_channel(
+            guild
+        )
+
+        if channel is None:
+            return
+
+        try:
+
+            await channel.send(
+                embed=embed
+            )
+
+        except discord.Forbidden:
+
+            logger.warning(
+                "Cannot send logger message "
+                "in guild %s",
+                guild.id
+            )
+
+        except discord.HTTPException as exc:
+
+            logger.warning(
+                "Failed to send logger message "
+                "in guild %s: %s",
+                guild.id,
+                exc
+            )
+
+        except Exception:
+
+            logger.exception(
+                "Unexpected logger send error "
+                "in guild %s",
+                guild.id
+            )
+
+    # ========================================================
+    # /LOG SETUP
+    # ========================================================
+
+    @log_group.command(
+        name="setup",
+        description="Set the server logging channel."
+    )
+    @app_commands.default_permissions(
+        manage_guild=True
+    )
+    async def log_setup(
+        self,
+        interaction: discord.Interaction,
+        channel: discord.TextChannel
+    ):
+
+        if interaction.guild_id is None:
+
+            await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True
+            )
+
+            return
+
+        await Config.set_guild_setting(
+            interaction.guild_id,
+            "log_channel_id",
+            channel.id
+        )
+
+        await interaction.response.send_message(
+            f"✅ Log channel: {channel.mention}",
+            ephemeral=True
+        )
+
+    # ========================================================
+    # /LOG HISTORY
+    # ========================================================
+
+    @log_group.command(
+        name="history",
+        description="Show recent history of a member."
+    )
+    @app_commands.default_permissions(
+        manage_guild=True
+    )
+    async def log_history(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        days: app_commands.Range[int, 1, 90] = 7
+    ):
+
+        await self._show_user_history(
+            interaction,
+            user,
+            days
+        )
+
+    # ========================================================
+    # /LOGSEARCH
+    #
+    # Example:
+    #
+    # /logsearch user:@Rahim days:30
+    #
+    # ========================================================
+
+    @app_commands.command(
+        name="logsearch",
+        description="Search a specific member's logger history."
+    )
+    @app_commands.default_permissions(
+        manage_guild=True
+    )
+    @app_commands.describe(
+        user="The member whose logs you want to search.",
+        days="How many days back to search (1-90)."
+    )
+    async def logsearch(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        days: app_commands.Range[int, 1, 90] = 7
+    ):
+
+        await self._show_user_history(
+            interaction,
+            user,
+            days
+        )
+
+    # ========================================================
+    # USER HISTORY
+    #
+    # OPTIMIZED QUERY
+    #
+    # Old:
+    #
+    # WHERE guild_id=?
+    # AND created_at >= ?
+    # AND (user_id=? OR actor_id=?)
+    #
+    # New:
+    #
+    # Two index-friendly branches:
+    #
+    #   user_id
+    #   actor_id
+    #
+    # combined with UNION.
+    #
+    # This allows SQLite to use:
+    #
+    # idx_audit_guild_user_time
+    # idx_audit_guild_actor_time
+    #
+    # instead of doing a broader OR scan.
+    # ========================================================
+
+    async def _count_user_history(
+        self,
+        guild_id: int,
+        user_id: int,
+        cutoff: str
+    ) -> int:
+
+        if self.read_db is None:
+            raise RuntimeError("Logger read database is unavailable")
+
+        async with self.read_db.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT id
+                FROM audit_history
+                WHERE guild_id = ?
+                  AND user_id = ?
+                  AND created_at >= ?
+
+                UNION ALL
+
+                SELECT id
+                FROM audit_history
+                WHERE guild_id = ?
+                  AND actor_id = ?
+                  AND created_at >= ?
+                  AND (user_id IS NULL OR user_id != ?)
+            )
+            """,
+            (
+                guild_id,
+                user_id,
+                cutoff,
+                guild_id,
+                user_id,
+                cutoff,
+                user_id
+            )
+        ) as cursor:
+            row = await cursor.fetchone()
+
+        return int(row[0]) if row else 0
+
+    async def _fetch_user_history_page(
+        self,
+        guild_id: int,
+        user_id: int,
+        cutoff: str,
+        offset: int
+    ):
+
+        if self.read_db is None:
+            raise RuntimeError("Logger read database is unavailable")
+
+        async with self.read_db.execute(
+            """
+            SELECT
+                action_type,
+                details,
+                created_at,
+                user_id,
+                actor_id,
+                id
+            FROM (
+                SELECT
+                    action_type,
+                    details,
+                    created_at,
+                    user_id,
+                    actor_id,
+                    id
+                FROM audit_history
+                WHERE guild_id = ?
+                  AND user_id = ?
+                  AND created_at >= ?
+
+                UNION ALL
+
+                SELECT
+                    action_type,
+                    details,
+                    created_at,
+                    user_id,
+                    actor_id,
+                    id
+                FROM audit_history
+                WHERE guild_id = ?
+                  AND actor_id = ?
+                  AND created_at >= ?
+                  AND (user_id IS NULL OR user_id != ?)
+            )
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (
+                guild_id,
+                user_id,
+                cutoff,
+                guild_id,
+                user_id,
+                cutoff,
+                user_id,
+                HISTORY_PAGE_SIZE,
+                offset
+            )
+        ) as cursor:
+            return await cursor.fetchall()
+
+    @staticmethod
+    def _build_history_embed(
+        user: discord.Member,
+        days: int,
+        total_count: int,
+        page_index: int,
+        rows
+    ):
+
+        page_count = max(
+            1,
+            (total_count + HISTORY_PAGE_SIZE - 1) // HISTORY_PAGE_SIZE
+        )
+
+        embed = discord.Embed(
+            title="🔎 Logger Search",
+            description=(
+                f"Member: {user.mention}\n"
+                f"Period: Last {days} day(s)\n"
+                f"Results: {total_count}"
+            ),
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.set_footer(text=f"Page {page_index + 1} of {page_count}")
+
+        for (
+            action_type,
+            details,
+            created_at,
+            target_id,
+            actor_id,
+            _row_id
+        ) in rows:
+
+            if target_id == user.id and actor_id == user.id:
+                relation = "Target + Actor"
+            elif actor_id == user.id:
+                relation = "Actor"
             else:
-                embed.add_field(name="Changed By", value="Self", inline=True)
+                relation = "Target"
 
-            await self._send_log(guild, embed)
+            name = f"{action_type.upper()} • {created_at}"
+            if len(name) > 128:
+                name = name[:125] + "..."
 
-        # Role changes
-        if before.roles != after.roles:
-            added_roles = set(after.roles) - set(before.roles)
-            removed_roles = set(before.roles) - set(after.roles)
+            value = f"**{relation}**\n{details or '*No details*'}"
+            if len(value) > 1024:
+                value = value[:1021] + "..."
 
-            entry = await self._get_audit_entry(guild, discord.AuditLogAction.member_role_update, before)
+            embed.add_field(
+                name=name,
+                value=value,
+                inline=False
+            )
 
-            if added_roles:
-                embed = EmbedBuilder.create(
-                    title="➕ Role Added",
-                    color_key="log_role",
-                    author=after
+        return embed
+
+    async def _show_user_history(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        days: int
+    ):
+
+        await interaction.response.defer(ephemeral=True)
+        await self._db_ready.wait()
+
+        if self.read_db is None:
+            await interaction.followup.send(
+                "❌ Logger database is unavailable.",
+                ephemeral=True
+            )
+            return
+
+        guild_id = interaction.guild_id
+        if guild_id is None:
+            await interaction.followup.send(
+                "❌ This command can only be used in a server.",
+                ephemeral=True
+            )
+            return
+
+        cutoff = (
+            datetime.now(timezone.utc)
+            - timedelta(days=days)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
+        try:
+            total_count = await self._count_user_history(
+                guild_id,
+                user.id,
+                cutoff
+            )
+            if total_count == 0:
+                await interaction.followup.send(
+                    (
+                        f"📭 No logs found for {user.mention} in the last "
+                        f"{days} day(s)."
+                    ),
+                    ephemeral=True
                 )
-                embed.add_field(name="User", value=after.mention, inline=True)
-                embed.add_field(name="Roles Added", value=", ".join(r.mention for r in added_roles), inline=True)
-                if entry:
-                    embed.add_field(name="Added By", value=entry.user.mention, inline=True)
-                await self._send_log(guild, embed)
+                return
 
-            if removed_roles:
-                embed = EmbedBuilder.create(
-                    title="➖ Role Removed",
-                    color_key="log_role",
-                    author=after
-                )
-                embed.add_field(name="User", value=after.mention, inline=True)
-                embed.add_field(name="Roles Removed", value=", ".join(r.mention for r in removed_roles), inline=True)
-                if entry:
-                    embed.add_field(name="Removed By", value=entry.user.mention, inline=True)
-                await self._send_log(guild, embed)
+            rows = await self._fetch_user_history_page(
+                guild_id,
+                user.id,
+                cutoff,
+                0
+            )
 
-        # Timeout changes
-        if before.timed_out_until != after.timed_out_until:
-            entry = await self._get_audit_entry(guild, discord.AuditLogAction.member_update, before)
-
-            if after.timed_out_until and after.timed_out_until > datetime.utcnow().astimezone():
-                embed = EmbedBuilder.create(
-                    title="⏰ Member Timed Out",
-                    color_key="log_member_ban",
-                    author=after
-                )
-                embed.add_field(name="User", value=after.mention, inline=True)
-                embed.add_field(name="Until", value=discord.utils.format_dt(after.timed_out_until, "F"), inline=True)
-            else:
-                embed = EmbedBuilder.create(
-                    title="✅ Timeout Removed",
-                    color_key="log_member_join",
-                    author=after
-                )
-                embed.add_field(name="User", value=after.mention, inline=True)
-
-            if entry:
-                embed.add_field(name="Action By", value=entry.user.mention, inline=True)
-                if entry.reason:
-                    embed.add_field(name="Reason", value=entry.reason, inline=False)
-
-            await self._send_log(guild, embed)
-
-    # ──── Channel Events ────
-
-    @commands.Cog.listener()
-    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
-        if not await self._is_module_enabled(channel.guild.id):
+        except Exception:
+            logger.exception("Failed to query member logger history")
+            await interaction.followup.send(
+                "❌ Failed to search logger history.",
+                ephemeral=True
+            )
             return
 
-        entry = await self._get_audit_entry(channel.guild, discord.AuditLogAction.channel_create, channel)
+        view = None
+        if total_count > HISTORY_PAGE_SIZE:
+            view = HistoryPaginationView(
+                self,
+                user,
+                guild_id,
+                days,
+                cutoff,
+                total_count
+            )
 
-        embed = EmbedBuilder.create(
-            title="📁 Channel Created",
-            color_key="log_channel"
+        embed = self._build_history_embed(
+            user,
+            days,
+            total_count,
+            0,
+            rows
         )
-        embed.add_field(name="Channel", value=f"{channel.mention} ({channel.name})", inline=True)
-        embed.add_field(name="Type", value=str(channel.type).replace("_", " ").title(), inline=True)
-
-        if entry:
-            embed.add_field(name="Created By", value=entry.user.mention, inline=True)
-
-        await self._send_log(channel.guild, embed)
-
-    @commands.Cog.listener()
-    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
-        if not await self._is_module_enabled(channel.guild.id):
-            return
-
-        entry = await self._get_audit_entry(channel.guild, discord.AuditLogAction.channel_delete, channel)
-
-        embed = EmbedBuilder.create(
-            title="🗑️ Channel Deleted",
-            color_key="log_message_delete"
+        message = await interaction.followup.send(
+            embed=embed,
+            view=view,
+            ephemeral=True,
+            wait=True
         )
-        embed.add_field(name="Channel", value=f"#{channel.name}", inline=True)
-        embed.add_field(name="Type", value=str(channel.type).replace("_", " ").title(), inline=True)
 
-        if entry:
-            embed.add_field(name="Deleted By", value=entry.user.mention, inline=True)
-
-        await self._send_log(channel.guild, embed)
-
-    @commands.Cog.listener()
-    async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel):
-        if not await self._is_module_enabled(before.guild.id):
-            return
-
-        entry = await self._get_audit_entry(before.guild, discord.AuditLogAction.channel_update, before)
-
-        changes = []
-        if before.name != after.name:
-            changes.append(f"**Name:** {before.name} → {after.name}")
-
-        if hasattr(before, 'topic') and hasattr(after, 'topic'):
-            if before.topic != after.topic:
-                changes.append(f"**Topic:** {before.topic or '*None*'} → {after.topic or '*None*'}")
-
-        if hasattr(before, 'slowmode_delay') and hasattr(after, 'slowmode_delay'):
-            if before.slowmode_delay != after.slowmode_delay:
-                changes.append(f"**Slowmode:** {before.slowmode_delay}s → {after.slowmode_delay}s")
-
-        if hasattr(before, 'nsfw') and hasattr(after, 'nsfw'):
-            if before.nsfw != after.nsfw:
-                changes.append(f"**NSFW:** {before.nsfw} → {after.nsfw}")
-
-        if not changes:
-            return  # Permission-only changes or other non-visible changes
-
-        embed = EmbedBuilder.create(
-            title="✏️ Channel Updated",
-            color_key="log_channel"
-        )
-        embed.add_field(name="Channel", value=after.mention, inline=True)
-        if entry:
-            embed.add_field(name="Updated By", value=entry.user.mention, inline=True)
-        embed.add_field(name="Changes", value="\n".join(changes), inline=False)
-
-        await self._send_log(before.guild, embed)
-
-    # ──── Role Events ────
-
-    @commands.Cog.listener()
-    async def on_guild_role_create(self, role: discord.Role):
-        if not await self._is_module_enabled(role.guild.id):
-            return
-
-        entry = await self._get_audit_entry(role.guild, discord.AuditLogAction.role_create, role)
-
-        embed = EmbedBuilder.create(
-            title="🏷️ Role Created",
-            color_key="log_role"
-        )
-        embed.add_field(name="Role", value=f"{role.mention} ({role.name})", inline=True)
-        embed.add_field(name="Color", value=str(role.color), inline=True)
-
-        if entry:
-            embed.add_field(name="Created By", value=entry.user.mention, inline=True)
-
-        await self._send_log(role.guild, embed)
-
-    @commands.Cog.listener()
-    async def on_guild_role_delete(self, role: discord.Role):
-        if not await self._is_module_enabled(role.guild.id):
-            return
-
-        entry = await self._get_audit_entry(role.guild, discord.AuditLogAction.role_delete, role)
-
-        embed = EmbedBuilder.create(
-            title="🗑️ Role Deleted",
-            color_key="log_message_delete"
-        )
-        embed.add_field(name="Role", value=role.name, inline=True)
-
-        if entry:
-            embed.add_field(name="Deleted By", value=entry.user.mention, inline=True)
-
-        await self._send_log(role.guild, embed)
-
-    @commands.Cog.listener()
-    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
-        if not await self._is_module_enabled(before.guild.id):
-            return
-
-        entry = await self._get_audit_entry(before.guild, discord.AuditLogAction.role_update, before)
-
-        changes = []
-        if before.name != after.name:
-            changes.append(f"**Name:** {before.name} → {after.name}")
-        if before.color != after.color:
-            changes.append(f"**Color:** {before.color} → {after.color}")
-        if before.hoist != after.hoist:
-            changes.append(f"**Hoisted:** {before.hoist} → {after.hoist}")
-        if before.mentionable != after.mentionable:
-            changes.append(f"**Mentionable:** {before.mentionable} → {after.mentionable}")
-        if before.permissions != after.permissions:
-            added = after.permissions.value & ~before.permissions.value
-            removed = before.permissions.value & ~after.permissions.value
-            if added:
-                perms = discord.Permissions(added)
-                changes.append(f"**Permissions Added:** {', '.join(p for p, v in perms if v)}")
-            if removed:
-                perms = discord.Permissions(removed)
-                changes.append(f"**Permissions Removed:** {', '.join(p for p, v in perms if v)}")
-
-        if not changes:
-            return
-
-        embed = EmbedBuilder.create(
-            title="✏️ Role Updated",
-            color_key="log_role"
-        )
-        embed.add_field(name="Role", value=after.mention, inline=True)
-        if entry:
-            embed.add_field(name="Updated By", value=entry.user.mention, inline=True)
-        embed.add_field(name="Changes", value="\n".join(changes), inline=False)
-
-        await self._send_log(before.guild, embed)
+        if view is not None:
+            view.message = message
 
 
-async def setup(bot: commands.Bot):
-    await bot.add_cog(Logger(bot))
+# ============================================================
+# EXTENSION SETUP
+# ============================================================
+
+async def setup(
+    bot: commands.Bot
+):
+
+    await bot.add_cog(
+        Logger(bot)
+    )
