@@ -107,7 +107,8 @@ class HistoryPaginationView(discord.ui.View):
         guild_id: int,
         days: int,
         cutoff: str,
-        total_count: int,
+        rows,
+        has_next: bool,
         *,
         timeout: float = 180
     ):
@@ -117,50 +118,83 @@ class HistoryPaginationView(discord.ui.View):
         self.guild_id = guild_id
         self.days = days
         self.cutoff = cutoff
-        self.total_count = total_count
         self.page_index = 0
-        self.page_count = max(
-            1,
-            (total_count + HISTORY_PAGE_SIZE - 1) // HISTORY_PAGE_SIZE
-        )
+        self.page_cursors: list[Optional[int]] = [None]
+        self.current_rows = rows[:HISTORY_PAGE_SIZE]
+        self.has_next = has_next
+        self.result_count: Optional[int] = None
         self.message: Optional[discord.Message] = None
+        self._interaction_lock = asyncio.Lock()
         self._update_buttons()
 
     def _update_buttons(self):
         self.previous_page.disabled = self.page_index <= 0
-        self.next_page.disabled = self.page_index >= self.page_count - 1
+        self.next_page.disabled = not self.has_next
 
-    async def _show_page(self, interaction: discord.Interaction, page_index: int):
-        self.page_index = max(0, min(page_index, self.page_count - 1))
-        offset = self.page_index * HISTORY_PAGE_SIZE
+    async def _show_page(
+        self,
+        interaction: discord.Interaction,
+        cursor: Optional[int],
+        page_index: int,
+        *,
+        update_cursor_stack: bool
+    ):
+        async with self._interaction_lock:
+            try:
+                rows = await self.cog._fetch_user_history_page(
+                    self.guild_id,
+                    self.user.id,
+                    self.cutoff,
+                    cursor
+                )
+            except Exception:
+                logger.exception("Failed to load a logger history page")
+                await interaction.response.send_message(
+                    "❌ Failed to load this history page.",
+                    ephemeral=True
+                )
+                return
 
-        try:
-            rows = await self.cog._fetch_user_history_page(
-                self.guild_id,
-                self.user.id,
-                self.cutoff,
-                offset
+            if not rows:
+                await interaction.response.send_message(
+                    "📭 No more logs were found on this page.",
+                    ephemeral=True
+                )
+                return
+
+            if update_cursor_stack:
+                self.page_cursors.append(cursor)
+            elif len(self.page_cursors) > 1:
+                self.page_cursors.pop()
+
+            self.page_index = page_index
+            self.current_rows = rows[:HISTORY_PAGE_SIZE]
+            self.has_next = len(rows) > HISTORY_PAGE_SIZE
+            self._update_buttons()
+            embed = self.cog._build_history_embed(
+                self.user,
+                self.days,
+                self.result_count,
+                self.page_index,
+                self.has_next,
+                self.current_rows
             )
-        except Exception:
-            logger.exception("Failed to load a logger history page")
-            await interaction.response.send_message(
-                "❌ Failed to load this history page.",
-                ephemeral=True
-            )
-            return
+            await interaction.response.edit_message(embed=embed, view=self)
 
-        embed = self.cog._build_history_embed(
-            self.user,
-            self.days,
-            self.total_count,
-            self.page_index,
-            rows
-        )
-        self._update_buttons()
-        await interaction.response.edit_message(
-            embed=embed,
-            view=self
-        )
+    async def set_result_count(self, total_count: int):
+        async with self._interaction_lock:
+            self.result_count = total_count
+            if self.message is None:
+                return
+            embed = self.cog._build_history_embed(
+                self.user,
+                self.days,
+                self.result_count,
+                self.page_index,
+                self.has_next,
+                self.current_rows
+            )
+            await self.message.edit(embed=embed, view=self)
 
     @discord.ui.button(
         label="Previous",
@@ -172,7 +206,15 @@ class HistoryPaginationView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
-        await self._show_page(interaction, self.page_index - 1)
+        if self.page_index <= 0:
+            await interaction.response.defer()
+            return
+        await self._show_page(
+            interaction,
+            self.page_cursors[-2],
+            self.page_index - 1,
+            update_cursor_stack=False
+        )
 
     @discord.ui.button(
         label="Next",
@@ -183,7 +225,15 @@ class HistoryPaginationView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button
     ):
-        await self._show_page(interaction, self.page_index + 1)
+        if not self.has_next or not self.current_rows:
+            await interaction.response.defer()
+            return
+        await self._show_page(
+            interaction,
+            self.current_rows[-1][5],
+            self.page_index + 1,
+            update_cursor_stack=True
+        )
 
     async def on_timeout(self):
         self.previous_page.disabled = True
@@ -213,6 +263,8 @@ class Logger(commands.Cog):
 
         self.db: Optional[aiosqlite.Connection] = None
         self.read_db: Optional[aiosqlite.Connection] = None
+        self.count_db: Optional[aiosqlite.Connection] = None
+        self._history_count_tasks: set[asyncio.Task] = set()
 
         self.message_cache = MessageCache()
 
@@ -224,6 +276,18 @@ class Logger(commands.Cog):
 
         # Audit entries already consumed by this logger.
         self._seen_audit_entries = OrderedDict()
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            return True
+        allowed = await Config.check_member_cog_permission(interaction.user, "logger")
+        if not allowed:
+            await interaction.response.send_message(
+                "❌ You do not have permission to use the **Logger** module on this server.",
+                ephemeral=True
+            )
+            return False
+        return True
 
     # ========================================================
     # DATABASE
@@ -294,6 +358,28 @@ class Logger(commands.Cog):
                 )
             """)
 
+            # These indexes support newest-first history pages. The time-based
+            # indexes above remain useful for counting records in a date range.
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS
+                idx_audit_guild_user_id
+                ON audit_history(
+                    guild_id,
+                    user_id,
+                    id DESC
+                )
+            """)
+
+            await self.db.execute("""
+                CREATE INDEX IF NOT EXISTS
+                idx_audit_guild_actor_id
+                ON audit_history(
+                    guild_id,
+                    actor_id,
+                    id DESC
+                )
+            """)
+
             await self.db.execute("""
                 CREATE INDEX IF NOT EXISTS
                 idx_audit_guild_action_time
@@ -331,6 +417,19 @@ class Logger(commands.Cog):
                 "PRAGMA query_only=ON"
             )
 
+            # Keep the potentially broad exact-count query from queueing ahead
+            # of interactive page reads on the same aiosqlite connection.
+            self.count_db = await aiosqlite.connect(
+                DB_PATH,
+                timeout=30
+            )
+            await self.count_db.execute(
+                "PRAGMA busy_timeout=30000"
+            )
+            await self.count_db.execute(
+                "PRAGMA query_only=ON"
+            )
+
             logger.info(
                 "Logger database initialized: %s",
                 DB_PATH
@@ -351,6 +450,15 @@ class Logger(commands.Cog):
         await self._db_ready.wait()
 
     async def cog_unload(self):
+
+        for task in tuple(self._history_count_tasks):
+            task.cancel()
+        if self._history_count_tasks:
+            await asyncio.gather(
+                *self._history_count_tasks,
+                return_exceptions=True
+            )
+        self._history_count_tasks.clear()
 
         if (
             self._db_task
@@ -373,6 +481,15 @@ class Logger(commands.Cog):
                     "Failed to close logger read database"
                 )
             self.read_db = None
+
+        if self.count_db:
+            try:
+                await self.count_db.close()
+            except Exception:
+                logger.exception(
+                    "Failed to close logger count database"
+                )
+            self.count_db = None
 
         if self.db:
 
@@ -2577,10 +2694,10 @@ class Logger(commands.Cog):
         cutoff: str
     ) -> int:
 
-        if self.read_db is None:
-            raise RuntimeError("Logger read database is unavailable")
+        if self.count_db is None:
+            raise RuntimeError("Logger count database is unavailable")
 
-        async with self.read_db.execute(
+        async with self.count_db.execute(
             """
             SELECT COUNT(*)
             FROM (
@@ -2619,22 +2736,15 @@ class Logger(commands.Cog):
         guild_id: int,
         user_id: int,
         cutoff: str,
-        offset: int
+        before_id: Optional[int] = None
     ):
 
         if self.read_db is None:
             raise RuntimeError("Logger read database is unavailable")
 
-        async with self.read_db.execute(
-            """
-            SELECT
-                action_type,
-                details,
-                created_at,
-                user_id,
-                actor_id,
-                id
-            FROM (
+        cursor_clause = " AND id < ?" if before_id is not None else ""
+        query = f"""
+            WITH target_rows AS (
                 SELECT
                     action_type,
                     details,
@@ -2646,9 +2756,11 @@ class Logger(commands.Cog):
                 WHERE guild_id = ?
                   AND user_id = ?
                   AND created_at >= ?
+                  {cursor_clause}
+                ORDER BY id DESC
+                LIMIT ?
 
-                UNION ALL
-
+            ), actor_rows AS (
                 SELECT
                     action_type,
                     details,
@@ -2661,36 +2773,51 @@ class Logger(commands.Cog):
                   AND actor_id = ?
                   AND created_at >= ?
                   AND (user_id IS NULL OR user_id != ?)
+                  {cursor_clause}
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            SELECT
+                action_type,
+                details,
+                created_at,
+                user_id,
+                actor_id,
+                id
+            FROM (
+                SELECT * FROM target_rows
+                UNION ALL
+                SELECT * FROM actor_rows
             )
             ORDER BY id DESC
-            LIMIT ? OFFSET ?
-            """,
-            (
-                guild_id,
-                user_id,
-                cutoff,
-                guild_id,
-                user_id,
-                cutoff,
-                user_id,
-                HISTORY_PAGE_SIZE,
-                offset
-            )
-        ) as cursor:
+            LIMIT ?
+        """
+        parameters = [guild_id, user_id, cutoff]
+        if before_id is not None:
+            parameters.append(before_id)
+        parameters.append(HISTORY_PAGE_SIZE + 1)
+
+        parameters.extend((guild_id, user_id, cutoff, user_id))
+        if before_id is not None:
+            parameters.append(before_id)
+        parameters.extend((HISTORY_PAGE_SIZE + 1, HISTORY_PAGE_SIZE + 1))
+
+        async with self.read_db.execute(query, parameters) as cursor:
             return await cursor.fetchall()
 
     @staticmethod
     def _build_history_embed(
         user: discord.Member,
         days: int,
-        total_count: int,
+        total_count: Optional[int],
         page_index: int,
+        has_next: bool,
         rows
     ):
-
-        page_count = max(
-            1,
-            (total_count + HISTORY_PAGE_SIZE - 1) // HISTORY_PAGE_SIZE
+        result_text = (
+            str(total_count)
+            if total_count is not None
+            else "Counting…"
         )
 
         embed = discord.Embed(
@@ -2698,13 +2825,16 @@ class Logger(commands.Cog):
             description=(
                 f"Member: {user.mention}\n"
                 f"Period: Last {days} day(s)\n"
-                f"Results: {total_count}"
+                f"Results: {result_text}"
             ),
             color=discord.Color.blue(),
             timestamp=datetime.now(timezone.utc)
         )
         embed.set_thumbnail(url=user.display_avatar.url)
-        embed.set_footer(text=f"Page {page_index + 1} of {page_count}")
+        footer = f"Page {page_index + 1}"
+        if has_next:
+            footer += " • More results"
+        embed.set_footer(text=footer)
 
         for (
             action_type,
@@ -2769,12 +2899,12 @@ class Logger(commands.Cog):
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         try:
-            total_count = await self._count_user_history(
+            rows = await self._fetch_user_history_page(
                 guild_id,
                 user.id,
                 cutoff
             )
-            if total_count == 0:
+            if not rows:
                 await interaction.followup.send(
                     (
                         f"📭 No logs found for {user.mention} in the last "
@@ -2784,13 +2914,6 @@ class Logger(commands.Cog):
                 )
                 return
 
-            rows = await self._fetch_user_history_page(
-                guild_id,
-                user.id,
-                cutoff,
-                0
-            )
-
         except Exception:
             logger.exception("Failed to query member logger history")
             await interaction.followup.send(
@@ -2799,23 +2922,26 @@ class Logger(commands.Cog):
             )
             return
 
+        has_next = len(rows) > HISTORY_PAGE_SIZE
         view = None
-        if total_count > HISTORY_PAGE_SIZE:
+        if has_next:
             view = HistoryPaginationView(
                 self,
                 user,
                 guild_id,
                 days,
                 cutoff,
-                total_count
+                rows,
+                has_next
             )
 
         embed = self._build_history_embed(
             user,
             days,
-            total_count,
+            None,
             0,
-            rows
+            has_next,
+            rows[:HISTORY_PAGE_SIZE]
         )
         message = await interaction.followup.send(
             embed=embed,
@@ -2826,6 +2952,55 @@ class Logger(commands.Cog):
 
         if view is not None:
             view.message = message
+
+        task = asyncio.create_task(
+            self._refresh_history_result_count(
+                guild_id,
+                user,
+                days,
+                cutoff,
+                message,
+                view,
+                rows[:HISTORY_PAGE_SIZE],
+                has_next
+            )
+        )
+        self._history_count_tasks.add(task)
+        task.add_done_callback(self._history_count_tasks.discard)
+
+    async def _refresh_history_result_count(
+        self,
+        guild_id: int,
+        user: discord.Member,
+        days: int,
+        cutoff: str,
+        message: discord.Message,
+        view: Optional[HistoryPaginationView],
+        rows,
+        has_next: bool
+    ):
+        try:
+            total_count = await self._count_user_history(
+                guild_id,
+                user.id,
+                cutoff
+            )
+            if view is not None:
+                await view.set_result_count(total_count)
+            else:
+                embed = self._build_history_embed(
+                    user,
+                    days,
+                    total_count,
+                    0,
+                    has_next,
+                    rows
+                )
+                await message.edit(embed=embed)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Failed to update logger history result count")
 
 
 # ============================================================

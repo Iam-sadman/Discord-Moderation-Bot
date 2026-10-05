@@ -1,0 +1,52 @@
+# Environment & Secrets
+.env
+*.env
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Database & Runtime States
+*.db
+*.db-shm
+*.db-wal
+data/*.db
+data/*.db-shm
+data/*.db-wal
+*.xlsx
+data/*.xlsx
+arc_live_state.json
+data/arc_live_state.json
+*.log
+data/*.log
+
+
+# Private Scraper & Reverse Engineering (Confidential - DO NOT PUBLISH)
+standalone_scraper.py
+services/
+services/labeler_scraper.py
+utils/arc_test_fetch.py
+cogs/labeler_tracker.py
+docs/arc_tracker/
+scratch/
+
+# Archives & Temporary Files
+temp_music/
+*.bak
+*.zip
+update.zip
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

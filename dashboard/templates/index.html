@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+
+{% block title %}Server Hub — Discord Bot Dashboard{% endblock %}
+
+{% block extra_head %}
+<style>
+    .welcome-header {
+        margin-bottom: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .welcome-title h2 {
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .welcome-title p {
+        color: var(--text-muted);
+        font-size: 14px;
+        margin-top: 4px;
+    }
+
+    .stats-overview {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-bottom: 36px;
+    }
+
+    .stat-card {
+        background: var(--bg-card);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: var(--transition);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--border-hover);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: var(--radius-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        flex-shrink: 0;
+    }
+
+    .stat-icon.servers { background: rgba(99, 102, 241, 0.15); color: var(--accent-primary); }
+    .stat-icon.members { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); }
+    .stat-icon.security { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
+    .stat-icon.latency { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
+
+    .stat-info h3 {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text-main);
+    }
+
+    .stat-info p {
+        font-size: 12px;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+
+    .section-header h3 {
+        font-size: 18px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .guild-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 20px;
+    }
+
+    .guild-card {
+        background: var(--bg-card);
+        backdrop-filter: blur(12px);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        transition: var(--transition);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .guild-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--accent-primary);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.2);
+    }
+
+    .guild-card-top {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+
+    .guild-avatar {
+        width: 60px;
+        height: 60px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, var(--accent-primary), var(--accent-cyan));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: 700;
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        flex-shrink: 0;
+    }
+
+    .guild-avatar img {
+        width: 100%;
+        height: 100%;
+        border-radius: 18px;
+        object-fit: cover;
+    }
+
+    .guild-meta h4 {
+        font-size: 17px;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 4px;
+    }
+
+    .guild-meta p {
+        font-size: 13px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .guild-card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .guild-id-pill {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: var(--text-dim);
+    }
+
+    .btn-enter-guild {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--accent-cyan);
+        transition: var(--transition);
+    }
+
+    .guild-card:hover .btn-enter-guild {
+        color: #ffffff;
+        transform: translateX(4px);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="welcome-header">
+    <div class="welcome-title">
+        <h2>Servers Management Hub</h2>
+        <p>Select an active Discord guild to configure permissions, monitor audit history, and control bot cogs.</p>
+    </div>
+</div>
+
+<!-- Stats Bar -->
+<div class="stats-overview" id="stats-overview-grid">
+    <div class="stat-card">
+        <div class="stat-icon servers">🌐</div>
+        <div class="stat-info">
+            <h3>{{ guilds|length }}</h3>
+            <p>Active Servers</p>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon members">👥</div>
+        <div class="stat-info">
+            <h3>{{ total_members }}</h3>
+            <p>Total Reach</p>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon security">🛡️</div>
+        <div class="stat-info">
+            <h3 style="color: #34d399;">Active</h3>
+            <p>Security Audit</p>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon latency">⚡</div>
+        <div class="stat-info">
+            <h3>{{ latency }} ms</h3>
+            <p>Gateway Latency</p>
+        </div>
+    </div>
+</div>
+
+<div class="section-header">
+    <h3>
+        <span>📁 Connected Servers</span>
+        <span style="font-size: 12px; background: rgba(99, 102, 241, 0.15); color: #818cf8; padding: 2px 10px; border-radius: 999px;">
+            {{ guilds|length }} Available
+        </span>
+    </h3>
+</div>
+
+<div class="guild-grid" id="guild-cards-grid">
+    {% for g in guilds %}
+    <a href="/guild/{{ g.id }}" class="guild-card" id="guild-card-{{ g.id }}">
+        <div class="guild-card-top">
+            <div class="guild-avatar">
+                {% if g.icon %}
+                <img src="{{ g.icon }}" alt="{{ g.name }}">
+                {% else %}
+                {{ g.name[0]|upper }}
+                {% endif %}
+            </div>
+            <div class="guild-meta">
+                <h4>{{ g.name }}</h4>
+                <p>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                    </svg>
+                    {{ g.member_count }} Members
+                </p>
+            </div>
+        </div>
+
+        <div class="guild-card-footer">
+            <span class="guild-id-pill">ID: {{ g.id }}</span>
+            <span class="btn-enter-guild">
+                Manage Hub →
+            </span>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}
