@@ -31,21 +31,25 @@ from dashboard.server_logs import fetch_server_audit_logs, get_available_action_
 
 
 COLOR_TO_ANSI = {
-    'red': '31', 'green': '32', 'yellow': '33', 'gold': '33', 'orange': '33',
-    'blue': '34', 'blurple': '34', 'pink': '35', 'magenta': '35', 'fuchsia': '35',
-    'cyan': '36', 'aqua': '36', 'white': '37', 'gray': '30;1', 'grey': '30;1',
-    'slate': '30;1', 'dark': '30'
+    'gray': '30', 'grey': '30', 'slate': '30', 'dark': '30',
+    'red': '31', 'crimson': '31',
+    'green': '32', 'emerald': '32', 'lime': '32',
+    'yellow': '33', 'gold': '33', 'orange': '33',
+    'blue': '34', 'blurple': '34', 'indigo': '34',
+    'pink': '35', 'magenta': '35', 'fuchsia': '35', 'purple': '35', 'violet': '35',
+    'cyan': '36', 'aqua': '36', 'teal': '36',
+    'white': '37'
 }
 
-HEX_TO_ANSI = {
-    '#ed4245': '31', '#ef4444': '31', '#f87171': '31',
-    '#57f287': '32', '#22c55e': '32', '#10b981': '32',
-    '#fee75c': '33', '#eab308': '33', '#f59e0b': '33', '#f97316': '33',
-    '#5865f2': '34', '#3b82f6': '34', '#6366f1': '34',
-    '#eb459e': '35', '#ec4899': '35', '#d946ef': '35',
-    '#00e5ff': '36', '#06b6d4': '36', '#14b8a6': '36',
-    '#ffffff': '37', '#f8fafc': '37',
-    '#949ba4': '30;1', '#64748b': '30;1', '#475569': '30;1'
+HEX_PALETTES = {
+    '30': (120, 125, 135),  # Gray
+    '31': (237, 66, 69),    # Red
+    '32': (87, 242, 135),   # Green
+    '33': (254, 231, 92),   # Yellow/Orange
+    '34': (88, 101, 242),   # Blurple/Blue
+    '35': (235, 69, 158),   # Pink/Purple
+    '36': (0, 229, 255),    # Cyan
+    '37': (255, 255, 255),  # White
 }
 
 
@@ -56,28 +60,25 @@ def resolve_ansi_code(color_str: str) -> str:
     c = color_str.strip().lower()
     if c in COLOR_TO_ANSI:
         return COLOR_TO_ANSI[c]
-    if c in HEX_TO_ANSI:
-        return HEX_TO_ANSI[c]
     if c.startswith('#') and len(c) == 7:
         try:
             r = int(c[1:3], 16)
             g = int(c[3:5], 16)
             b = int(c[5:7], 16)
-            if r > 180 and g < 100 and b < 100:
-                return '31'  # Red
-            if g > 180 and r < 120:
-                return '32'  # Green
-            if r > 180 and g > 150 and b < 100:
-                return '33'  # Yellow
-            if b > 180 and r < 120:
-                return '34'  # Blue
-            if r > 180 and b > 150:
-                return '35'  # Pink / Magenta
-            if g > 180 and b > 180:
-                return '36'  # Cyan
-            if r > 200 and g > 200 and b > 200:
-                return '37'  # White
-            return '30;1'
+            # Detect purple / violet hue (high B, medium/high R, low G)
+            if b > 130 and r > 90 and g < 140:
+                return '35'
+            # Detect orange hue (high R, medium G, low B)
+            if r > 200 and 70 < g < 180 and b < 80:
+                return '33'
+            best_code = '37'
+            best_dist = float('inf')
+            for code, (pr, pg, pb) in HEX_PALETTES.items():
+                dist = ((r - pr)**2 + (g - pg)**2 + (b - pb)**2)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_code = code
+            return best_code
         except Exception:
             pass
     return '37'
@@ -86,34 +87,124 @@ def resolve_ansi_code(color_str: str) -> str:
 def convert_color_tags_to_discord(text: str) -> str:
     """
     Converts human-friendly [color=X]selected text[/color] tags
-    into Discord's native ANSI color-highlighted codeblocks.
+    into Discord's native ANSI color-highlighted codeblocks (\\x1b[1;31m etc).
+    Properly handles bold/underline formatting, multiline blocks, and inline tags.
     """
-    if not text or '[color=' not in text.lower():
+    if not text:
         return text
 
-    ansi_pattern = re.compile(r'\[color=([#a-zA-Z0-9]+)\]([\s\S]*?)\[/color\]', re.IGNORECASE)
+    # Strip custom layout wrapper tags for Discord if present
+    text = re.sub(r'\[justify\]([\s\S]*?)\[/justify\]', r'\1', text, flags=re.IGNORECASE)
+    text = re.sub(r'\[center\]([\s\S]*?)\[/center\]', r'\1', text, flags=re.IGNORECASE)
+
+    if '[color=' not in text.lower():
+        return text
+
+    # Normalize markdown header tags with color tags: e.g. ### [color=red]Text[/color] -> [color=red]**Text**[/color]
+    text = re.sub(
+        r'^(#{1,3})\s+\[color=([#a-zA-Z0-9]+)\]((?:(?!\[/?color[=\]])[\s\S])*?)\[/color\]$',
+        r'[color=\2]**\3**[/color]',
+        text,
+        flags=re.IGNORECASE | re.MULTILINE
+    )
+
+    # Pre-normalize outer markdown: **[color=X]text[/color]** -> [color=X]**text**[/color]
+    text = re.sub(
+        r'\*\*\[color=([#a-zA-Z0-9]+)\]((?:(?!\[/?color[=\]])[\s\S])*?)\[/color\]\*\*',
+        r'[color=\1]**\2**[/color]',
+        text,
+        flags=re.IGNORECASE
+    )
+    text = re.sub(
+        r'__\[color=([#a-zA-Z0-9]+)\]((?:(?!\[/?color[=\]])[\s\S])*?)\[/color\]__',
+        r'[color=\1]__\2__[/color]',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    tag_regex = re.compile(
+        r'\[color=([#a-zA-Z0-9]+)\]((?:(?!\[/?color[=\]])[\s\S])*?)\[/color\]',
+        re.IGNORECASE
+    )
+
+    # 1. Handle multiline [color=X]...[/color] blocks where inner text contains newlines
+    def multiline_handler(m):
+        c_val = m.group(1)
+        inner = m.group(2)
+        if '\n' not in inner:
+            return m.group(0)  # Keep for line-by-line processor
+        code = resolve_ansi_code(c_val)
+        res_lines = []
+        for l in inner.split('\n'):
+            ls = l.strip('\r')
+            if not ls.strip():
+                continue
+            is_bold = ('**' in ls)
+            is_under = ('__' in ls)
+            clean = ls.replace('**', '').replace('__', '')
+            clean = re.sub(r'^#{1,3}\s+', '', clean).strip()
+            style = '1;4;' if (is_bold and is_under) else ('1;' if is_bold else '0;')
+            res_lines.append(f"\x1b[{style}{code}m{clean}\x1b[0m")
+        return "```ansi\n" + "\n".join(res_lines) + "\n```"
+
+    text = tag_regex.sub(multiline_handler, text)
+
+    # 2. Handle single-line [color=X]...[/color] tags
+    single_regex = re.compile(
+        r'\[color=([#a-zA-Z0-9]+)\](.*?)\[/color\]',
+        re.IGNORECASE
+    )
     lines = text.split('\n')
     output_lines = []
     ansi_buffer = []
 
-    def flush_ansi():
+    def flush():
         if ansi_buffer:
             output_lines.append("```ansi\n" + "\n".join(ansi_buffer) + "\n```")
             ansi_buffer.clear()
 
+    in_cb = False
     for line in lines:
-        if ansi_pattern.search(line):
-            def replacer(m):
-                code = resolve_ansi_code(m.group(1))
-                return f"\x1b[{code}m{m.group(2)}\x1b[0m"
-            converted_line = ansi_pattern.sub(replacer, line)
-            ansi_buffer.append(converted_line)
+        if line.startswith("```"):
+            in_cb = not in_cb
+            flush()
+            output_lines.append(line)
+            continue
+        if in_cb:
+            output_lines.append(line)
+            continue
+
+        if single_regex.search(line):
+            tokens = []
+            last = 0
+            for m in single_regex.finditer(line):
+                s, e = m.span()
+                if s > last:
+                    tokens.append(f"\x1b[0;37m{line[last:s]}\x1b[0m")
+                c_val = m.group(1)
+                c_text = m.group(2)
+                code = resolve_ansi_code(c_val)
+                is_bold = ('**' in c_text)
+                is_under = ('__' in c_text)
+                clean = re.sub(r'^#{1,3}\s+', '', c_text.replace('**', '').replace('__', '')).strip()
+                if is_bold and is_under:
+                    st = '1;4;'
+                elif is_under:
+                    st = '4;'
+                else:
+                    st = '1;'  # Bold color ensures it pops brightly in Discord
+                tokens.append(f"\x1b[{st}{code}m{clean}\x1b[0m")
+                last = e
+            if last < len(line):
+                tokens.append(f"\x1b[0;37m{line[last:]}\x1b[0m")
+            ansi_buffer.append("".join(tokens))
         else:
-            flush_ansi()
+            flush()
             output_lines.append(line)
 
-    flush_ansi()
+    flush()
     return "\n".join(output_lines)
+
 
 
 def resolve_author_profile(guild, user_id: str = "", access_key: str = "", name: str = "", custom_name: str = "") -> tuple:
@@ -738,9 +829,8 @@ def create_dashboard(bot):
         if not guild:
             return jsonify({"error": "Guild not found or bot not in guild"}), 404
 
-        # Parse form data (supporting multipart/form-data file uploads and JSON)
-        is_multipart = request.content_type and "multipart/form-data" in request.content_type
-        if is_multipart:
+        # Parse form data (supporting multipart/form-data, urlencoded file uploads, and JSON)
+        if not request.is_json:
             form = await request.form
             req_files = await request.files
             channel_id_raw = form.get("channel_id")
@@ -763,6 +853,7 @@ def create_dashboard(bot):
             footer_color = (form.get("footer_color") or "").strip()
             show_author = form.get("show_author", "false").lower() in ("true", "1", "yes")
             author_name_field = (form.get("author_name") or "").strip()
+            justify_text = form.get("justify_text", "false").lower() in ("true", "1", "yes")
         else:
             data = await request.get_json() or {}
             channel_id_raw = data.get("channel_id")
@@ -781,6 +872,7 @@ def create_dashboard(bot):
             footer_color = (data.get("footer_color") or "").strip()
             show_author = str(data.get("show_author", "false")).lower() in ("true", "1", "yes")
             author_name_field = (data.get("author_name") or "").strip()
+            justify_text = str(data.get("justify_text", "false")).lower() in ("true", "1", "yes")
 
         if not channel_id_raw:
             return jsonify({"error": "Target destination channel is required"}), 400
@@ -858,13 +950,28 @@ def create_dashboard(bot):
         # Convert custom inline color tags into Discord ANSI syntax blocks
         discord_content = convert_color_tags_to_discord(content)
 
+        # Check if heading has a custom color or if title contains inline color tags
+        is_custom_heading = bool(
+            (heading_color and heading_color.lower() not in ("#ffffff", "#fff", "white", "")) or
+            ("[color=" in title.lower())
+        )
+
         # If heading color was customized and embed color was default, match embed color
         if color_hex.upper() == "#5865F2" and heading_color and heading_color.startswith("#") and heading_color.upper() != "#FFFFFF":
             color_hex = heading_color
 
+        # Build colored title block if custom heading color is selected or title has color tags
+        colored_title_ansi = None
+        if title:
+            if "[color=" in title.lower():
+                colored_title_ansi = convert_color_tags_to_discord(title)
+            elif is_custom_heading:
+                clean_title = re.sub(r"^#{1,3}\s+", "", title).strip().replace("**", "").replace("__", "")
+                h_code = resolve_ansi_code(heading_color)
+                colored_title_ansi = f"```ansi\n\x1b[1;{h_code}m{clean_title}\x1b[0m\n```"
+
         # Build AllowedMentions — Discord ONLY sends push notifications to roles
         # if the role object is listed explicitly in allowed_mentions.roles.
-        # Using roles=True alone may suppress notifications on some servers.
         if mention_type == "everyone":
             allowed_mentions = discord.AllowedMentions(everyone=True, roles=False, users=False)
         elif mention_type == "here":
@@ -874,7 +981,6 @@ def create_dashboard(bot):
             if role_obj:
                 allowed_mentions = discord.AllowedMentions(everyone=False, roles=[role_obj], users=False)
             else:
-                # Fallback: allow all roles if specific role not cached
                 allowed_mentions = discord.AllowedMentions(everyone=False, roles=True, users=False)
         else:
             allowed_mentions = discord.AllowedMentions.none()
@@ -887,9 +993,30 @@ def create_dashboard(bot):
                 except Exception:
                     c_int = 0x5865F2
 
+                # If title is custom colored, Discord embed title cannot render colors (Discord renders title strictly white).
+                # To display the vibrant title color, render it as an ANSI block at the top of description.
+                embed_desc_parts = []
+                if colored_title_ansi:
+                    embed_desc_parts.append(colored_title_ansi)
+                    if justify_text:
+                        embed_desc_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    embed_title = None
+                else:
+                    embed_title = title if title else None
+                    if justify_text and title and discord_content:
+                        embed_desc_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+                if discord_content:
+                    embed_desc_parts.append(discord_content)
+
+                if justify_text and discord_content and "━━━━━━━━━━━━━━━━━━━━━━━━━━━━" not in discord_content:
+                    embed_desc_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+                final_description = "\n".join(embed_desc_parts) if embed_desc_parts else None
+
                 embed = discord.Embed(
-                    title=title if title else None,
-                    description=discord_content if discord_content else None,
+                    title=embed_title,
+                    description=final_description,
                     color=discord.Color(c_int)
                 )
                 if thumb_filename:
@@ -924,8 +1051,21 @@ def create_dashboard(bot):
                 if mention_str:
                     full_body += f"{mention_str}\n\n"
                 if title:
-                    full_body += f"**{title}**\n\n"
-                full_body += discord_content
+                    if colored_title_ansi:
+                        full_body += f"{colored_title_ansi}\n"
+                        if justify_text:
+                            full_body += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                    else:
+                        full_body += f"**{title}**\n\n"
+                        if justify_text and discord_content:
+                            full_body += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+
+                if discord_content:
+                    full_body += discord_content
+
+                if justify_text and discord_content and "━━━━━━━━━━━━━━━━━━━━━━━━━━━━" not in discord_content:
+                    full_body += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
                 # Author attribution for plain text (appended as bold signature)
                 if show_author:
                     try:

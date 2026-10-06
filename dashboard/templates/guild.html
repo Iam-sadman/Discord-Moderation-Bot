@@ -526,6 +526,48 @@
         width: 100%;
     }
 
+    /* Announcement Text Justification & Formatting */
+    .text-justified {
+        text-align: justify !important;
+        text-justify: inter-word !important;
+        line-height: 1.65 !important;
+        letter-spacing: 0.01em;
+        word-break: break-word;
+        white-space: normal !important;
+    }
+
+    .text-centered {
+        text-align: center !important;
+        line-height: 1.65 !important;
+        white-space: normal !important;
+    }
+
+    .discord-divider-line {
+        display: block;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(99,102,241,0.05), rgba(99,102,241,0.6) 50%, rgba(99,102,241,0.05));
+        margin: 10px 0;
+        border: none;
+    }
+
+    .justify-toggle-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        user-select: none;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: rgba(99, 102, 241, 0.12);
+        border: 1px solid rgba(99, 102, 241, 0.25);
+        transition: all 0.2s;
+    }
+
+    .justify-toggle-label:hover {
+        background: rgba(99, 102, 241, 0.2);
+        border-color: rgba(99, 102, 241, 0.45);
+    }
+
     /* Discord Chat Preview Mock */
     .discord-chat-container {
         background: #313338;
@@ -1205,9 +1247,16 @@
                 <!-- PANEL 2: BODY (CONTENT) CUSTOMIZER            -->
                 <!-- ============================================== -->
                 <div class="composer-section-card">
-                    <div class="composer-section-header">
+                    <div class="composer-section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                         <span class="composer-section-title">✍️ Body (Content)</span>
-                        <span class="composer-section-subtitle" id="ann-char-count">0 / 4000 chars</span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <label class="justify-toggle-label" title="Aligns announcement text evenly across both left and right margins for a clean, professional look">
+                                <input type="checkbox" id="ann-justify-toggle" onchange="updateAnnouncementPreview()" checked
+                                       style="width: 13px; height: 13px; accent-color: var(--accent-primary); cursor: pointer;">
+                                <span style="font-size: 11px; font-weight: 700; color: #a5b4fc;">📐 Justify Text</span>
+                            </label>
+                            <span class="composer-section-subtitle" id="ann-char-count">0 / 4000 chars</span>
+                        </div>
                     </div>
 
                     <!-- General Discord Markdown Toolbar -->
@@ -1224,6 +1273,9 @@
                         <button type="button" class="toolbar-btn" onclick="insertMarkdown('# ', '')" title="Header 1 (# title)">H1</button>
                         <button type="button" class="toolbar-btn" onclick="insertMarkdown('## ', '')" title="Header 2 (## title)">H2</button>
                         <button type="button" class="toolbar-btn" onclick="insertMarkdown('### ', '')" title="Header 3 (### title)">H3</button>
+                        <button type="button" class="toolbar-btn" onclick="applyJustifyText()" title="Justify selected text ([justify]text[/justify])">📐 Justify</button>
+                        <button type="button" class="toolbar-btn" onclick="insertMarkdown('[center]', '[/center]')" title="Center selected text ([center]text[/center])">⚖️ Center</button>
+                        <button type="button" class="toolbar-btn" onclick="insertDivider()" title="Insert Discord Divider Line (━━━━━━━━━━━━━━━━━━━━━━━━━━━━)">➖ Divider</button>
                         <button type="button" class="toolbar-btn" onclick="insertMarkdown('- ', '')" title="Bullet List (- item)">• List</button>
                         <button type="button" class="toolbar-btn" onclick="insertMarkdown('1. ', '')" title="Numbered List (1. item)">1. List</button>
                         <button type="button" class="toolbar-btn" onclick="insertMarkdown('-# ', '')" title="Subtext / Small Text (-# text)">-# Small</button>
@@ -1238,9 +1290,14 @@
                                 🎨 Selected Text Colorizer
                                 <span style="font-size: 10px; font-weight: normal; color: var(--text-dim);">(Highlight any text in body, then click a color below)</span>
                             </span>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="removeSelectedTextColor()" style="font-size: 10px; padding: 2px 7px;">
-                                ✕ Clear Color
-                            </button>
+                            <div style="display: inline-flex; align-items: center; gap: 6px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="colorAllBodyText()" style="font-size: 10px; padding: 2px 7px;" title="Select all text in body to apply color">
+                                    🎨 Color All Text
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="removeSelectedTextColor()" style="font-size: 10px; padding: 2px 7px;">
+                                    ✕ Clear Color
+                                </button>
+                            </div>
                         </div>
                         <div class="color-swatches-row" style="margin-top: 0; flex-wrap: wrap; gap: 6px;">
                             <button type="button" class="color-badge-btn" style="--c:#ed4245;" onclick="applySelectedTextColor('red')" title="Red text">
@@ -2288,6 +2345,11 @@
         if (!rawText) return '';
         let text = escapeHtml(rawText);
 
+        // 0. Parse justification, alignment & decorative divider lines
+        text = text.replace(/\[justify\]([\s\S]*?)\[\/justify\]/gi, '<div class="text-justified">$1</div>');
+        text = text.replace(/\[center\]([\s\S]*?)\[\/center\]/gi, '<div class="text-centered">$1</div>');
+        text = text.replace(/^(?:━|─|-|=){5,}$/gm, '<div class="discord-divider-line"></div>');
+
         // 1. Parse custom inline [color=X]content[/color] tags
         text = text.replace(/\[color=([#a-zA-Z0-9]+)\]([\s\S]*?)\[\/color\]/gi, (match, colorVal, inner) => {
             const low = colorVal.toLowerCase();
@@ -2570,6 +2632,50 @@
         textarea.value = val.substring(0, start) + cleaned + val.substring(end);
         textarea.focus();
         updateAnnouncementPreview();
+    }
+
+    function applyJustifyText() {
+        const textarea = document.getElementById('ann-content');
+        if (!textarea) return;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        if (start !== end) {
+            const selected = textarea.value.substring(start, end);
+            const replacement = `[justify]${selected}[/justify]`;
+            textarea.value = textarea.value.substring(0, start) + replacement + textarea.value.substring(end);
+            textarea.focus();
+            textarea.setSelectionRange(start + replacement.length, start + replacement.length);
+        } else {
+            const toggle = document.getElementById('ann-justify-toggle');
+            if (toggle) {
+                toggle.checked = !toggle.checked;
+                showToast(toggle.checked ? '📐 Justified text alignment enabled!' : 'Text alignment reset to default.', 'info');
+            }
+        }
+        updateAnnouncementPreview();
+    }
+
+    function insertDivider() {
+        const textarea = document.getElementById('ann-content');
+        if (!textarea) return;
+        const divider = "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        textarea.value = textarea.value.substring(0, start) + divider + textarea.value.substring(end);
+        textarea.focus();
+        textarea.setSelectionRange(start + divider.length, start + divider.length);
+        updateAnnouncementPreview();
+    }
+
+    function colorAllBodyText() {
+        const textarea = document.getElementById('ann-content');
+        if (!textarea || !textarea.value.trim()) {
+            showToast('Write some announcement body text first.', 'info');
+            return;
+        }
+        textarea.focus();
+        textarea.select();
+        showToast('All text selected! Now click any color button above to colorize.', 'info');
     }
 
     // ──── Panel 3: Footer Toolbar & Color Actions ────
@@ -2918,10 +3024,12 @@
         const plainTextElem = document.getElementById('preview-plain-text');
         const plainImageElem = document.getElementById('preview-plain-image');
         const embedCardElem = document.getElementById('preview-embed-card');
+        const isJustified = document.getElementById('ann-justify-toggle')?.checked ?? false;
 
         if (formatType === 'plain') {
             if (plainTextElem) {
                 plainTextElem.style.display = 'block';
+                plainTextElem.classList.toggle('text-justified', isJustified);
                 let plainHtml = '';
                 if (title) {
                     plainHtml += `<div style="font-weight:700; font-size:16px; margin-bottom:6px; color:${headingColor};">${renderDiscordMarkdown(title)}</div>`;
@@ -2983,6 +3091,7 @@
 
                 const descElem = document.getElementById('preview-embed-desc');
                 if (descElem) {
+                    descElem.classList.toggle('text-justified', isJustified);
                     descElem.innerHTML = content ? renderDiscordMarkdown(content) : '<span style="color:var(--text-dim); font-style:italic;">Your announcement content will be rendered here with live Discord formatting.</span>';
                 }
 
@@ -3095,6 +3204,8 @@
         if (footerColor) formData.append('footer_color', footerColor);
         formData.append('show_author', showAuthor ? 'true' : 'false');
         if (authorName) formData.append('author_name', authorName);
+        const isJustified = document.getElementById('ann-justify-toggle')?.checked || false;
+        formData.append('justify_text', isJustified ? 'true' : 'false');
         formData.append('buttons', JSON.stringify(announcementButtons));
 
         if (uploadedBannerFile) {
