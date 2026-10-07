@@ -38,6 +38,28 @@ class Config:
                     PRIMARY KEY (guild_id, key)
                 )
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS guild_music_playlists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    playlist_name TEXT NOT NULL,
+                    created_by INTEGER NOT NULL,
+                    created_by_name TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(guild_id, playlist_name)
+                )
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS guild_music_playlist_tracks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    playlist_id INTEGER NOT NULL,
+                    track_title TEXT NOT NULL,
+                    track_url TEXT NOT NULL,
+                    source_type TEXT DEFAULT 'url',
+                    position INTEGER DEFAULT 0,
+                    FOREIGN KEY(playlist_id) REFERENCES guild_music_playlists(id) ON DELETE CASCADE
+                )
+            """)
             await db.commit()
 
     @classmethod
@@ -265,4 +287,186 @@ class Config:
             member_roles = getattr(member, "roles", [])
             return any(getattr(r, "id", None) in allowed for r in member_roles)
         return False
+
+    # =========================================================================
+    # Persistent Guild Music Playlists & Dedicated Channel Settings
+    # =========================================================================
+
+    @classmethod
+    async def create_playlist(cls, guild_id: int, name: str, user_id: int, user_name: str) -> bool:
+        """Creates a named playlist for a guild. Returns False if already exists."""
+        clean_name = name.strip()[:64]
+        async with aiosqlite.connect(cls.DB_PATH) as db:
+            try:
+                await db.execute(
+                    """INSERT INTO guild_music_playlists (guild_id, playlist_name, created_by, created_by_name)
+                       VALUES (?, ?, ?, ?)""",
+                    (guild_id, clean_name, user_id, user_name)
+                )
+                await db.commit()
+                return True
+            except aiosqlite.IntegrityError:
+                return False
+
+    @classmethod
+    async def delete_playlist(cls, guild_id: int, name: str) -> bool:
+        """Deletes a named playlist and all its tracks."""
+        clean_name = name.strip()
+        async with aiosqlite.connect(cls.DB_PATH) as db:
+            cursor = await db.execute(
+                "DELETE FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)",
+                (guild_id, clean_name)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    @classmethod
+    async def add_track_to_playlist(cls, guild_id: int, name: str, title: str, url: str, source_type: str = "url") -> bool:
+        """Adds a track to a playlist."""
+        clean_name = name.strip()
+        async with aiosqlite.connect(cls.DB_PATH) as db:
+            cursor = await db.execute(
+                "SELECT id FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)",
+                (guild_id, clean_name)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return False
+            playlist_id = row[0]
+
+            pos_cur = await db.execute(
+                "SELECT COALESCE(MAX(position), 0) + 1 FROM guild_music_playlist_tracks WHERE playlist_id = ?",
+                (playlist_id,)
+            )
+            pos_row = await pos_cur.fetchone()
+            position = pos_row[0] if pos_row else 1
+
+            await db.execute(
+                """INSERT INTO guild_music_playlist_tracks (playlist_id, track_title, track_url, source_type, position)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (playlist_id, title[:200], url, source_type, position)
+            )
+            await db.commit()
+            return True
+
+    @classmethod
+    async def remove_track_from_playlist(cls, guild_id: int, name: str, position: int) -> Optional[str]:
+        """Removes a track by 1-based index. Returns the track title if removed, None otherwise."""
+        clean_name = name.strip()
+        async with aiosqlite.connect(cls.DB_PATH) as db:
+            cursor = await db.execute(
+                "SELECT id FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)",
+                (guild_id, clean_name)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            playlist_id = row[0]
+
+            tracks_cur = await db.execute(
+                "SELECT id, track_title FROM guild_music_playlist_tracks WHERE playlist_id = ? ORDER BY position ASC, id ASC",
+                (playlist_id,)
+            )
+            tracks = await tracks_cur.fetchall()
+            if position < 1 or position > len(tracks):
+                return None
+            target_id, target_title = tracks[position - 1]
+            await db.execute("DELETE FROM guild_music_playlist_tracks WHERE id = ?", (target_id,))
+            await db.commit()
+            return target_title
+
+    @classmethod
+    async def get_playlist(cls, guild_id: int, name: str) -> Optional[Dict[str, Any]]:
+        """Returns playlist metadata and track list."""
+        clean_name = name.strip()
+        async with aiosqlite.connect(cls.DB_PATH) as db:
+            cursor = await db.execute(
+                """SELECT id, playlist_name, created_by, created_by_name, created_at
+                   FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)""",
+                (guild_id, clean_name)
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return None
+            p_id, p_name, user_id, user_name, created_at = row
+
+            tracks_cur = await db.execute(
+                """SELECT id, track_title, track_url, source_type, position
+                   FROM guild_music_playlist_tracks WHERE playlist_id = ? ORDER BY position ASC, id ASC""",
+                (p_id,)
+            )
+            tracks_raw = await tracks_cur.fetchall()
+            tracks = [
+                {
+                    "id": t[0],
+                    "title": t[1],
+                    "url": t[2],
+                    "source_type": t[3],
+                    "position": idx + 1
+                }
+                for idx, t in enumerate(tracks_raw)
+            ]
+            return {
+                "id": p_id,
+                "name": p_name,
+                "created_by": user_id,
+                "created_by_name": user_name,
+                "created_at": created_at,
+                "tracks": tracks
+            }
+
+    @classmethod
+    async def list_playlists(cls, guild_id: int) -> List[Dict[str, Any]]:
+        """Lists all playlists in a guild with track counts."""
+        async with aiosqlite.connect(cls.DB_PATH) as db:
+            cursor = await db.execute(
+                """SELECT p.id, p.playlist_name, p.created_by, p.created_by_name, p.created_at,
+                          COUNT(t.id) as track_count
+                   FROM guild_music_playlists p
+                   LEFT JOIN guild_music_playlist_tracks t ON p.id = t.playlist_id
+                   WHERE p.guild_id = ?
+                   GROUP BY p.id
+                   ORDER BY p.playlist_name ASC""",
+                (guild_id,)
+            )
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "name": r[1],
+                    "created_by": r[2],
+                    "created_by_name": r[3],
+                    "created_at": r[4],
+                    "track_count": r[5]
+                }
+                for r in rows
+            ]
+
+    @classmethod
+    async def get_music_channel(cls, guild_id: int) -> Optional[int]:
+        """Returns the configured dedicated music text channel ID, if any."""
+        val = await cls.get_guild_setting(guild_id, "music_dedicated_channel_id", None)
+        return int(val) if val and str(val).isdigit() else None
+
+    @classmethod
+    async def set_music_channel(cls, guild_id: int, channel_id: Optional[int]):
+        """Sets or clears the dedicated music text channel ID."""
+        if channel_id:
+            await cls.set_guild_setting(guild_id, "music_dedicated_channel_id", int(channel_id))
+        else:
+            await cls.delete_guild_setting(guild_id, "music_dedicated_channel_id")
+
+    @classmethod
+    async def get_music_player_message_id(cls, guild_id: int) -> Optional[int]:
+        """Returns the pinned dedicated player message ID, if any."""
+        val = await cls.get_guild_setting(guild_id, "music_player_message_id", None)
+        return int(val) if val and str(val).isdigit() else None
+
+    @classmethod
+    async def set_music_player_message_id(cls, guild_id: int, message_id: Optional[int]):
+        """Sets or clears the dedicated player message ID."""
+        if message_id:
+            await cls.set_guild_setting(guild_id, "music_player_message_id", int(message_id))
+        else:
+            await cls.delete_guild_setting(guild_id, "music_player_message_id")
 

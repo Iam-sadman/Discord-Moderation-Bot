@@ -13,6 +13,7 @@ import os
 import io
 import re
 import json
+import time
 import discord
 from quart import Quart, render_template, request, redirect, url_for, session, jsonify
 from quart_cors import cors
@@ -473,20 +474,52 @@ def create_dashboard(bot):
         music_state = None
         if music_cog:
             state = music_cog.get_state(guild_id)
+            cur = state.current
+            vc = state.voice_client
+            cur_elapsed = cur.elapsed() if cur else 0
+            cur_dur = cur.duration if cur else 0
+            progress_pct = int((cur_elapsed / cur_dur) * 100) if (cur and cur_dur > 0) else 0
+
+            def fmt_sec(secs):
+                if not secs or secs <= 0:
+                    return "0:00"
+                m, s = divmod(int(secs), 60)
+                h, m = divmod(m, 60)
+                return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
             music_state = {
                 "is_playing": state.is_playing,
+                "is_paused": bool(vc and vc.is_paused()),
+                "voice_channel": vc.channel.name if (vc and vc.channel) else None,
+                "listeners_count": len([m for m in vc.channel.members if not m.bot]) if (vc and vc.channel) else 0,
                 "current": {
-                    "title": state.current.title,
-                    "duration": state.current.duration,
-                    "requester": str(state.current.requester),
-                    "thumbnail": state.current.thumbnail,
-                } if state.current else None,
+                    "title": cur.title,
+                    "duration": cur.duration,
+                    "duration_formatted": fmt_sec(cur.duration),
+                    "elapsed": cur_elapsed,
+                    "elapsed_formatted": fmt_sec(cur_elapsed),
+                    "progress_percent": min(100, progress_pct),
+                    "requester": str(cur.requester),
+                    "thumbnail": cur.thumbnail,
+                    "source_type": getattr(cur, "source_type", "youtube"),
+                    "webpage_url": cur.webpage_url,
+                } if cur else None,
                 "queue_length": len(state.queue),
                 "volume": int(state.volume * 100),
                 "loop_mode": state.loop_mode,
+                "is_shuffled": getattr(state, "is_shuffled", False),
                 "queue": [
-                    {"title": s.title, "duration": s.duration, "requester": str(s.requester)}
-                    for s in state.queue[:20]
+                    {
+                        "position": idx + 1,
+                        "title": s.title,
+                        "duration": s.duration,
+                        "duration_formatted": fmt_sec(s.duration),
+                        "requester": str(s.requester),
+                        "thumbnail": s.thumbnail,
+                        "source_type": getattr(s, "source_type", "youtube"),
+                        "webpage_url": s.webpage_url,
+                    }
+                    for idx, s in enumerate(state.queue[:30])
                 ],
             }
 
@@ -710,12 +743,32 @@ def create_dashboard(bot):
         if not music_cog:
             return jsonify({"error": "Music module not loaded"}), 400
         state = music_cog.get_state(guild_id)
-        if state.voice_client and state.is_playing:
+        if state.voice_client and (state.voice_client.is_playing() or state.voice_client.is_paused()):
             state._skip_flag = True
             state.voice_client.stop()
-            await record_audit_event("MUSIC_SKIP", f"Guild {guild_id}", "Skipped current track")
+            await music_cog.refresh_all_controllers(guild_id)
+            await record_audit_event("MUSIC_SKIP", f"Guild {guild_id}", "Skipped current track via Web Dashboard")
             return jsonify({"success": True})
-        return jsonify({"error": "Nothing playing"}), 400
+        return jsonify({"error": "Nothing currently playing"}), 400
+
+    @app.route("/api/guild/<int:guild_id>/music/previous", methods=["POST"])
+    async def music_previous(guild_id):
+        music_cog = bot.get_cog("Music")
+        if not music_cog:
+            return jsonify({"error": "Music module not loaded"}), 400
+        state = music_cog.get_state(guild_id)
+        if not state.history:
+            return jsonify({"error": "No previous track in history"}), 400
+        state._previous_flag = True
+        prev = state.history.pop()
+        if state.current:
+            state.queue.insert(0, state.current)
+        state.queue.insert(0, prev)
+        if state.voice_client and (state.voice_client.is_playing() or state.voice_client.is_paused()):
+            state.voice_client.stop()
+        await music_cog.refresh_all_controllers(guild_id)
+        await record_audit_event("MUSIC_PREVIOUS", f"Guild {guild_id}", f"Replayed track '{prev.title}' via Web Dashboard")
+        return jsonify({"success": True})
 
     @app.route("/api/guild/<int:guild_id>/music/stop", methods=["POST"])
     async def music_stop(guild_id):
@@ -725,12 +778,29 @@ def create_dashboard(bot):
         state = music_cog.get_state(guild_id)
         state.queue.clear()
         state.loop_mode = "off"
-        if state.voice_client:
+        state._stop_flag = True
+        if state.voice_client and (state.voice_client.is_playing() or state.voice_client.is_paused()):
             state.voice_client.stop()
         state.is_playing = False
         state.current = None
-        await record_audit_event("MUSIC_STOP", f"Guild {guild_id}", "Stopped playback and cleared queue")
+        await music_cog.refresh_all_controllers(guild_id)
+        await record_audit_event("MUSIC_STOP", f"Guild {guild_id}", "Stopped playback and cleared queue via Web Dashboard")
         return jsonify({"success": True})
+
+    @app.route("/api/guild/<int:guild_id>/music/shuffle", methods=["POST"])
+    async def music_shuffle(guild_id):
+        music_cog = bot.get_cog("Music")
+        if not music_cog:
+            return jsonify({"error": "Music module not loaded"}), 400
+        state = music_cog.get_state(guild_id)
+        if len(state.queue) < 2:
+            return jsonify({"error": "Need at least 2 tracks to shuffle"}), 400
+        import random
+        random.shuffle(state.queue)
+        state.is_shuffled = not state.is_shuffled
+        await music_cog.refresh_all_controllers(guild_id)
+        await record_audit_event("MUSIC_SHUFFLE", f"Guild {guild_id}", f"Shuffled queue ({len(state.queue)} tracks) via Web Dashboard")
+        return jsonify({"success": True, "is_shuffled": state.is_shuffled})
 
     @app.route("/api/guild/<int:guild_id>/music/volume", methods=["POST"])
     async def music_volume(guild_id):
@@ -744,6 +814,7 @@ def create_dashboard(bot):
         if state.voice_client and state.voice_client.source:
             if hasattr(state.voice_client.source, "volume"):
                 state.voice_client.source.volume = state.volume
+        await music_cog.refresh_all_controllers(guild_id)
         return jsonify({"success": True, "volume": level})
 
     @app.route("/api/guild/<int:guild_id>/music/pause", methods=["POST"])
@@ -754,13 +825,22 @@ def create_dashboard(bot):
         state = music_cog.get_state(guild_id)
         if state.voice_client and state.voice_client.is_playing():
             state.voice_client.pause()
-            await record_audit_event("MUSIC_PAUSE", f"Guild {guild_id}", "Paused audio playback")
+            state.is_playing = False
+            if state.current:
+                state.current.pause_playback_time = time.time()
+            await music_cog.refresh_all_controllers(guild_id)
+            await record_audit_event("MUSIC_PAUSE", f"Guild {guild_id}", "Paused audio playback via Web Dashboard")
             return jsonify({"success": True, "paused": True})
         elif state.voice_client and state.voice_client.is_paused():
             state.voice_client.resume()
-            await record_audit_event("MUSIC_RESUME", f"Guild {guild_id}", "Resumed audio playback")
+            state.is_playing = True
+            if state.current and state.current.pause_playback_time:
+                state.current.total_paused_duration += time.time() - state.current.pause_playback_time
+                state.current.pause_playback_time = None
+            await music_cog.refresh_all_controllers(guild_id)
+            await record_audit_event("MUSIC_RESUME", f"Guild {guild_id}", "Resumed audio playback via Web Dashboard")
             return jsonify({"success": True, "paused": False})
-        return jsonify({"error": "Nothing playing"}), 400
+        return jsonify({"error": "Nothing currently active"}), 400
 
     @app.route("/api/guild/<int:guild_id>/music/loop", methods=["POST"])
     async def music_loop(guild_id):
@@ -771,8 +851,83 @@ def create_dashboard(bot):
             return jsonify({"error": "Music module not loaded"}), 400
         state = music_cog.get_state(guild_id)
         state.loop_mode = mode
-        await record_audit_event("MUSIC_LOOP", f"Guild {guild_id}", f"Looping mode set to {mode}")
+        await music_cog.refresh_all_controllers(guild_id)
+        await record_audit_event("MUSIC_LOOP", f"Guild {guild_id}", f"Looping mode set to {mode} via Web Dashboard")
         return jsonify({"success": True, "loop_mode": mode})
+
+    @app.route("/api/guild/<int:guild_id>/music/remove", methods=["POST"])
+    async def music_remove(guild_id):
+        data = await request.get_json()
+        pos = data.get("position", 1)
+        music_cog = bot.get_cog("Music")
+        if not music_cog:
+            return jsonify({"error": "Music module not loaded"}), 400
+        state = music_cog.get_state(guild_id)
+        if pos < 1 or pos > len(state.queue):
+            return jsonify({"error": "Invalid queue position"}), 400
+        removed = state.queue.pop(pos - 1)
+        await music_cog.refresh_all_controllers(guild_id)
+        await record_audit_event("MUSIC_REMOVE", f"Guild {guild_id}", f"Removed '{removed.title}' from queue via Web Dashboard")
+        return jsonify({"success": True, "removed": removed.title})
+
+    @app.route("/api/guild/<int:guild_id>/music/clear", methods=["POST"])
+    async def music_clear(guild_id):
+        music_cog = bot.get_cog("Music")
+        if not music_cog:
+            return jsonify({"error": "Music module not loaded"}), 400
+        state = music_cog.get_state(guild_id)
+        count = len(state.queue)
+        state.queue.clear()
+        await music_cog.refresh_all_controllers(guild_id)
+        await record_audit_event("MUSIC_CLEAR", f"Guild {guild_id}", f"Cleared {count} queued tracks via Web Dashboard")
+        return jsonify({"success": True, "cleared_count": count})
+
+    @app.route("/api/guild/<int:guild_id>/music/play", methods=["POST"])
+    async def music_play_api(guild_id):
+        data = await request.get_json()
+        query = (data.get("query") or "").strip()
+        if not query:
+            return jsonify({"error": "Query or URL is required"}), 400
+
+        music_cog = bot.get_cog("Music")
+        if not music_cog:
+            return jsonify({"error": "Music module not loaded"}), 400
+
+        guild = bot.get_guild(guild_id)
+        if not guild:
+            return jsonify({"error": "Guild not found"}), 404
+
+        state = music_cog.get_state(guild_id)
+        vc = state.voice_client or guild.voice_client
+        if not vc or not vc.is_connected():
+            return jsonify({"error": "Bot must be connected to a voice channel first. Use /play in Discord!"}), 400
+
+        user_name = session.get("username", "Dashboard User")
+        dummy_user = bot.user
+
+        from cogs.music import Song
+        try:
+            if "spotify.com" in query:
+                songs = await Song.from_spotify(query, dummy_user)
+            elif "soundcloud.com" in query:
+                songs = await Song.from_soundcloud(query, dummy_user, bot.loop)
+            elif query.startswith(("http://", "https://")):
+                songs = await Song.from_youtube(query, dummy_user, bot.loop)
+            else:
+                songs = await Song.from_youtube(f"ytsearch:{query}", dummy_user, bot.loop)
+        except Exception as exc:
+            return jsonify({"error": f"Failed to resolve track: {exc}"}), 400
+
+        if not songs:
+            return jsonify({"error": "No playable tracks found"}), 400
+
+        state.queue.extend(songs)
+        await music_cog.refresh_all_controllers(guild_id)
+        if not state.is_playing and state.current is None:
+            await music_cog._play_next(guild_id)
+
+        await record_audit_event("MUSIC_PLAY", f"Guild {guild_id}", f"Queued {len(songs)} track(s) for '{query[:60]}' by {user_name}")
+        return jsonify({"success": True, "queued_count": len(songs), "first_title": songs[0].title})
 
     @app.route("/api/guild/<int:guild_id>/music/state", methods=["GET"])
     async def music_state_api(guild_id):
@@ -780,20 +935,52 @@ def create_dashboard(bot):
         if not music_cog:
             return jsonify({"error": "Music module not loaded"}), 400
         state = music_cog.get_state(guild_id)
+        cur = state.current
+        vc = state.voice_client
+        cur_elapsed = cur.elapsed() if cur else 0
+        cur_dur = cur.duration if cur else 0
+        progress_pct = int((cur_elapsed / cur_dur) * 100) if (cur and cur_dur > 0) else 0
+
+        def fmt_sec(secs):
+            if not secs or secs <= 0:
+                return "0:00"
+            m, s = divmod(int(secs), 60)
+            h, m = divmod(m, 60)
+            return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
         return jsonify({
             "is_playing": state.is_playing,
+            "is_paused": bool(vc and vc.is_paused()),
+            "voice_channel": vc.channel.name if (vc and vc.channel) else None,
+            "listeners_count": len([m for m in vc.channel.members if not m.bot]) if (vc and vc.channel) else 0,
             "current": {
-                "title": state.current.title,
-                "duration": state.current.duration,
-                "requester": str(state.current.requester),
-                "thumbnail": state.current.thumbnail,
-            } if state.current else None,
+                "title": cur.title,
+                "duration": cur.duration,
+                "duration_formatted": fmt_sec(cur.duration),
+                "elapsed": cur_elapsed,
+                "elapsed_formatted": fmt_sec(cur_elapsed),
+                "progress_percent": min(100, progress_pct),
+                "requester": str(cur.requester),
+                "thumbnail": cur.thumbnail,
+                "source_type": getattr(cur, "source_type", "youtube"),
+                "webpage_url": cur.webpage_url,
+            } if cur else None,
             "queue_length": len(state.queue),
             "volume": int(state.volume * 100),
             "loop_mode": state.loop_mode,
+            "is_shuffled": getattr(state, "is_shuffled", False),
             "queue": [
-                {"title": s.title, "duration": s.duration, "requester": str(s.requester)}
-                for s in state.queue[:20]
+                {
+                    "position": idx + 1,
+                    "title": s.title,
+                    "duration": s.duration,
+                    "duration_formatted": fmt_sec(s.duration),
+                    "requester": str(s.requester),
+                    "thumbnail": s.thumbnail,
+                    "source_type": getattr(s, "source_type", "youtube"),
+                    "webpage_url": s.webpage_url,
+                }
+                for idx, s in enumerate(state.queue[:30])
             ],
         })
 

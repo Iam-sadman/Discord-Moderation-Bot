@@ -484,6 +484,75 @@
         background: var(--accent-primary-hover);
     }
 
+    .btn-circle.active {
+        background: #10b981;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+    }
+
+    .player-progress-container {
+        margin-top: 14px;
+        width: 100%;
+    }
+
+    .player-progress-bar {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .player-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #6366f1, #a855f7);
+        border-radius: 999px;
+        transition: width 0.3s ease;
+    }
+
+    .player-time-labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        font-family: 'JetBrains Mono', monospace;
+        color: var(--text-dim);
+        margin-top: 4px;
+    }
+
+    .source-badge-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
+
+    .source-youtube { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .source-spotify { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+    .source-soundcloud { background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
+    .source-local { background: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+    .source-upload { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
+
+    .btn-remove-track {
+        background: transparent;
+        border: none;
+        color: #ef4444;
+        cursor: pointer;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 13px;
+        transition: var(--transition);
+    }
+
+    .btn-remove-track:hover {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+    }
+
     /* Discord Announcement Composer & Toolbar */
     .discord-toolbar {
         display: flex;
@@ -2159,57 +2228,111 @@
 <!-- ========================================== -->
 <div class="tab-content" id="tab-music">
     {% if music_state %}
+    <!-- High-Fidelity Player Banner -->
     <div class="player-banner" id="music-player-banner">
-        <div class="player-album-art">
+        <div class="player-album-art" id="np-music-art-wrap">
             {% if music_state.current and music_state.current.thumbnail %}
-            <img src="{{ music_state.current.thumbnail }}" alt="Cover">
+            <img src="{{ music_state.current.thumbnail }}" alt="Cover" id="np-music-thumbnail">
             {% else %}
-            🎵
+            <span id="np-music-fallback-art">🎵</span>
             {% endif %}
         </div>
         <div class="player-details">
-            <h3 id="np-music-title">
-                {{ music_state.current.title if music_state.current else "No Audio Currently Playing" }}
-            </h3>
-            <p style="font-size: 13px; color: var(--text-muted);" id="np-music-requester">
-                {{ "Requested by " + music_state.current.requester if music_state.current else "Idle voice state" }}
-            </p>
+            <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <h3 id="np-music-title" style="margin-bottom: 2px;">
+                        {% if music_state.current and music_state.current.webpage_url %}
+                        <a href="{{ music_state.current.webpage_url }}" target="_blank" style="color: #ffffff; text-decoration: none;" id="np-music-link">
+                            {{ music_state.current.title }}
+                        </a>
+                        {% elif music_state.current %}
+                        {{ music_state.current.title }}
+                        {% else %}
+                        No Audio Currently Playing
+                        {% endif %}
+                        <span id="np-music-source-badge" class="source-badge-tag source-{{ music_state.current.source_type if music_state.current else 'youtube' }}">
+                            {{ music_state.current.source_type.title() if music_state.current else 'Idle' }}
+                        </span>
+                    </h3>
+                    <p style="font-size: 13px; color: var(--text-muted); margin: 0;" id="np-music-requester">
+                        {{ "Requested by " + music_state.current.requester if music_state.current else "Idle Voice State" }}
+                        {% if music_state.voice_channel %}
+                        • <span style="color: var(--accent-cyan);" id="np-music-vc">🔊 {{ music_state.voice_channel }}</span> (<span id="np-music-listeners">{{ music_state.listeners_count }}</span> listener{{ 's' if music_state.listeners_count != 1 else '' }})
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
 
+            <!-- Dynamic Progress Bar -->
+            <div class="player-progress-container">
+                <div class="player-progress-bar">
+                    <div class="player-progress-fill" id="music-progress-fill" style="width: {{ music_state.current.progress_percent if music_state.current else 0 }}%;"></div>
+                </div>
+                <div class="player-time-labels">
+                    <span id="music-time-elapsed">{{ music_state.current.elapsed_formatted if music_state.current else "0:00" }}</span>
+                    <span id="music-time-duration">{{ music_state.current.duration_formatted if music_state.current else "0:00" }}</span>
+                </div>
+            </div>
+
+            <!-- Playback Control Buttons Row -->
             <div class="player-controls-row">
-                <button class="btn-circle primary" onclick="handleMusicAction('pause')" title="Pause / Resume" id="btn-music-playpause">
-                    ⏯
+                <button class="btn-circle" onclick="handleMusicAction('previous')" title="Previous Track (Replay History)" id="btn-music-prev">
+                    ⏮
                 </button>
-                <button class="btn-circle" onclick="handleMusicAction('skip')" title="Skip Current Song" id="btn-music-skip">
+                <button class="btn-circle primary" onclick="handleMusicAction('pause')" title="Play / Pause" id="btn-music-playpause">
+                    {{ "▶" if music_state.is_paused else "⏸" }}
+                </button>
+                <button class="btn-circle" onclick="handleMusicAction('skip')" title="Skip to Next Track" id="btn-music-skip">
                     ⏭
                 </button>
-                <button class="btn-circle" onclick="handleMusicAction('stop')" title="Stop Playback" id="btn-music-stop">
+                <button class="btn-circle" onclick="handleMusicAction('stop')" title="Stop and Clear Queue" id="btn-music-stop" style="color: #ef4444;">
                     ⏹
+                </button>
+                <button class="btn-circle {{ 'active' if music_state.is_shuffled else '' }}" onclick="handleMusicAction('shuffle')" title="Toggle Shuffle Mode" id="btn-music-shuffle">
+                    🔀
                 </button>
             </div>
         </div>
     </div>
 
     <div class="grid-2">
+        <!-- Audio Controls & Quick Play -->
         <div class="glass-card">
             <div class="card-header">
-                <h3>🎛️ Audio Controls</h3>
+                <h3>🎛️ Audio Controls & Quick Play</h3>
             </div>
-            <div style="margin-bottom: 18px;">
+
+            <!-- Quick Play Bar -->
+            <div style="margin-bottom: 20px;">
+                <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 8px;">
+                    ▶️ Play Audio Stream (YouTube, Spotify, SoundCloud)
+                </label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="music-dashboard-query" placeholder="Paste link or type song title..." style="flex: 1;" onkeydown="if(event.key === 'Enter') handleMusicPlayFromDashboard()">
+                    <button type="button" class="btn btn-primary" onclick="handleMusicPlayFromDashboard()">
+                        Queue
+                    </button>
+                </div>
+            </div>
+
+            <!-- Volume Slider -->
+            <div style="margin-bottom: 20px;">
                 <label style="font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; margin-bottom: 8px;">
                     <span>Volume Level</span>
                     <span id="vol-display">{{ music_state.volume }}%</span>
                 </label>
                 <input type="range" min="0" max="200" value="{{ music_state.volume }}" id="music-volume-slider" 
-                       style="accent-color: var(--accent-primary);"
+                       style="accent-color: var(--accent-primary); width: 100%;"
                        oninput="document.getElementById('vol-display').textContent = this.value + '%'"
                        onchange="handleVolumeChange(this.value)">
             </div>
 
+            <!-- Looping Mode -->
             <div>
                 <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 8px;">
-                    Looping Mode
+                    🔁 Looping Mode
                 </label>
-                <select id="music-loop-select" onchange="handleLoopChange(this.value)">
+                <select id="music-loop-select" onchange="handleLoopChange(this.value)" style="width: 100%;">
                     <option value="off" {{ "selected" if music_state.loop_mode == 'off' else "" }}>Disabled (Off)</option>
                     <option value="single" {{ "selected" if music_state.loop_mode == 'single' else "" }}>Repeat Track (Single)</option>
                     <option value="queue" {{ "selected" if music_state.loop_mode == 'queue' else "" }}>Repeat Entire Queue</option>
@@ -2217,24 +2340,42 @@
             </div>
         </div>
 
+        <!-- Audio Queue with Remove & Clear -->
         <div class="glass-card">
-            <div class="card-header">
-                <h3>📜 Audio Queue ({{ music_state.queue_length }} Songs)</h3>
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 id="music-queue-header">📜 Audio Queue (<span id="music-queue-count">{{ music_state.queue_length }}</span> Songs)</h3>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="handleClearQueue()" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); {{ 'display:none;' if not music_state.queue else '' }}" id="btn-clear-queue">
+                    Clear Queue
+                </button>
             </div>
-            <div id="music-queue-list">
+            <div id="music-queue-list" style="max-height: 380px; overflow-y: auto;">
                 {% if music_state.queue %}
                 {% for item in music_state.queue %}
-                <div class="setting-item" style="padding: 8px 0;">
-                    <span style="font-family:'JetBrains Mono'; font-size:12px; color:var(--text-dim); width: 24px;">{{ loop.index }}.</span>
-                    <div style="flex:1;">
-                        <div style="font-size: 13px; font-weight: 600; color: #ffffff;">{{ item.title }}</div>
-                        <div style="font-size: 11px; color: var(--text-dim);">By {{ item.requester }}</div>
+                <div class="setting-item" id="queue-item-{{ item.position }}" style="padding: 10px 0; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                        <span style="font-family:'JetBrains Mono'; font-size:12px; color:var(--text-dim); width: 20px;">{{ item.position }}.</span>
+                        <div style="flex:1; min-width: 0;">
+                            <div style="font-size: 13px; font-weight: 600; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                {% if item.webpage_url %}
+                                <a href="{{ item.webpage_url }}" target="_blank" style="color:#ffffff; text-decoration:none;">{{ item.title }}</a>
+                                {% else %}
+                                {{ item.title }}
+                                {% endif %}
+                                <span class="source-badge-tag source-{{ item.source_type }}">{{ item.source_type.title() }}</span>
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
+                                {{ item.duration_formatted }} • Req: {{ item.requester }}
+                            </div>
+                        </div>
                     </div>
+                    <button class="btn-remove-track" onclick="handleRemoveQueueTrack({{ item.position }})" title="Remove track">
+                        🗑️
+                    </button>
                 </div>
                 {% endfor %}
                 {% else %}
-                <div style="text-align: center; padding: 24px; color: var(--text-dim); font-size: 13px;">
-                    Queue is currently empty. Use <code>/music play</code> in Discord to add tracks.
+                <div style="text-align: center; padding: 28px; color: var(--text-dim); font-size: 13px;" id="music-queue-empty">
+                    Queue is currently empty. Use the Quick Play bar above or <code>/play</code> in Discord.
                 </div>
                 {% endif %}
             </div>
@@ -2291,6 +2432,11 @@
         } else if (tabName === 'announcements') {
             handleMentionChange();
             updateAnnouncementPreview();
+        } else if (tabName === 'music') {
+            fetchAndRefreshMusicUI();
+            startMusicAutoPolling();
+        } else {
+            stopMusicAutoPolling();
         }
     }
 
@@ -3426,12 +3572,133 @@
         }
     }
 
-    // Music Player Controls
+    // Music Player Advanced AJAX Controls & Polling
+    let musicPollInterval = null;
+
+    function startMusicAutoPolling() {
+        stopMusicAutoPolling();
+        musicPollInterval = setInterval(fetchAndRefreshMusicUI, 2500);
+    }
+
+    function stopMusicAutoPolling() {
+        if (musicPollInterval) {
+            clearInterval(musicPollInterval);
+            musicPollInterval = null;
+        }
+    }
+
+    async function fetchAndRefreshMusicUI() {
+        const data = await apiRequest(`/api/guild/${guildId}/music/state`, 'GET');
+        if (!data) return;
+
+        // Title & Source Badge
+        const titleEl = document.getElementById('np-music-title');
+        if (titleEl) {
+            if (data.current) {
+                const srcType = data.current.source_type || 'youtube';
+                const linkHtml = data.current.webpage_url ? `<a href="${data.current.webpage_url}" target="_blank" style="color: #ffffff; text-decoration: none;">${escapeHtml(data.current.title)}</a>` : escapeHtml(data.current.title);
+                titleEl.innerHTML = `${linkHtml} <span class="source-badge-tag source-${srcType}">${srcType.charAt(0).toUpperCase() + srcType.slice(1)}</span>`;
+            } else {
+                titleEl.innerHTML = `No Audio Currently Playing <span class="source-badge-tag source-youtube">Idle</span>`;
+            }
+        }
+
+        // Requester & Channel Indicator
+        const reqEl = document.getElementById('np-music-requester');
+        if (reqEl) {
+            if (data.current) {
+                let vcStr = data.voice_channel ? ` • <span style="color: var(--accent-cyan);">🔊 ${escapeHtml(data.voice_channel)}</span> (${data.listeners_count} listener${data.listeners_count !== 1 ? 's' : ''})` : '';
+                reqEl.innerHTML = `Requested by ${escapeHtml(data.current.requester)}${vcStr}`;
+            } else {
+                reqEl.textContent = 'Idle Voice State';
+            }
+        }
+
+        // Thumbnail Art
+        const artWrap = document.getElementById('np-music-art-wrap');
+        if (artWrap) {
+            if (data.current && data.current.thumbnail) {
+                artWrap.innerHTML = `<img src="${data.current.thumbnail}" alt="Cover" id="np-music-thumbnail">`;
+            } else {
+                artWrap.innerHTML = `<span id="np-music-fallback-art">🎵</span>`;
+            }
+        }
+
+        // Timeline Progress Bar
+        const fillEl = document.getElementById('music-progress-fill');
+        if (fillEl) fillEl.style.width = (data.current ? data.current.progress_percent : 0) + '%';
+        const elTime = document.getElementById('music-time-elapsed');
+        if (elTime) elTime.textContent = data.current ? data.current.elapsed_formatted : '0:00';
+        const durTime = document.getElementById('music-time-duration');
+        if (durTime) durTime.textContent = data.current ? data.current.duration_formatted : '0:00';
+
+        // Play/Pause button symbol
+        const playBtn = document.getElementById('btn-music-playpause');
+        if (playBtn) playBtn.textContent = (data.is_paused || !data.is_playing) ? '▶' : '⏸';
+
+        // Shuffle button active state
+        const shufBtn = document.getElementById('btn-music-shuffle');
+        if (shufBtn) {
+            if (data.is_shuffled) shufBtn.classList.add('active');
+            else shufBtn.classList.remove('active');
+        }
+
+        // Volume
+        const volSlider = document.getElementById('music-volume-slider');
+        if (volSlider && document.activeElement !== volSlider) volSlider.value = data.volume;
+        const volDisp = document.getElementById('vol-display');
+        if (volDisp) volDisp.textContent = data.volume + '%';
+
+        // Loop Mode Select
+        const loopSel = document.getElementById('music-loop-select');
+        if (loopSel && document.activeElement !== loopSel) loopSel.value = data.loop_mode;
+
+        // Queue Header & List
+        const qCount = document.getElementById('music-queue-count');
+        if (qCount) qCount.textContent = data.queue_length;
+        const clearBtn = document.getElementById('btn-clear-queue');
+        if (clearBtn) clearBtn.style.display = data.queue && data.queue.length > 0 ? '' : 'none';
+
+        const qList = document.getElementById('music-queue-list');
+        if (qList) {
+            if (data.queue && data.queue.length > 0) {
+                let html = '';
+                data.queue.forEach(item => {
+                    const srcType = item.source_type || 'youtube';
+                    const titleText = item.webpage_url ? `<a href="${item.webpage_url}" target="_blank" style="color:#ffffff; text-decoration:none;">${escapeHtml(item.title)}</a>` : escapeHtml(item.title);
+                    html += `
+                    <div class="setting-item" id="queue-item-${item.position}" style="padding: 10px 0; border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                            <span style="font-family:'JetBrains Mono'; font-size:12px; color:var(--text-dim); width: 20px;">${item.position}.</span>
+                            <div style="flex:1; min-width: 0;">
+                                <div style="font-size: 13px; font-weight: 600; color: #ffffff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                    ${titleText}
+                                    <span class="source-badge-tag source-${srcType}">${srcType.charAt(0).toUpperCase() + srcType.slice(1)}</span>
+                                </div>
+                                <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">
+                                    ${item.duration_formatted} • Req: ${escapeHtml(item.requester)}
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn-remove-track" onclick="handleRemoveQueueTrack(${item.position})" title="Remove track">
+                            🗑️
+                        </button>
+                    </div>`;
+                });
+                qList.innerHTML = html;
+            } else {
+                qList.innerHTML = `<div style="text-align: center; padding: 28px; color: var(--text-dim); font-size: 13px;" id="music-queue-empty">Queue is currently empty. Use the Quick Play bar above or <code>/play</code> in Discord.</div>`;
+            }
+        }
+    }
+
     async function handleMusicAction(action) {
         const res = await apiRequest(`/api/guild/${guildId}/music/${action}`, 'POST', {});
         if (res && res.success) {
             showToast('Music action executed: ' + action, 'success');
-            setTimeout(() => location.reload(), 600);
+            await fetchAndRefreshMusicUI();
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
         }
     }
 
@@ -3442,7 +3709,45 @@
     async function handleLoopChange(mode) {
         const res = await apiRequest(`/api/guild/${guildId}/music/loop`, 'POST', {mode: mode});
         if (res && res.success) {
-            showToast('Looping set to ' + mode, 'success');
+            showToast('Looping mode set to ' + mode, 'success');
+            await fetchAndRefreshMusicUI();
+        }
+    }
+
+    async function handleMusicPlayFromDashboard() {
+        const input = document.getElementById('music-dashboard-query');
+        if (!input) return;
+        const val = input.value.trim();
+        if (!val) return showToast('Enter a song title or paste a link', 'info');
+
+        const res = await apiRequest(`/api/guild/${guildId}/music/play`, 'POST', {query: val});
+        if (res && res.success) {
+            showToast(`Queued ${res.queued_count} track(s): ${res.first_title}`, 'success');
+            input.value = '';
+            await fetchAndRefreshMusicUI();
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
+        }
+    }
+
+    async function handleRemoveQueueTrack(pos) {
+        const res = await apiRequest(`/api/guild/${guildId}/music/remove`, 'POST', {position: pos});
+        if (res && res.success) {
+            showToast(`Removed track #${pos}`, 'success');
+            await fetchAndRefreshMusicUI();
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
+        }
+    }
+
+    async function handleClearQueue() {
+        if (!confirm('Are you sure you want to clear all upcoming tracks in the queue?')) return;
+        const res = await apiRequest(`/api/guild/${guildId}/music/clear`, 'POST', {});
+        if (res && res.success) {
+            showToast(`Cleared ${res.cleared_count} tracks from queue`, 'success');
+            await fetchAndRefreshMusicUI();
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
         }
     }
 

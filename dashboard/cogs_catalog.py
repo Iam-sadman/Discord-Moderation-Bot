@@ -45,6 +45,12 @@ def resolve_command_permissions(cmd_name: str, cog_name: str, app_cmd_perms: Any
 
     # Music Cog
     if cog_name == "Music":
+        if c in ("/musicchannel setup", "/musicchannel set", "/musicchannel clear"):
+            return "Manage Channels / Admin"
+        if c == "/musicinfo":
+            return "Server Administrator"
+        if c == "/sharesong":
+            return "Manage Messages"
         return "Everyone (Voice Channel)"
 
     # Default fallback using discord permission flags
@@ -108,7 +114,7 @@ def get_cogs_and_commands_catalog(bot) -> List[Dict[str, Any]]:
             "icon": "🎵",
             "category": "Entertainment",
             "color": "#EC4899",
-            "description": "Voice audio streaming from YouTube and server libraries with queue management, loop modes, and volume control."
+            "description": "High-fidelity voice audio streaming from YouTube, Spotify, SoundCloud, local server libraries, SQLite playlists, and dedicated interactive music channel."
         }
     }
 
