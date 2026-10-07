@@ -497,6 +497,143 @@ class MusicPlayerView(discord.ui.View):
 
 
 # =========================================================================
+# Interactive Playlist UI Components (Modal, Select Dropdowns, Actions View)
+# =========================================================================
+
+class AddSongModal(discord.ui.Modal):
+    def __init__(self, cog, playlist_name: str):
+        super().__init__(title=f"Add to {playlist_name[:30]}")
+        self.cog = cog
+        self.playlist_name = playlist_name
+        self.query_input = discord.ui.TextInput(
+            label="Song Title, YouTube, Spotify, or SoundCloud",
+            placeholder="Paste song URL or search keywords...",
+            min_length=2,
+            max_length=400,
+            required=True
+        )
+        self.add_item(self.query_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        query = self.query_input.value.strip()
+        source_type = "url"
+        if "spotify.com" in query:
+            source_type = "spotify"
+        elif "soundcloud.com" in query:
+            source_type = "soundcloud"
+        elif "youtube.com" in query or "youtu.be" in query:
+            source_type = "youtube"
+
+        added = await Config.add_track_to_playlist(
+            interaction.guild_id, self.playlist_name, query, query, source_type
+        )
+        if added:
+            embed = discord.Embed(
+                title="✅ Track Added to Playlist",
+                description=f"Added **{query}** to playlist **{self.playlist_name}**.",
+                color=discord.Color.green()
+            )
+            embed.set_footer(text=f"Use /playlist view {self.playlist_name} to view all tracks")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.followup.send(
+                f"❌ Failed to add track to playlist **{self.playlist_name}**.",
+                ephemeral=True
+            )
+
+
+class PlaylistSelect(discord.ui.Select):
+    def __init__(self, cog, playlists: List[Dict[str, Any]], query: Optional[str] = None, mode: str = "add"):
+        self.cog = cog
+        self.query = query
+        self.mode = mode
+        options = []
+        for p in playlists[:25]:
+            count = p.get("track_count", 0)
+            desc = f"{count} track{'s' if count != 1 else ''} • by {p.get('created_by_name', 'Unknown')}"
+            options.append(discord.SelectOption(
+                label=p["name"][:100],
+                description=desc[:100],
+                emoji="🎵",
+                value=p["name"]
+            ))
+
+        placeholder = "📂 Select a playlist from this server..."
+        if mode == "play":
+            placeholder = "▶️ Select a playlist to play in voice..."
+        elif mode == "view":
+            placeholder = "👁️ Select a playlist to inspect..."
+        elif mode == "add":
+            placeholder = "➕ Select a playlist to add track to..."
+
+        super().__init__(
+            placeholder=placeholder,
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        playlist_name = self.values[0]
+
+        if self.mode == "add":
+            if self.query:
+                await interaction.response.defer()
+                source_type = "url"
+                if "spotify.com" in self.query:
+                    source_type = "spotify"
+                elif "soundcloud.com" in self.query:
+                    source_type = "soundcloud"
+                elif "youtube.com" in self.query or "youtu.be" in self.query:
+                    source_type = "youtube"
+
+                added = await Config.add_track_to_playlist(
+                    interaction.guild_id, playlist_name, self.query, self.query, source_type
+                )
+                if added:
+                    embed = discord.Embed(
+                        title="✅ Track Added to Playlist",
+                        description=f"Added **{self.query}** to playlist **{playlist_name}**.",
+                        color=discord.Color.green()
+                    )
+                    await interaction.followup.send(embed=embed)
+                else:
+                    await interaction.followup.send(f"❌ Playlist **{playlist_name}** was not found.", ephemeral=True)
+            else:
+                modal = AddSongModal(self.cog, playlist_name)
+                await interaction.response.send_modal(modal)
+
+        elif self.mode == "play":
+            await self.cog._play_playlist_by_name(interaction, playlist_name)
+
+        elif self.mode == "view":
+            await self.cog._show_playlist_by_name(interaction, playlist_name)
+
+
+class PlaylistSelectView(discord.ui.View):
+    def __init__(self, cog, playlists: List[Dict[str, Any]], query: Optional[str] = None, mode: str = "add"):
+        super().__init__(timeout=120)
+        self.add_item(PlaylistSelect(cog, playlists, query=query, mode=mode))
+
+
+class PlaylistActionsView(discord.ui.View):
+    def __init__(self, cog, playlist_name: str):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.playlist_name = playlist_name
+
+    @discord.ui.button(label="Play Playlist", style=discord.ButtonStyle.success, emoji="▶️")
+    async def play_playlist(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog._play_playlist_by_name(interaction, self.playlist_name)
+
+    @discord.ui.button(label="Add Song", style=discord.ButtonStyle.primary, emoji="➕")
+    async def add_track(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = AddSongModal(self.cog, self.playlist_name)
+        await interaction.response.send_modal(modal)
+
+
+# =========================================================================
 # Main Music Cog
 # =========================================================================
 
@@ -1570,31 +1707,9 @@ class Music(commands.Cog):
         else:
             await interaction.response.send_message(f"❌ A playlist named **{name}** already exists in this server.", ephemeral=True)
 
-    @playlist_group.command(name="add", description="Add a YouTube, Spotify, or SoundCloud track to a playlist")
-    @app_commands.describe(name="Playlist name", query="Track title or link")
-    @app_commands.autocomplete(name=_autocomplete_playlists)
-    async def pl_add(self, interaction: discord.Interaction, name: str, query: str):
-        await interaction.response.defer()
-        title = query
-        source_type = "url"
-        if "spotify.com" in query:
-            source_type = "spotify"
-        elif "soundcloud.com" in query:
-            source_type = "soundcloud"
-        elif "youtube.com" in query or "youtu.be" in query:
-            source_type = "youtube"
-
-        added = await Config.add_track_to_playlist(interaction.guild_id, name, title, query, source_type)
-        if added:
-            await interaction.followup.send(f"✅ Added track to playlist **{name}**.")
-        else:
-            await interaction.followup.send(f"❌ Playlist **{name}** was not found.", ephemeral=True)
-
-    @playlist_group.command(name="play", description="Load and play all tracks from a playlist")
-    @app_commands.describe(name="Playlist name")
-    @app_commands.autocomplete(name=_autocomplete_playlists)
-    async def pl_play(self, interaction: discord.Interaction, name: str):
-        await interaction.response.defer()
+    async def _play_playlist_by_name(self, interaction: discord.Interaction, name: str):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         pl_data = await Config.get_playlist(interaction.guild_id, name)
         if not pl_data or not pl_data.get("tracks"):
             await interaction.followup.send(f"❌ Playlist **{name}** is empty or does not exist.", ephemeral=True)
@@ -1632,13 +1747,14 @@ class Music(commands.Cog):
         if not state.is_playing and state.current is None:
             await self._play_next(interaction.guild_id)
 
-    @playlist_group.command(name="view", description="View tracks inside a saved playlist")
-    @app_commands.describe(name="Playlist name")
-    @app_commands.autocomplete(name=_autocomplete_playlists)
-    async def pl_view(self, interaction: discord.Interaction, name: str):
+    async def _show_playlist_by_name(self, interaction: discord.Interaction, name: str):
         pl_data = await Config.get_playlist(interaction.guild_id, name)
         if not pl_data:
-            await interaction.response.send_message(f"❌ Playlist **{name}** not found.", ephemeral=True)
+            msg = f"❌ Playlist **{name}** not found."
+            if not interaction.response.is_done():
+                await interaction.response.send_message(msg, ephemeral=True)
+            else:
+                await interaction.followup.send(msg, ephemeral=True)
             return
 
         tracks = pl_data.get("tracks", [])
@@ -1648,14 +1764,105 @@ class Music(commands.Cog):
             color=discord.Color.purple()
         )
         if not tracks:
-            embed.add_field(name="Tracks", value="*This playlist has no songs yet. Use `/playlist add`.*", inline=False)
+            embed.add_field(name="Tracks", value="*This playlist has no songs yet. Click 'Add Song' below or use `/playlist add`.*", inline=False)
         else:
             lines = [f"`{t['position']}.` **{t['title'][:80]}**" for t in tracks[:25]]
             if len(tracks) > 25:
                 lines.append(f"… and {len(tracks) - 25} more")
             embed.add_field(name="Track List", value="\n".join(lines), inline=False)
 
-        await interaction.response.send_message(embed=embed)
+        view = PlaylistActionsView(self, name)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=embed, view=view)
+        else:
+            await interaction.followup.send(embed=embed, view=view)
+
+    @playlist_group.command(name="add", description="Add a track to a playlist (choose from dropdown or specify name)")
+    @app_commands.describe(name="Playlist name (leave empty to select from dropdown menu)", query="Track title or link (leave empty to type in popup)")
+    @app_commands.autocomplete(name=_autocomplete_playlists)
+    async def pl_add(self, interaction: discord.Interaction, name: Optional[str] = None, query: Optional[str] = None):
+        if not name:
+            playlists = await Config.list_playlists(interaction.guild_id)
+            if not playlists:
+                await interaction.response.send_message(
+                    "❌ No playlists found on this server yet. Create one first with `/playlist create <name>`!",
+                    ephemeral=True
+                )
+                return
+            view = PlaylistSelectView(self, playlists, query=query, mode="add")
+            hint = f" Select which playlist to add **{query}** to:" if query else " Select a playlist below to add a track:"
+            embed = discord.Embed(
+                title="📂 Select Playlist",
+                description=f"Choose a playlist from the dropdown menu below.{hint}",
+                color=discord.Color.blue()
+            )
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            return
+
+        if not query:
+            modal = AddSongModal(self, name)
+            await interaction.response.send_modal(modal)
+            return
+
+        await interaction.response.defer()
+        source_type = "url"
+        if "spotify.com" in query:
+            source_type = "spotify"
+        elif "soundcloud.com" in query:
+            source_type = "soundcloud"
+        elif "youtube.com" in query or "youtu.be" in query:
+            source_type = "youtube"
+
+        added = await Config.add_track_to_playlist(interaction.guild_id, name, query, query, source_type)
+        if added:
+            embed = discord.Embed(
+                title="✅ Track Added to Playlist",
+                description=f"Added **{query}** to playlist **{name}**.",
+                color=discord.Color.green()
+            )
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send(f"❌ Playlist **{name}** was not found.", ephemeral=True)
+
+    @playlist_group.command(name="play", description="Load and play all tracks from a playlist")
+    @app_commands.describe(name="Playlist name (leave empty to select from dropdown)")
+    @app_commands.autocomplete(name=_autocomplete_playlists)
+    async def pl_play(self, interaction: discord.Interaction, name: Optional[str] = None):
+        if not name:
+            playlists = await Config.list_playlists(interaction.guild_id)
+            if not playlists:
+                await interaction.response.send_message("❌ No playlists found on this server. Create one first with `/playlist create <name>`!", ephemeral=True)
+                return
+            view = PlaylistSelectView(self, playlists, mode="play")
+            embed = discord.Embed(
+                title="▶️ Select Playlist to Play",
+                description="Choose a playlist from the dropdown menu below to play in voice:",
+                color=discord.Color.purple()
+            )
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            return
+
+        await self._play_playlist_by_name(interaction, name)
+
+    @playlist_group.command(name="view", description="View tracks inside a saved playlist")
+    @app_commands.describe(name="Playlist name (leave empty to select from dropdown)")
+    @app_commands.autocomplete(name=_autocomplete_playlists)
+    async def pl_view(self, interaction: discord.Interaction, name: Optional[str] = None):
+        if not name:
+            playlists = await Config.list_playlists(interaction.guild_id)
+            if not playlists:
+                await interaction.response.send_message("❌ No playlists found on this server. Create one first with `/playlist create <name>`!", ephemeral=True)
+                return
+            view = PlaylistSelectView(self, playlists, mode="view")
+            embed = discord.Embed(
+                title="👁️ Select Playlist to View",
+                description="Choose a playlist from the dropdown menu below to view its tracks:",
+                color=discord.Color.purple()
+            )
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            return
+
+        await self._show_playlist_by_name(interaction, name)
 
     @playlist_group.command(name="list", description="List all saved playlists in this server")
     async def pl_list(self, interaction: discord.Interaction):
@@ -1671,7 +1878,8 @@ class Music(commands.Cog):
                 value=f"{p['track_count']} tracks • by {p.get('created_by_name', 'Unknown')}",
                 inline=True
             )
-        await interaction.response.send_message(embed=embed)
+        view = PlaylistSelectView(self, playlists, mode="view")
+        await interaction.response.send_message(embed=embed, view=view)
 
     @playlist_group.command(name="remove", description="Remove a track from a playlist by position number")
     @app_commands.describe(name="Playlist name", position="Position number from /playlist view (e.g. 1)")

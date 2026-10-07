@@ -122,11 +122,11 @@ Servers can configure a dedicated music channel (e.g. `#music-player`) using `/m
 
 ### Persistent Server Playlists:
 - `/playlist create <name>`: Create a new server playlist stored in SQLite.
-- `/playlist add <name> <query>`: Add a track to a playlist (with autocomplete).
-- `/playlist play <name>`: Enqueue and play all tracks from a playlist (with autocomplete).
-- `/playlist view <name>`: View all tracks in a saved playlist (with autocomplete).
+- `/playlist add [name] [query]`: Add a track to a playlist. If `name` is omitted, an interactive Select Dropdown menu is displayed; if `query` is omitted, a modal popup appears to input the song link/title!
+- `/playlist play [name]`: Enqueue and play all tracks from a playlist (select from dropdown or pass name).
+- `/playlist view [name]`: View tracks in a saved playlist with interactive `[▶️ Play Playlist]` and `[➕ Add Song]` action buttons.
 - `/playlist remove <name> <position>`: Remove a track by position number (with autocomplete).
-- `/playlist list`: List all saved playlists in the server.
+- `/playlist list`: List all saved playlists in the server with an interactive dropdown menu selector.
 - `/playlist delete <name>`: Delete a playlist (creator or Admin only).
 
 ### Playback Management:
