@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS loa_requests (
     guild_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     user_name TEXT NOT NULL,
-    team_name TEXT NOT NULL,
+    team_name TEXT NOT NULL,          -- Stores Site Name (e.g. ARC_abcdefg)
     reason TEXT NOT NULL,
     start_date TEXT NOT NULL,         -- 'YYYY-MM-DD'
     end_date TEXT NOT NULL,           -- 'YYYY-MM-DD'
@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS loa_requests (
     reviewed_by_name TEXT,
     reviewed_at TIMESTAMP,
     rejection_reason TEXT,
+    approval_comment TEXT,
     review_channel_msg_id INTEGER,
     ended_early_at TIMESTAMP,
     extension_of_id INTEGER
@@ -91,20 +92,21 @@ CREATE TABLE IF NOT EXISTS loa_requests (
 ### 1. Application Flow:
 - Member clicks **"📝 Apply for LOA"** on the dashboard or uses slash command.
 - Pop-up modal (`LoaApplyModal`) collects:
-  - Team Name
-  - Reason
-  - Start Date (`YYYY-MM-DD` or `today`)
-  - End Date (`YYYY-MM-DD`)
-- System validates dates (no past start dates, end date after start date) and checks for active overlapping leaves.
+  - **Site Name** (e.g. `ARC_abcdefg`)
+  - **Start Date** (`YYYY-MM-DD`)
+  - **End Date** (`YYYY-MM-DD`)
+  - **Reason for Leave**
+- Applicant's identity is automatically obtained from their Discord profile.
+- System validates dates (end date after start date) and checks for active overlapping leaves.
 - Posts review card into the designated **Review Channel**.
 
 ### 2. Checker Review Flow:
 - Checkers / Admins see the review card with buttons (`LoaReviewView`):
-  - **`✅ Approve`**: Updates status to `approved`, edits the review card, and refreshes the live dashboard.
-  - **`❌ Deny`**: Launches `LoaRejectModal` to capture mandatory feedback and marks the record `rejected`.
+  - **`✅ Approve`**: Launches `LoaApproveModal` to optionally record an approval comment/note for the applicant. Updates status to `approved`, edits the review card with decision & optional note, sends an approval DM to the applicant, and refreshes the live dashboard.
+  - **`❌ Deny`**: Launches `LoaRejectModal` to capture mandatory feedback, marks the record `rejected`, sends a denial DM with the reason to the applicant, and edits the review card.
 
 ### 3. Extension & Early Return Flows:
-- **Extension (`LoaExtendModal`)**: Allows an approved member to request an extended end date. Posts an extension review card (`LoaExtensionReviewView`) for checkers.
+- **Extension (`LoaExtendModal`)**: Allows an approved member to request an extended end date. Posts an extension review card (`LoaExtensionReviewView`) for checkers with optional approval comment support.
 - **End Early (`LoaEndEarlyConfirmView`)**: Allows a member to terminate leave ahead of schedule.
 
 ### 4. Midnight Expiration Scheduler:

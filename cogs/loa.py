@@ -63,6 +63,7 @@ async def init_loa_db():
                 reviewed_by_name TEXT,
                 reviewed_at TIMESTAMP,
                 rejection_reason TEXT,
+                approval_comment TEXT,
                 review_channel_msg_id INTEGER,
                 ended_early_at TIMESTAMP,
                 extension_of_id INTEGER
@@ -74,6 +75,10 @@ async def init_loa_db():
             pass
         try:
             await db.execute("ALTER TABLE loa_requests ADD COLUMN extension_of_id INTEGER")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE loa_requests ADD COLUMN approval_comment TEXT")
         except Exception:
             pass
         try:
@@ -98,23 +103,10 @@ async def init_loa_db():
 class LoaApplyModal(discord.ui.Modal, title="Leave of Absence (LOA) Application"):
     """Pop-up modal for members applying for Leave of Absence."""
 
-    name = discord.ui.TextInput(
-        label="Your Full Name / Nickname",
-        placeholder="Enter your name or labeler ID",
+    site_name = discord.ui.TextInput(
+        label="Site Name",
+        placeholder="e.g. ARC_abcdefg",
         max_length=100,
-        required=True,
-    )
-    team = discord.ui.TextInput(
-        label="Team Name",
-        placeholder="e.g. Team ARC, Alpha, Delta",
-        max_length=100,
-        required=True,
-    )
-    reason = discord.ui.TextInput(
-        label="Reason for Leave",
-        placeholder="Briefly describe the reason for your absence...",
-        style=discord.TextStyle.paragraph,
-        max_length=1000,
         required=True,
     )
     start_date = discord.ui.TextInput(
@@ -129,6 +121,13 @@ class LoaApplyModal(discord.ui.Modal, title="Leave of Absence (LOA) Application"
         placeholder="e.g. 2026-10-10",
         min_length=10,
         max_length=10,
+        required=True,
+    )
+    reason = discord.ui.TextInput(
+        label="Reason for Leave",
+        placeholder="Briefly describe the reason for your absence...",
+        style=discord.TextStyle.paragraph,
+        max_length=1000,
         required=True,
     )
 
@@ -197,8 +196,8 @@ class LoaApplyModal(discord.ui.Modal, title="Leave of Absence (LOA) Application"
         await interaction.response.defer(ephemeral=True)
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        user_name_val = str(self.name.value).strip()
-        team_name_val = str(self.team.value).strip()
+        user_name_val = interaction.user.display_name
+        site_name_val = str(self.site_name.value).strip()
         reason_val = str(self.reason.value).strip()
 
         # Insert record into DB
@@ -214,7 +213,7 @@ class LoaApplyModal(discord.ui.Modal, title="Leave of Absence (LOA) Application"
                     interaction.guild_id,
                     interaction.user.id,
                     user_name_val,
-                    team_name_val,
+                    site_name_val,
                     reason_val,
                     start_str,
                     end_str,
@@ -232,7 +231,7 @@ class LoaApplyModal(discord.ui.Modal, title="Leave of Absence (LOA) Application"
             timestamp=datetime.now(timezone.utc)
         )
         review_embed.add_field(name="Applicant", value=f"{interaction.user.mention} (`{user_name_val}`)", inline=True)
-        review_embed.add_field(name="Team", value=team_name_val, inline=True)
+        review_embed.add_field(name="Site Name", value=site_name_val, inline=True)
         review_embed.add_field(name="Duration", value=f"**{start_str}** to **{end_str}** ({total_days} day{'s' if total_days > 1 else ''})", inline=False)
         review_embed.add_field(name="Reason", value=reason_val, inline=False)
         review_embed.set_thumbnail(url=interaction.user.display_avatar.url if interaction.user.display_avatar else None)
@@ -259,6 +258,44 @@ class LoaApplyModal(discord.ui.Modal, title="Leave of Absence (LOA) Application"
 
         # Refresh dashboard in public channel
         await self.cog.refresh_dashboard(interaction.guild_id)
+
+
+class LoaApproveModal(discord.ui.Modal, title="Approve LOA Request"):
+    """Modal for checkers to optionally provide a comment upon approval."""
+
+    comment = discord.ui.TextInput(
+        label="Comment / Note (Optional)",
+        placeholder="Add an optional comment or note for the applicant...",
+        style=discord.TextStyle.paragraph,
+        max_length=500,
+        required=False,
+    )
+
+    def __init__(self, cog: "Loa", request_id: int, is_extension: bool = False):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.request_id = request_id
+        self.is_extension = is_extension
+        if is_extension:
+            self.title = "Approve LOA Extension"
+
+    async def on_submit(self, interaction: discord.Interaction):
+        approval_comment = str(self.comment.value).strip() or None
+
+        if self.is_extension:
+            await self.cog.process_extension_review(
+                interaction=interaction,
+                ext_id=self.request_id,
+                action="approve",
+                approval_comment=approval_comment
+            )
+        else:
+            await self.cog.process_review(
+                interaction=interaction,
+                request_id=self.request_id,
+                action="approve",
+                approval_comment=approval_comment
+            )
 
 
 class LoaRejectModal(discord.ui.Modal, title="Deny LOA Request"):
@@ -431,7 +468,7 @@ class LoaExtendModal(discord.ui.Modal, title="Extend Leave of Absence (LOA)"):
             timestamp=datetime.now(timezone.utc)
         )
         review_embed.add_field(name="Applicant", value=f"{interaction.user.mention} (`{self.parent_loa.get('user_name', interaction.user.display_name)}`)", inline=True)
-        review_embed.add_field(name="Team", value=self.parent_loa.get("team_name", "General"), inline=True)
+        review_embed.add_field(name="Site Name", value=self.parent_loa.get("team_name", "General"), inline=True)
         review_embed.add_field(name="Current Period", value=f"`{self.parent_loa.get('start_date', 'N/A')}` to `{current_end_str}`", inline=False)
         review_embed.add_field(
             name="Requested Extension",
@@ -569,7 +606,16 @@ class LoaReviewView(discord.ui.View):
         if not cog:
             await interaction.response.send_message("❌ LOA module is not available.", ephemeral=True)
             return
-        await cog.process_review(interaction, self.request_id, action="approve")
+
+        if not await cog.can_review(interaction):
+            await interaction.response.send_message(
+                "❌ You do not have permission to review this LOA. Only Checkers or Admins can review.",
+                ephemeral=True
+            )
+            return
+
+        modal = LoaApproveModal(cog, self.request_id)
+        await interaction.response.send_modal(modal)
 
     async def on_reject(self, interaction: discord.Interaction):
         cog: Optional[Loa] = interaction.client.get_cog("Loa")
@@ -619,7 +665,16 @@ class LoaExtensionReviewView(discord.ui.View):
         if not cog:
             await interaction.response.send_message("❌ LOA module is not available.", ephemeral=True)
             return
-        await cog.process_extension_review(interaction, self.ext_id, action="approve")
+
+        if not await cog.can_review(interaction):
+            await interaction.response.send_message(
+                "❌ You do not have permission to review this LOA extension. Only Checkers or Admins can review.",
+                ephemeral=True
+            )
+            return
+
+        modal = LoaApproveModal(cog, self.ext_id, is_extension=True)
+        await interaction.response.send_modal(modal)
 
     async def on_reject(self, interaction: discord.Interaction):
         cog: Optional[Loa] = interaction.client.get_cog("Loa")
@@ -944,7 +999,7 @@ class LoaDashboardView(discord.ui.View):
             description=(
                 f"You currently have an active approved Leave of Absence:\n\n"
                 f"• **Request ID:** `#{active_loa['id']}`\n"
-                f"• **Team:** {active_loa['team_name']}\n"
+                f"• **Site Name:** {active_loa['team_name']}\n"
                 f"• **Scheduled Duration:** `{active_loa['start_date']}` to `{active_loa['end_date']}`\n"
                 f"• **Reason:** {active_loa['reason']}\n\n"
                 "**If you confirm returning to duty early:**\n"
@@ -1157,7 +1212,8 @@ class Loa(commands.Cog):
         interaction: discord.Interaction,
         request_id: int,
         action: str,
-        rejection_reason: Optional[str] = None
+        rejection_reason: Optional[str] = None,
+        approval_comment: Optional[str] = None
     ):
         if not await self.can_review(interaction):
             if not interaction.response.is_done():
@@ -1192,7 +1248,7 @@ class Loa(commands.Cog):
             await db.execute("""
                 UPDATE loa_requests
                 SET status = ?, reviewed_by = ?, reviewed_by_name = ?,
-                    reviewed_at = ?, rejection_reason = ?
+                    reviewed_at = ?, rejection_reason = ?, approval_comment = ?
                 WHERE id = ?
             """, (
                 new_status,
@@ -1200,6 +1256,7 @@ class Loa(commands.Cog):
                 interaction.user.display_name,
                 now_iso,
                 rejection_reason,
+                approval_comment,
                 request_id
             ))
             await db.commit()
@@ -1219,10 +1276,12 @@ class Loa(commands.Cog):
             timestamp=datetime.now(timezone.utc)
         )
         updated_embed.add_field(name="Applicant", value=f"{applicant_mention} (`{req['user_name']}`)", inline=True)
-        updated_embed.add_field(name="Team", value=req["team_name"], inline=True)
+        updated_embed.add_field(name="Site Name", value=req["team_name"], inline=True)
         updated_embed.add_field(name="Duration", value=f"**{req['start_date']}** to **{req['end_date']}**", inline=False)
         updated_embed.add_field(name="Reason for Leave", value=req["reason"], inline=False)
         updated_embed.add_field(name="Decision", value=f"**{badge}** by {interaction.user.mention}", inline=True)
+        if approval_comment:
+            updated_embed.add_field(name="Approval Note", value=approval_comment, inline=False)
         if rejection_reason:
             updated_embed.add_field(name="Rejection Note", value=rejection_reason, inline=False)
 
@@ -1253,7 +1312,9 @@ class Loa(commands.Cog):
                         timestamp=datetime.now(timezone.utc)
                     )
                     dm_embed.add_field(name="📅 Leave Period", value=f"**{req['start_date']}** to **{req['end_date']}**", inline=True)
-                    dm_embed.add_field(name="🏷️ Team", value=req["team_name"], inline=True)
+                    dm_embed.add_field(name="🏷️ Site Name", value=req["team_name"], inline=True)
+                    if approval_comment:
+                        dm_embed.add_field(name="💬 Approval Note", value=f"```\n{approval_comment}\n```", inline=False)
                     dm_embed.set_footer(text=f"Server: {guild.name}")
                     await target_user.send(embed=dm_embed)
                 else:
@@ -1267,7 +1328,7 @@ class Loa(commands.Cog):
                         timestamp=datetime.now(timezone.utc)
                     )
                     dm_embed.add_field(name="📅 Requested Period", value=f"`{req['start_date']}` to `{req['end_date']}`", inline=True)
-                    dm_embed.add_field(name="🏷️ Team", value=req["team_name"], inline=True)
+                    dm_embed.add_field(name="🏷️ Site Name", value=req["team_name"], inline=True)
                     dm_embed.add_field(
                         name="❗ Reason for Denial",
                         value=f"```\n{rejection_reason}\n```",
@@ -1286,7 +1347,8 @@ class Loa(commands.Cog):
         interaction: discord.Interaction,
         ext_id: int,
         action: str,
-        rejection_reason: Optional[str] = None
+        rejection_reason: Optional[str] = None,
+        approval_comment: Optional[str] = None
     ):
         if not await self.can_review(interaction):
             if not interaction.response.is_done():
@@ -1328,7 +1390,7 @@ class Loa(commands.Cog):
             await db.execute("""
                 UPDATE loa_requests
                 SET status = ?, reviewed_by = ?, reviewed_by_name = ?,
-                    reviewed_at = ?, rejection_reason = ?
+                    reviewed_at = ?, rejection_reason = ?, approval_comment = ?
                 WHERE id = ?
             """, (
                 new_status,
@@ -1336,6 +1398,7 @@ class Loa(commands.Cog):
                 interaction.user.display_name,
                 now_iso,
                 rejection_reason,
+                approval_comment,
                 ext_id
             ))
 
@@ -1364,7 +1427,7 @@ class Loa(commands.Cog):
             timestamp=datetime.now(timezone.utc)
         )
         updated_embed.add_field(name="Applicant", value=f"{applicant_mention} (`{ext_req['user_name']}`)", inline=True)
-        updated_embed.add_field(name="Team", value=ext_req["team_name"], inline=True)
+        updated_embed.add_field(name="Site Name", value=ext_req["team_name"], inline=True)
         old_end = parent_req["end_date"] if parent_req else "N/A"
         updated_embed.add_field(
             name="Extension Period",
@@ -1373,6 +1436,8 @@ class Loa(commands.Cog):
         )
         updated_embed.add_field(name="Reason for Extension", value=ext_req["reason"], inline=False)
         updated_embed.add_field(name="Decision", value=f"**{badge}** by {interaction.user.mention}", inline=True)
+        if approval_comment:
+            updated_embed.add_field(name="Approval Note", value=approval_comment, inline=False)
         if rejection_reason:
             updated_embed.add_field(name="Denial Reason", value=rejection_reason, inline=False)
 
@@ -1402,7 +1467,9 @@ class Loa(commands.Cog):
                         timestamp=datetime.now(timezone.utc)
                     )
                     dm_embed.add_field(name="📅 Updated Leave End Date", value=f"**{ext_req['end_date']}**", inline=True)
-                    dm_embed.add_field(name="🏷️ Team", value=ext_req["team_name"], inline=True)
+                    dm_embed.add_field(name="🏷️ Site Name", value=ext_req["team_name"], inline=True)
+                    if approval_comment:
+                        dm_embed.add_field(name="💬 Approval Note", value=f"```\n{approval_comment}\n```", inline=False)
                     dm_embed.set_footer(text=f"Server: {guild.name}")
                     await target_user.send(embed=dm_embed)
                 else:
@@ -1417,7 +1484,7 @@ class Loa(commands.Cog):
                         timestamp=datetime.now(timezone.utc)
                     )
                     dm_embed.add_field(name="📅 Requested End Date", value=f"`{ext_req['end_date']}`", inline=True)
-                    dm_embed.add_field(name="🏷️ Team", value=ext_req["team_name"], inline=True)
+                    dm_embed.add_field(name="🏷️ Site Name", value=ext_req["team_name"], inline=True)
                     dm_embed.add_field(
                         name="❗ Reason for Denial",
                         value=f"```\n{rejection_reason}\n```",
@@ -1610,7 +1677,14 @@ class Loa(commands.Cog):
         if custom_id.startswith("loa:approve:"):
             try:
                 req_id = int(custom_id.split(":")[-1])
-                await self.process_review(interaction, req_id, action="approve")
+                if not await self.can_review(interaction):
+                    await interaction.response.send_message(
+                        "❌ You do not have permission to review this LOA.",
+                        ephemeral=True
+                    )
+                    return
+                modal = LoaApproveModal(self, req_id)
+                await interaction.response.send_modal(modal)
             except Exception as e:
                 logger.error(f"Error handling loa approve interaction: {e}")
         elif custom_id.startswith("loa:reject:"):
@@ -1629,7 +1703,14 @@ class Loa(commands.Cog):
         elif custom_id.startswith("loa:approve_ext:"):
             try:
                 ext_id = int(custom_id.split(":")[-1])
-                await self.process_extension_review(interaction, ext_id, action="approve")
+                if not await self.can_review(interaction):
+                    await interaction.response.send_message(
+                        "❌ You do not have permission to review this LOA extension.",
+                        ephemeral=True
+                    )
+                    return
+                modal = LoaApproveModal(self, ext_id, is_extension=True)
+                await interaction.response.send_modal(modal)
             except Exception as e:
                 logger.error(f"Error handling loa approve extension interaction: {e}")
         elif custom_id.startswith("loa:reject_ext:"):
@@ -1866,11 +1947,13 @@ class Loa(commands.Cog):
             }.get(r["status"], r["status"])
 
             details = [
-                f"**Team:** {r['team_name']}",
+                f"**Site:** {r['team_name']}",
                 f"**Period:** `{r['start_date']}` to `{r['end_date']}`",
                 f"**Status:** {status_emoji}",
                 f"**Reason:** {r['reason']}"
             ]
+            if "approval_comment" in r.keys() and r["approval_comment"]:
+                details.append(f"**Approval Note:** {r['approval_comment']}")
             if r["rejection_reason"]:
                 details.append(f"**Rejection Note:** {r['rejection_reason']}")
             if r["reviewed_by_name"]:
@@ -1937,7 +2020,7 @@ class Loa(commands.Cog):
             description=(
                 f"You currently have an approved Leave of Absence:\n\n"
                 f"• **Request ID:** `#{active_loa['id']}`\n"
-                f"• **Team:** {active_loa['team_name']}\n"
+                f"• **Site:** {active_loa['team_name']}\n"
                 f"• **Scheduled Period:** `{active_loa['start_date']}` to `{active_loa['end_date']}`\n"
                 f"• **Reason:** {active_loa['reason']}\n\n"
                 "**If you confirm early return:**\n"
@@ -2001,7 +2084,7 @@ class Loa(commands.Cog):
                     color=discord.Color.blue(),
                     timestamp=datetime.now(timezone.utc)
                 )
-                notice.add_field(name="Team", value=req["team_name"], inline=True)
+                notice.add_field(name="Site", value=req["team_name"], inline=True)
                 notice.add_field(name="Original Schedule", value=f"`{req['start_date']}` to `{req['end_date']}`", inline=True)
                 notice.add_field(name="Returned At", value=f"`{today_str}`", inline=True)
                 try:
@@ -2125,7 +2208,7 @@ class Loa(commands.Cog):
             "Request ID",
             "User ID",
             "User Name",
-            "Team Name",
+            "Site Name",
             "Start Date",
             "End Date",
             "Total Days",
@@ -2133,11 +2216,12 @@ class Loa(commands.Cog):
             "Reason",
             "Reviewed By",
             "Reviewed At",
+            "Approval Note",
             "Denial Reason",
             "Applied At"
         ])
 
-        team_counts = {}
+        site_counts = {}
         for r in rows:
             try:
                 r_s = datetime.strptime(r["start_date"], "%Y-%m-%d").date()
@@ -2146,9 +2230,10 @@ class Loa(commands.Cog):
             except Exception:
                 days_num = ""
 
-            t_name = r["team_name"] or "Unknown"
-            team_counts[t_name] = team_counts.get(t_name, 0) + 1
+            s_name = r["team_name"] or "Unknown"
+            site_counts[s_name] = site_counts.get(s_name, 0) + 1
 
+            appr_note = (r["approval_comment"] if "approval_comment" in r.keys() else "") or ""
             csv_writer.writerow([
                 r["id"],
                 r["user_id"],
@@ -2161,6 +2246,7 @@ class Loa(commands.Cog):
                 r["reason"],
                 r["reviewed_by_name"] or "",
                 r["reviewed_at"] or "",
+                appr_note,
                 r["rejection_reason"] or "",
                 r["applied_at"]
             ])
@@ -2187,11 +2273,11 @@ class Loa(commands.Cog):
         unique_members = len(set(r["user_id"] for r in rows))
         embed.add_field(name="👥 Total Members", value=f"**{unique_members}** unique labeler{'s' if unique_members != 1 else ''}", inline=True)
 
-        if team_counts:
-            team_summary = ", ".join(f"**{t}**: {c}" for t, c in sorted(team_counts.items()))
-            if len(team_summary) > 250:
-                team_summary = team_summary[:245] + "…"
-            embed.add_field(name="🏷️ Team Breakdown", value=team_summary, inline=True)
+        if site_counts:
+            site_summary = ", ".join(f"**{t}**: {c}" for t, c in sorted(site_counts.items()))
+            if len(site_summary) > 250:
+                site_summary = site_summary[:245] + "…"
+            embed.add_field(name="🏷️ Site Breakdown", value=site_summary, inline=True)
 
         if not rows:
             embed.add_field(
