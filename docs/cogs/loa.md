@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS loa_requests (
     guild_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     user_name TEXT NOT NULL,
-    team_name TEXT NOT NULL,          -- Stores Site Name (e.g. ARC_abcdefg)
+    site_name TEXT,                   -- Site Name (e.g. ARC_abcdefg)
+    team_name TEXT NOT NULL,          -- Team Name selected from dropdown
     reason TEXT NOT NULL,
     start_date TEXT NOT NULL,         -- 'YYYY-MM-DD'
     end_date TEXT NOT NULL,           -- 'YYYY-MM-DD'
@@ -64,8 +65,8 @@ CREATE TABLE IF NOT EXISTS loa_requests (
     reviewed_by INTEGER,
     reviewed_by_name TEXT,
     reviewed_at TIMESTAMP,
-    rejection_reason TEXT,
-    approval_comment TEXT,
+    rejection_reason TEXT,            -- Optional note upon denial
+    approval_comment TEXT,            -- Optional note upon approval
     review_channel_msg_id INTEGER,
     ended_early_at TIMESTAMP,
     extension_of_id INTEGER
@@ -91,22 +92,23 @@ CREATE TABLE IF NOT EXISTS loa_requests (
 
 ### 1. Application Flow:
 - Member clicks **"📝 Apply for LOA"** on the dashboard or uses slash command.
-- Pop-up modal (`LoaApplyModal`) collects:
-  - **Site Name** (e.g. `ARC_abcdefg`)
-  - **Start Date** (`YYYY-MM-DD`)
-  - **End Date** (`YYYY-MM-DD`)
-  - **Reason for Leave**
+- Pop-up modal (`LoaApplyModal`) collects 5 components:
+  1. **Site Name** (Text input, e.g. `ARC_abcdefg`)
+  2. **Team Name** (Dropdown Select with 10 options: *Delta Force*, *Nano Banana*, *Golden Tshushima*, *Rafael's Carten [1989]*, *Night Owls*, *Totoro*, *Athena*, *Flash Point*, *Rising Horizon*, *Pixel Hunter*)
+  3. **Start Date** (`YYYY-MM-DD`)
+  4. **End Date** (`YYYY-MM-DD`)
+  5. **Reason for Leave** (Paragraph text)
 - Applicant's identity is automatically obtained from their Discord profile.
 - System validates dates (end date after start date) and checks for active overlapping leaves.
-- Posts review card into the designated **Review Channel**.
+- Posts review card into the designated **Review Channel** showing Applicant, Team, Site Name, Duration, and Reason.
 
 ### 2. Checker Review Flow:
 - Checkers / Admins see the review card with buttons (`LoaReviewView`):
   - **`✅ Approve`**: Launches `LoaApproveModal` to optionally record an approval comment/note for the applicant. Updates status to `approved`, edits the review card with decision & optional note, sends an approval DM to the applicant, and refreshes the live dashboard.
-  - **`❌ Deny`**: Launches `LoaRejectModal` to capture mandatory feedback, marks the record `rejected`, sends a denial DM with the reason to the applicant, and edits the review card.
+  - **`❌ Deny`**: Launches `LoaRejectModal` to optionally capture a denial note/feedback (optional). Marks the record `rejected`, sends a denial DM with the note (if provided) to the applicant, and edits the review card.
 
 ### 3. Extension & Early Return Flows:
-- **Extension (`LoaExtendModal`)**: Allows an approved member to request an extended end date. Posts an extension review card (`LoaExtensionReviewView`) for checkers with optional approval comment support.
+- **Extension (`LoaExtendModal`)**: Allows an approved member to request an extended end date. Posts an extension review card (`LoaExtensionReviewView`) for checkers with optional approval & denial comment support.
 - **End Early (`LoaEndEarlyConfirmView`)**: Allows a member to terminate leave ahead of schedule.
 
 ### 4. Midnight Expiration Scheduler:
