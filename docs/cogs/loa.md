@@ -115,6 +115,10 @@ CREATE TABLE IF NOT EXISTS loa_requests (
 - Background task `check_expired_loas_loop` runs daily at **12:00:05 AM** in the configured server timezone (default: UTC+6).
 - Automatically marks leaves whose `end_date < today` as `expired` and refreshes the pinned dashboard.
 
+### 5. Live Dashboard Format & Member Names:
+- Active LOA members are rendered using their server display name / nickname (`**{display_name}**`) alongside their site name and team (`(Site • Team)`).
+- Does not use raw `<@user_id>` mentions, completely preventing Discord from displaying un-cached numerical user IDs in the public embed.
+
 ---
 
 ## 5. Slash Commands Reference

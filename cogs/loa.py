@@ -1627,9 +1627,14 @@ class Loa(commands.Cog):
                     left_txt = f" • *{days_left} day{'s' if days_left != 1 else ''} left*"
                 except ValueError:
                     left_txt = ""
+                # Resolve server display name (avoids raw un-cached user ID mentions in Discord embeds)
+                member = guild.get_member(r["user_id"])
+                raw_name = member.display_name if member else (r["user_name"] or "Member")
+                name_display = discord.utils.escape_markdown(raw_name)
+
                 site_txt = f"{r['site_name']} • " if ("site_name" in r.keys() and r["site_name"]) else ""
                 lines.append(
-                    f"`#{actual_rank:02d}` <@{r['user_id']}> ({site_txt}{r['team_name']}) — until `{r['end_date']}`{left_txt}"
+                    f"`#{actual_rank:02d}` **{name_display}** ({site_txt}{r['team_name']}) — until `{r['end_date']}`{left_txt}"
                 )
             loa_content = "\n".join(lines)
         else:
