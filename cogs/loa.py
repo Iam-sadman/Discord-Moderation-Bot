@@ -1030,6 +1030,15 @@ class LoaDashboardView(discord.ui.View):
 
         view = LoaEndEarlyConfirmView(self.cog, active_loa["id"])
         site_str = f"• **Site Name:** {active_loa['site_name']}\n" if ("site_name" in active_loa.keys() and active_loa["site_name"]) else ""
+        full_start = active_loa["start_date"]
+        if active_loa["extension_of_id"]:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute("SELECT start_date FROM loa_requests WHERE id = ?", (active_loa["extension_of_id"],))
+                p_row = await cursor.fetchone()
+                if p_row:
+                    full_start = p_row["start_date"]
+
         embed = discord.Embed(
             title="⚡ End Leave of Absence Early?",
             description=(
@@ -1037,10 +1046,10 @@ class LoaDashboardView(discord.ui.View):
                 f"• **Request ID:** `#{active_loa['id']}`\n"
                 f"• **Team:** {active_loa['team_name']}\n"
                 f"{site_str}"
-                f"• **Scheduled Duration:** `{active_loa['start_date']}` to `{active_loa['end_date']}`\n"
+                f"• **Scheduled Duration:** `{full_start}` to `{active_loa['end_date']}`\n"
                 f"• **Reason:** {active_loa['reason']}\n\n"
                 "**If you confirm returning to duty early:**\n"
-                "1. Your leave will be concluded immediately.\n"
+                "1. Your leave (and any approved extensions) will be concluded immediately.\n"
                 "2. You will be removed from the **Active LOA Members** list on the dashboard.\n"
                 "3. An automatic notification will be sent to the checkers channel."
             ),
@@ -1647,6 +1656,47 @@ class Loa(commands.Cog):
             inline=False
         )
 
+        # Upcoming LOA Members list
+        today_date = datetime.strptime(today_str, "%Y-%m-%d").date()
+        upcoming_rows = [r for r in approved_rows if r["start_date"] > today_str]
+        if upcoming_rows:
+            upcoming_lines = []
+            for r in upcoming_rows[:8]:
+                try:
+                    start_d = datetime.strptime(r["start_date"], "%Y-%m-%d").date()
+                    diff_days = (start_d - today_date).days
+                    if diff_days == 1:
+                        starts_txt = "starts tomorrow"
+                    elif diff_days > 1:
+                        starts_txt = f"starts in {diff_days} days"
+                    else:
+                        starts_txt = "starts today"
+                except Exception:
+                    starts_txt = ""
+
+                u_member = guild.get_member(r["user_id"])
+                u_raw = u_member.display_name if u_member else (r["user_name"] or "Member")
+                u_name = discord.utils.escape_markdown(u_raw)
+                u_site = f"{r['site_name']} • " if ("site_name" in r.keys() and r["site_name"]) else ""
+
+                timing = f" • *{starts_txt}*" if starts_txt else ""
+                upcoming_lines.append(
+                    f"• **{u_name}** ({u_site}{r['team_name']}) — `{r['start_date']}` to `{r['end_date']}`{timing}"
+                )
+
+            if len(upcoming_rows) > 8:
+                upcoming_lines.append(f"*…and {len(upcoming_rows) - 8} more scheduled*")
+
+            upcoming_content = "\n".join(upcoming_lines)
+        else:
+            upcoming_content = "*No upcoming leaves scheduled.*"
+
+        embed.add_field(
+            name=f"📅 Upcoming LOA ({len(upcoming_rows)} scheduled)",
+            value=upcoming_content,
+            inline=False
+        )
+
         embed.set_footer(text=f"Page {page + 1}/{total_pages} • Auto-expires daily at 12:00 AM Midnight (UTC+{TZ_OFFSET_HOURS})")
         return embed, total_pages
 
@@ -2077,6 +2127,15 @@ class Loa(commands.Cog):
 
         view = LoaEndEarlyConfirmView(self, active_loa["id"])
         site_info = f"• **Site Name:** {active_loa['site_name']}\n" if ("site_name" in active_loa.keys() and active_loa["site_name"]) else ""
+        full_start = active_loa["start_date"]
+        if active_loa["extension_of_id"]:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute("SELECT start_date FROM loa_requests WHERE id = ?", (active_loa["extension_of_id"],))
+                p_row = await cursor.fetchone()
+                if p_row:
+                    full_start = p_row["start_date"]
+
         embed = discord.Embed(
             title="🔄 End Leave of Absence Early?",
             description=(
@@ -2084,10 +2143,10 @@ class Loa(commands.Cog):
                 f"• **Request ID:** `#{active_loa['id']}`\n"
                 f"• **Team:** {active_loa['team_name']}\n"
                 f"{site_info}"
-                f"• **Scheduled Period:** `{active_loa['start_date']}` to `{active_loa['end_date']}`\n"
+                f"• **Scheduled Period:** `{full_start}` to `{active_loa['end_date']}`\n"
                 f"• **Reason:** {active_loa['reason']}\n\n"
                 "**If you confirm early return:**\n"
-                "1. Your LOA will be marked as **Ended Early**.\n"
+                "1. Your LOA (and any approved extensions) will be marked as **Ended Early**.\n"
                 "2. You will immediately be removed from the **Active LOA Members** list on the dashboard.\n"
                 "3. Your team checkers will be notified."
             ),
@@ -2113,12 +2172,32 @@ class Loa(commands.Cog):
             await interaction.response.edit_message(content="❌ You cannot end someone else's LOA.", embed=None, view=None)
             return
 
+        parent_id = req["extension_of_id"] or req["id"]
+        target_uid = req["user_id"]
+        target_gid = req["guild_id"]
+
+        # Fetch original start_date (from parent if this was an extension)
+        start_date_display = req["start_date"]
+        if req["extension_of_id"]:
+            async with aiosqlite.connect(DB_PATH) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute("SELECT start_date FROM loa_requests WHERE id = ?", (req["extension_of_id"],))
+                parent_row = await cursor.fetchone()
+                if parent_row:
+                    start_date_display = parent_row["start_date"]
+
         async with aiosqlite.connect(DB_PATH) as db:
+            # End parent LOA and all related extensions, as well as any active approved leaves/pending extensions for this member
             await db.execute("""
                 UPDATE loa_requests
                 SET status = 'ended_early', ended_early_at = ?
-                WHERE id = ?
-            """, (now_iso, request_id))
+                WHERE (
+                    id = ?
+                    OR extension_of_id = ?
+                    OR id = ?
+                    OR (guild_id = ? AND user_id = ? AND status IN ('approved', 'pending_extension'))
+                )
+            """, (now_iso, request_id, parent_id, parent_id, target_gid, target_uid))
             await db.commit()
 
         # Confirmation embed to member
@@ -2126,12 +2205,13 @@ class Loa(commands.Cog):
             title="🎉 Welcome Back!",
             description=(
                 f"Your Leave of Absence `#{request_id}` has been successfully **ended early**.\n"
+                f"All active leave records and extensions have been concluded.\n"
                 f"You are now marked as **Active** and have been removed from the LOA list."
             ),
             color=discord.Color.green(),
             timestamp=datetime.now(timezone.utc)
         )
-        embed.add_field(name="Scheduled Period", value=f"`{req['start_date']}` to `{req['end_date']}`", inline=True)
+        embed.add_field(name="Scheduled Period", value=f"`{start_date_display}` to `{req['end_date']}`", inline=True)
         embed.add_field(name="Returned On", value=f"`{today_str}`", inline=True)
         await interaction.response.edit_message(content=None, embed=embed, view=None)
 
@@ -2150,7 +2230,7 @@ class Loa(commands.Cog):
                 notice.add_field(name="Team", value=req["team_name"], inline=True)
                 if "site_name" in req.keys() and req["site_name"]:
                     notice.add_field(name="Site Name", value=req["site_name"], inline=True)
-                notice.add_field(name="Original Schedule", value=f"`{req['start_date']}` to `{req['end_date']}`", inline=True)
+                notice.add_field(name="Original Schedule", value=f"`{start_date_display}` to `{req['end_date']}`", inline=True)
                 notice.add_field(name="Returned At", value=f"`{today_str}`", inline=True)
                 try:
                     await review_channel.send(embed=notice)

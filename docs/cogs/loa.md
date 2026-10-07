@@ -109,15 +109,15 @@ CREATE TABLE IF NOT EXISTS loa_requests (
 
 ### 3. Extension & Early Return Flows:
 - **Extension (`LoaExtendModal`)**: Allows an approved member to request an extended end date. Posts an extension review card (`LoaExtensionReviewView`) for checkers with optional approval & denial comment support.
-- **End Early (`LoaEndEarlyConfirmView`)**: Allows a member to terminate leave ahead of schedule.
+- **End Early (`LoaEndEarlyConfirmView`)**: Allows a member to terminate leave ahead of schedule. Designed with a **single-action termination** model: if a leave was extended, ending it early automatically closes both the parent LOA, all associated extension records, and any pending extensions at once in a single confirmation.
 
 ### 4. Midnight Expiration Scheduler:
 - Background task `check_expired_loas_loop` runs daily at **12:00:05 AM** in the configured server timezone (default: UTC+6).
 - Automatically marks leaves whose `end_date < today` as `expired` and refreshes the pinned dashboard.
 
-### 5. Live Dashboard Format & Member Names:
-- Active LOA members are rendered using their server display name / nickname (`**{display_name}**`) alongside their site name and team (`(Site • Team)`).
-- Does not use raw `<@user_id>` mentions, completely preventing Discord from displaying un-cached numerical user IDs in the public embed.
+### 5. Live Dashboard Format & Lists:
+- **Active LOA Members**: Lists members currently on leave today with their server nickname (`**{display_name}**`), site name, and team (`(Site • Team)`). Uses clean bold text without raw `<@user_id>` mentions to prevent un-cached numerical ID artifacts.
+- **Upcoming LOA List**: Displays scheduled future approved leaves with start/end dates and countdown indicators (`starts tomorrow`, `starts in X days`).
 
 ---
 
