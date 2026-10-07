@@ -2381,6 +2381,98 @@
             </div>
         </div>
     </div>
+
+    <!-- ========================================== -->
+    <!-- Server Playlists Management Section       -->
+    <!-- ========================================== -->
+    <div class="glass-card" style="margin-top: 24px;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+                <h3 style="margin: 0;">📚 Server Playlists (<span id="music-playlists-count">{{ server_playlists|length if server_playlists else 0 }}</span>)</h3>
+                <p style="font-size: 13px; color: var(--text-muted); margin: 3px 0 0 0;">
+                    Persistent server playlists saved in SQLite. Stream any playlist directly to your voice channel or add and remove tracks.
+                </p>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="promptCreatePlaylist()">
+                ➕ New Playlist
+            </button>
+        </div>
+
+        <div id="playlists-list-container" style="margin-top: 16px;">
+            {% if server_playlists %}
+            {% for pl in server_playlists %}
+            <div class="playlist-card" id="playlist-card-{{ loop.index }}" style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 16px; margin-bottom: 14px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 18px;">🎵</span>
+                            <span style="font-size: 15px; font-weight: 700; color: #ffffff;">{{ pl.name }}</span>
+                            <span class="source-badge-tag" style="background: rgba(147, 51, 234, 0.2); color: #c084fc; border: 1px solid rgba(147, 51, 234, 0.3);">
+                                {{ pl.track_count if pl.track_count is defined else (pl.tracks|length if pl.tracks else 0) }} Tracks
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-dim); margin-top: 3px;">
+                            Created by <strong>{{ pl.created_by_name or 'Admin' }}</strong>
+                        </div>
+                    </div>
+
+                    <!-- Playlist Action Buttons -->
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="handlePlayPlaylist({{ pl.name|tojson }})" title="Stream this playlist to voice channel">
+                            ▶️ Play in Voice
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="promptAddTrackToPlaylist({{ pl.name|tojson }})" title="Add YouTube, Spotify, or SoundCloud track">
+                            ➕ Add Song
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="togglePlaylistTracksView('pl-tracks-{{ loop.index }}')" title="Expand / collapse track list">
+                            👁️ View Tracks
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="handleDeletePlaylist({{ pl.name|tojson }})" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete playlist">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Accordion Tracks List -->
+                <div id="pl-tracks-{{ loop.index }}" style="display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-subtle);">
+                    {% if pl.tracks %}
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        {% for track in pl.tracks %}
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(0,0,0,0.2); border-radius: 6px;">
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+                                <span style="font-size: 12px; color: var(--text-dim); width: 22px;">#{{ track.position or loop.index }}</span>
+                                <div style="min-width: 0; flex: 1;">
+                                    <div style="font-size: 13px; font-weight: 500; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                        {% if track.url and track.url.startswith('http') %}
+                                        <a href="{{ track.url }}" target="_blank" style="color: #e2e8f0; text-decoration: none;">{{ track.title }}</a>
+                                        {% else %}
+                                        {{ track.title }}
+                                        {% endif %}
+                                        <span class="source-badge-tag source-{{ track.source_type or 'youtube' }}">{{ (track.source_type or 'Audio').title() }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn-remove-track" onclick="handleRemovePlaylistTrack({{ pl.name|tojson }}, {{ track.position or loop.index }})" title="Remove track from playlist">
+                                🗑️
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div style="font-size: 12px; color: var(--text-dim); text-align: center; padding: 8px;">
+                        This playlist has no songs yet. Click <strong>➕ Add Song</strong> above to add some!
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div id="playlists-empty-msg" style="text-align: center; padding: 30px; color: var(--text-dim); font-size: 13px;">
+                No server playlists created yet. Click <strong>➕ New Playlist</strong> above or type <code>/playlist create &lt;name&gt;</code> in Discord!
+            </div>
+            {% endif %}
+        </div>
+    </div>
     {% else %}
     <div class="glass-card" style="text-align: center; padding: 40px;">
         <div style="font-size: 40px; margin-bottom: 12px;">🎵</div>
@@ -3746,6 +3838,71 @@
         if (res && res.success) {
             showToast(`Cleared ${res.cleared_count} tracks from queue`, 'success');
             await fetchAndRefreshMusicUI();
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
+        }
+    }
+
+    // ──── Playlist Management in Music Tab ────
+    function togglePlaylistTracksView(elementId) {
+        const el = document.getElementById(elementId);
+        if (el) {
+            el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+        }
+    }
+
+    async function handlePlayPlaylist(name) {
+        showToast(`Loading playlist "${name}" into active voice queue...`, 'info');
+        const res = await apiRequest(`/api/guild/${guildId}/music/playlists/play`, 'POST', { name: name });
+        if (res && res.success) {
+            showToast(`🎵 Loaded ${res.queued_count} tracks from "${name}" into voice queue!`, 'success');
+            await fetchAndRefreshMusicUI();
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
+        }
+    }
+
+    async function promptCreatePlaylist() {
+        const name = prompt("Enter a name for the new playlist (e.g. Synthwave Chill):");
+        if (!name || !name.trim()) return;
+        const res = await apiRequest(`/api/guild/${guildId}/music/playlists/create`, 'POST', { name: name.trim() });
+        if (res && res.success) {
+            showToast(`✅ Created playlist "${res.name}"!`, 'success');
+            setTimeout(() => window.location.reload(), 600);
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
+        }
+    }
+
+    async function promptAddTrackToPlaylist(name) {
+        const query = prompt(`Add track to playlist "${name}":\nEnter song title, YouTube URL, Spotify link, or SoundCloud link:`);
+        if (!query || !query.trim()) return;
+        const res = await apiRequest(`/api/guild/${guildId}/music/playlists/track/add`, 'POST', { name: name, query: query.trim() });
+        if (res && res.success) {
+            showToast(`✅ Added track to "${name}"!`, 'success');
+            setTimeout(() => window.location.reload(), 600);
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
+        }
+    }
+
+    async function handleRemovePlaylistTrack(name, pos) {
+        if (!confirm(`Remove track #${pos} from playlist "${name}"?`)) return;
+        const res = await apiRequest(`/api/guild/${guildId}/music/playlists/track/remove`, 'POST', { name: name, position: pos });
+        if (res && res.success) {
+            showToast(`✅ Removed track #${pos} from "${name}"`, 'success');
+            setTimeout(() => window.location.reload(), 600);
+        } else if (res && res.error) {
+            showToast(res.error, 'error');
+        }
+    }
+
+    async function handleDeletePlaylist(name) {
+        if (!confirm(`Are you sure you want to delete the playlist "${name}"? This cannot be undone.`)) return;
+        const res = await apiRequest(`/api/guild/${guildId}/music/playlists/delete`, 'POST', { name: name });
+        if (res && res.success) {
+            showToast(`🗑️ Deleted playlist "${name}"`, 'success');
+            setTimeout(() => window.location.reload(), 600);
         } else if (res && res.error) {
             showToast(res.error, 'error');
         }

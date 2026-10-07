@@ -479,21 +479,33 @@ class MusicPlayerView(discord.ui.View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(emoji="📚", label="Library", style=discord.ButtonStyle.secondary, custom_id="music:library", row=1)
+    @discord.ui.button(emoji="📁", label="Playlists", style=discord.ButtonStyle.secondary, custom_id="music:library", row=1)
     async def library_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = interaction.guild_id
+        playlists = await Config.list_playlists(guild_id)
+        if not playlists:
+            embed = discord.Embed(
+                title="📁 Server Playlists",
+                description=(
+                    "No playlists have been created on this server yet!\n\n"
+                    "• Create a playlist: `/playlist create <name>`\n"
+                    "• Or use the **Web Dashboard** to create and manage playlists."
+                ),
+                color=discord.Color.blue()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        view = PlaylistSelectView(self.music, playlists, mode="play")
         embed = discord.Embed(
-            title="📚 Music Library & Quick Actions",
+            title="📁 Select Playlist to Play",
             description=(
-                "Access saved libraries or playlists directly with slash commands:\n\n"
-                "• `/mymusic <query>` — Play from your personal library\n"
-                "• `/publicmusic <query>` — Play from the shared community library\n"
-                "• `/playlocal <filename>` — Play from server music folder\n"
-                "• `/playlist play <name>` — Load a custom saved playlist\n"
-                "• `/playlist list` — View all server playlists"
+                f"Found **{len(playlists)}** playlist(s) on this server.\n"
+                "Choose one from the dropdown menu below to stream it into your voice channel:"
             ),
-            color=discord.Color.blue()
+            color=discord.Color.purple()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 # =========================================================================
@@ -1707,21 +1719,29 @@ class Music(commands.Cog):
         else:
             await interaction.response.send_message(f"❌ A playlist named **{name}** already exists in this server.", ephemeral=True)
 
-    async def _play_playlist_by_name(self, interaction: discord.Interaction, name: str):
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-        pl_data = await Config.get_playlist(interaction.guild_id, name)
+    async def play_playlist_for_guild(
+        self,
+        guild_id: int,
+        name: str,
+        requester: Optional[discord.abc.User] = None,
+        requester_name: str = "Web Dashboard"
+    ) -> Tuple[bool, int, str]:
+        """Loads and queues all tracks from a playlist into the active voice channel."""
+        pl_data = await Config.get_playlist(guild_id, name)
         if not pl_data or not pl_data.get("tracks"):
-            await interaction.followup.send(f"❌ Playlist **{name}** is empty or does not exist.", ephemeral=True)
-            return
+            return False, 0, f"Playlist '{name}' is empty or does not exist."
 
-        vc, err = await self._ensure_voice(interaction)
-        if err or not vc:
-            await interaction.followup.send(err or "Voice error.", ephemeral=True)
-            return
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return False, 0, "Guild not found."
 
+        state = self.get_state(guild_id)
+        vc = state.voice_client or guild.voice_client
+        if not vc or not vc.is_connected():
+            return False, 0, "Bot is not connected to a voice channel. Connect to voice and type /play first!"
+
+        req_user = requester or self.bot.user
         tracks = pl_data["tracks"]
-        state = self.get_state(interaction.guild_id)
         queued_count = 0
 
         for t in tracks:
@@ -1732,20 +1752,38 @@ class Music(commands.Cog):
                 duration=0,
                 thumbnail="",
                 webpage_url=url,
-                requester=interaction.user,
+                requester=req_user,
                 source_type=t.get("source_type", "youtube")
             ))
             queued_count += 1
 
-        embed = discord.Embed(
-            title="🎵 Playlist Queued",
-            description=f"Loaded **{queued_count}** tracks from playlist **{name}** into the queue.",
-            color=discord.Color.purple()
-        )
-        await interaction.followup.send(embed=embed)
-        await self.refresh_all_controllers(interaction.guild_id)
+        await self.refresh_all_controllers(guild_id)
         if not state.is_playing and state.current is None:
-            await self._play_next(interaction.guild_id)
+            await self._play_next(guild_id)
+
+        return True, queued_count, f"Loaded {queued_count} tracks from playlist '{name}'"
+
+    async def _play_playlist_by_name(self, interaction: discord.Interaction, name: str):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+
+        vc, err = await self._ensure_voice(interaction)
+        if err or not vc:
+            await interaction.followup.send(err or "Voice error.", ephemeral=True)
+            return
+
+        success, count, msg = await self.play_playlist_for_guild(
+            interaction.guild_id, name, requester=interaction.user
+        )
+        if success:
+            embed = discord.Embed(
+                title="🎵 Playlist Queued",
+                description=f"Loaded **{count}** tracks from playlist **{name}** into the queue.",
+                color=discord.Color.purple()
+            )
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
 
     async def _show_playlist_by_name(self, interaction: discord.Interaction, name: str):
         pl_data = await Config.get_playlist(interaction.guild_id, name)

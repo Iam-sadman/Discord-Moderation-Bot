@@ -537,6 +537,16 @@ def create_dashboard(bot):
             guild, user_id=raw_uid, access_key=raw_key, name=raw_name
         )
 
+        # Server playlists for Music tab
+        server_playlists = []
+        try:
+            raw_pls = await Config.list_playlists(guild_id)
+            for p in raw_pls:
+                p_full = await Config.get_playlist(guild_id, p["name"])
+                server_playlists.append(p_full or p)
+        except Exception:
+            server_playlists = []
+
         return await render_template(
             "guild.html",
             guild=guild,
@@ -551,6 +561,7 @@ def create_dashboard(bot):
             roles=roles,
             members=members,
             music_state=music_state,
+            server_playlists=server_playlists,
             settings=settings,
             cogs_catalog=cogs_catalog,
             cog_permissions=cog_permissions,
@@ -983,6 +994,114 @@ def create_dashboard(bot):
                 for idx, s in enumerate(state.queue[:30])
             ],
         })
+
+    # ──── Music Playlists API ────
+
+    @app.route("/api/guild/<int:guild_id>/music/playlists", methods=["GET"])
+    async def api_music_playlists_list(guild_id):
+        playlists = []
+        try:
+            raw_pls = await Config.list_playlists(guild_id)
+            for p in raw_pls:
+                p_full = await Config.get_playlist(guild_id, p["name"])
+                playlists.append(p_full or p)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"success": True, "playlists": playlists})
+
+    @app.route("/api/guild/<int:guild_id>/music/playlists/play", methods=["POST"])
+    async def api_music_playlists_play(guild_id):
+        data = await request.get_json()
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Playlist name is required"}), 400
+
+        music_cog = bot.get_cog("Music")
+        if not music_cog:
+            return jsonify({"error": "Music module not loaded"}), 400
+
+        success, count, msg = await music_cog.play_playlist_for_guild(
+            guild_id, name, requester_name="Web Dashboard"
+        )
+        if not success:
+            return jsonify({"error": msg}), 400
+
+        user_name = session.get("username", "Dashboard User")
+        await record_audit_event("MUSIC_PLAYLIST_PLAY", f"Guild {guild_id}", f"Queued playlist '{name}' ({count} tracks) by {user_name}")
+        return jsonify({"success": True, "queued_count": count, "message": msg, "playlist_name": name})
+
+    @app.route("/api/guild/<int:guild_id>/music/playlists/create", methods=["POST"])
+    async def api_music_playlists_create(guild_id):
+        data = await request.get_json()
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Playlist name is required"}), 400
+
+        user_id = int(session.get("user_id", 0)) if str(session.get("user_id", "")).isdigit() else 0
+        user_name = session.get("username", session.get("name", "Dashboard Admin"))
+
+        created = await Config.create_playlist(guild_id, name, user_id, user_name)
+        if not created:
+            return jsonify({"error": f"A playlist named '{name}' already exists in this server"}), 400
+
+        await record_audit_event("MUSIC_PLAYLIST_CREATE", f"Guild {guild_id}", f"Created playlist '{name}' via Dashboard by {user_name}")
+        return jsonify({"success": True, "name": name})
+
+    @app.route("/api/guild/<int:guild_id>/music/playlists/delete", methods=["POST"])
+    async def api_music_playlists_delete(guild_id):
+        data = await request.get_json()
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Playlist name is required"}), 400
+
+        deleted = await Config.delete_playlist(guild_id, name)
+        user_name = session.get("username", "Dashboard User")
+        await record_audit_event("MUSIC_PLAYLIST_DELETE", f"Guild {guild_id}", f"Deleted playlist '{name}' via Dashboard by {user_name}")
+        return jsonify({"success": True, "deleted": deleted})
+
+    @app.route("/api/guild/<int:guild_id>/music/playlists/track/add", methods=["POST"])
+    async def api_music_playlists_track_add(guild_id):
+        data = await request.get_json()
+        name = (data.get("name") or "").strip()
+        query = (data.get("query") or "").strip()
+        if not name or not query:
+            return jsonify({"error": "Playlist name and query/URL are required"}), 400
+
+        source_type = "url"
+        if "spotify.com" in query:
+            source_type = "spotify"
+        elif "soundcloud.com" in query:
+            source_type = "soundcloud"
+        elif "youtube.com" in query or "youtu.be" in query:
+            source_type = "youtube"
+
+        added = await Config.add_track_to_playlist(guild_id, name, query, query, source_type)
+        if not added:
+            return jsonify({"error": f"Playlist '{name}' not found"}), 404
+
+        user_name = session.get("username", "Dashboard User")
+        await record_audit_event("MUSIC_PLAYLIST_ADD_TRACK", f"Guild {guild_id}", f"Added '{query[:50]}' to playlist '{name}' by {user_name}")
+        return jsonify({"success": True})
+
+    @app.route("/api/guild/<int:guild_id>/music/playlists/track/remove", methods=["POST"])
+    async def api_music_playlists_track_remove(guild_id):
+        data = await request.get_json()
+        name = (data.get("name") or "").strip()
+        try:
+            pos = int(data.get("position", 1))
+        except (ValueError, TypeError):
+            pos = 1
+
+        if not name or pos < 1:
+            return jsonify({"error": "Valid playlist name and track position are required"}), 400
+
+        title = await Config.remove_track_from_playlist(guild_id, name, pos)
+        if not title:
+            return jsonify({"error": "Track position not found"}), 404
+
+        user_name = session.get("username", "Dashboard User")
+        await record_audit_event("MUSIC_PLAYLIST_REMOVE_TRACK", f"Guild {guild_id}", f"Removed track #{pos} ('{title}') from '{name}' by {user_name}")
+        return jsonify({"success": True, "removed_title": title})
 
     # ──── Cog Permissions (RBAC) API ────
     @app.route("/api/guild/<int:guild_id>/cog_permissions", methods=["GET"])
