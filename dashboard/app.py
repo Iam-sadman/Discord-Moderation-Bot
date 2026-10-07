@@ -934,7 +934,10 @@ def create_dashboard(bot):
 
         state.queue.extend(songs)
         await music_cog.refresh_all_controllers(guild_id)
-        if not state.is_playing and state.current is None:
+        if hasattr(music_cog, "_is_active_playback"):
+            if not music_cog._is_active_playback(guild_id):
+                await music_cog._play_next(guild_id)
+        elif not state.is_playing and state.current is None:
             await music_cog._play_next(guild_id)
 
         await record_audit_event("MUSIC_PLAY", f"Guild {guild_id}", f"Queued {len(songs)} track(s) for '{query[:60]}' by {user_name}")
@@ -959,8 +962,9 @@ def create_dashboard(bot):
             h, m = divmod(m, 60)
             return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
+        is_playing = music_cog._is_active_playback(guild_id) if hasattr(music_cog, "_is_active_playback") else state.is_playing
         return jsonify({
-            "is_playing": state.is_playing,
+            "is_playing": is_playing,
             "is_paused": bool(vc and vc.is_paused()),
             "voice_channel": vc.channel.name if (vc and vc.channel) else None,
             "listeners_count": len([m for m in vc.channel.members if not m.bot]) if (vc and vc.channel) else 0,

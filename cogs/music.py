@@ -40,7 +40,7 @@ YTDL_OPTIONS = {
 }
 
 FFMPEG_OPTIONS = {
-    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+    "before_options": "-reconnect 1 -reconnect_at_eof 0 -reconnect_streamed 0 -reconnect_delay_max 5",
     "options": "-vn",
 }
 
@@ -392,6 +392,10 @@ class MusicPlayerView(discord.ui.View):
                 state.current.pause_playback_time = None
             self.music._cancel_inactivity_timer(guild_id)
             await interaction.response.send_message("▶️ Playback resumed.", ephemeral=True)
+        elif state.queue and not self.music._is_active_playback(guild_id):
+            await interaction.response.send_message("▶️ Starting playback from queue...", ephemeral=True)
+            await self.music._play_next(guild_id)
+            return
         else:
             await interaction.response.send_message("❌ Nothing is currently playing.", ephemeral=True)
             return
@@ -757,7 +761,7 @@ class Music(commands.Cog):
                 # In-Use Protection: is the bot in a DIFFERENT channel with active listeners?
                 if vc.channel.id != target_channel.id:
                     active_listeners = [m for m in vc.channel.members if not m.bot]
-                    if len(active_listeners) > 0 and state.is_playing and not force_move:
+                    if len(active_listeners) > 0 and self._is_active_playback(guild.id) and not force_move:
                         return None, (
                             f"❌ I am currently playing music in **{vc.channel.name}** with "
                             f"{len(active_listeners)} listener(s). Please join **{vc.channel.name}**!"
@@ -950,9 +954,46 @@ class Music(commands.Cog):
     # Playback Pipeline
     # =========================================================================
 
+    def _is_active_playback(self, guild_id: int) -> bool:
+        """Determines if the voice client is genuinely actively playing or paused."""
+        state = self.get_state(guild_id)
+        guild = self.bot.get_guild(guild_id)
+        vc = state.voice_client or (guild.voice_client if guild else None)
+        if vc is not None:
+            state.voice_client = vc
+
+        if not vc or not vc.is_connected():
+            state.is_playing = False
+            return False
+
+        # If user explicitly paused playback, consider it active (paused)
+        if vc.is_paused():
+            return True
+
+        # If voice client is not playing at all, playback is not active
+        if not vc.is_playing():
+            return False
+
+        # If voice client reports playing, check if track has exceeded duration (hung zombie stream)
+        if state.current and state.current.duration > 0:
+            if state.current.elapsed() >= state.current.duration + 5:
+                # Zombie stream! Stop it cleanly so next track can play
+                try:
+                    vc.stop()
+                except Exception:
+                    pass
+                state.is_playing = False
+                state.current = None
+                return False
+
+        return bool(state.is_playing)
+
     async def _play_next(self, guild_id: int):
         state = self.get_state(guild_id)
-        vc = state.voice_client
+        guild = self.bot.get_guild(guild_id)
+        vc = state.voice_client or (guild.voice_client if guild else None)
+        if vc is not None:
+            state.voice_client = vc
 
         if not vc or not vc.is_connected():
             if state.temp_files or vc:
@@ -966,6 +1007,11 @@ class Music(commands.Cog):
             state._stop_flag = False
             state.current = None
             state.is_playing = False
+            if vc.is_playing() or vc.is_paused():
+                try:
+                    vc.stop()
+                except Exception:
+                    pass
             await self.refresh_all_controllers(guild_id)
             self._start_inactivity_timer(guild_id)
             return
@@ -990,6 +1036,11 @@ class Music(commands.Cog):
             if not state.queue:
                 state.current = None
                 state.is_playing = False
+                if vc.is_playing() or vc.is_paused():
+                    try:
+                        vc.stop()
+                    except Exception:
+                        pass
                 await self.refresh_all_controllers(guild_id)
                 self._start_inactivity_timer(guild_id)
                 return
@@ -1029,15 +1080,30 @@ class Music(commands.Cog):
                 )
                 source = discord.PCMVolumeTransformer(source, volume=state.volume)
 
+            # Defensive stop: ensure any lingering/stuck previous audio source is stopped before playing
+            if vc.is_playing() or vc.is_paused():
+                try:
+                    vc.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(0.15)
+
             state.is_playing = True
             self._cancel_inactivity_timer(guild_id)
             await self.refresh_all_controllers(guild_id)
 
             def after_playing(error):
+                state.is_playing = False
                 if error:
                     print(f"[Music] Playback error in guild {guild_id}: {error}")
                 if not self.bot.is_closed():
-                    asyncio.run_coroutine_threadsafe(self._play_next(guild_id), self.bot.loop)
+                    fut = asyncio.run_coroutine_threadsafe(self._play_next(guild_id), self.bot.loop)
+                    def _log_err(f):
+                        try:
+                            f.result()
+                        except Exception as e:
+                            print(f"[Music] Error in _play_next callback: {e}")
+                    fut.add_done_callback(_log_err)
 
             vc.play(source, after=after_playing)
         except Exception as exc:
@@ -1056,7 +1122,12 @@ class Music(commands.Cog):
         async def disconnect_after_timeout():
             try:
                 await asyncio.sleep(180)  # 3 minutes smart idle timeout
-                if state.voice_client and state.voice_client.is_connected() and not state.is_playing and not state.queue:
+                if (
+                    state.voice_client
+                    and state.voice_client.is_connected()
+                    and not self._is_active_playback(guild_id)
+                    and not state.queue
+                ):
                     await self._end_voice_session(guild_id)
             except asyncio.CancelledError:
                 pass
@@ -1290,7 +1361,7 @@ class Music(commands.Cog):
                 except discord.HTTPException:
                     pass
                 await self.refresh_all_controllers(message.guild.id)
-                if not state.is_playing and state.current is None:
+                if not self._is_active_playback(message.guild.id):
                     await self._play_next(message.guild.id)
             except Exception as exc:
                 try:
@@ -1340,7 +1411,7 @@ class Music(commands.Cog):
             pass
 
         await self.refresh_all_controllers(message.guild.id)
-        if not state.is_playing and state.current is None:
+        if not self._is_active_playback(message.guild.id):
             await self._play_next(message.guild.id)
 
     @commands.Cog.listener()
@@ -1370,7 +1441,7 @@ class Music(commands.Cog):
             if len(human_listeners) == 0:
                 self._start_inactivity_timer(guild.id)
             else:
-                if state.is_playing:
+                if self._is_active_playback(guild.id):
                     self._cancel_inactivity_timer(guild.id)
 
     # =========================================================================
@@ -1454,7 +1525,7 @@ class Music(commands.Cog):
         await interaction.followup.send(embed=embed)
         await self.refresh_all_controllers(interaction.guild_id, interaction.channel)
 
-        if not state.is_playing and state.current is None:
+        if not self._is_active_playback(interaction.guild_id):
             await self._play_next(interaction.guild_id)
 
     @app_commands.command(name="search", description="Search YouTube and select from top results")
@@ -1508,7 +1579,7 @@ class Music(commands.Cog):
                 state.queue.append(song)
                 await select_interaction.followup.send(f"🎵 Added **{song.title}** to the queue.")
                 await self.refresh_all_controllers(select_interaction.guild_id)
-                if not state.is_playing and state.current is None:
+                if not self._is_active_playback(select_interaction.guild_id):
                     await self._play_next(select_interaction.guild_id)
 
             select.callback = select_callback
@@ -1540,7 +1611,7 @@ class Music(commands.Cog):
         embed.set_footer(text=f"Requested by {interaction.user}")
         await interaction.followup.send(embed=embed)
         await self.refresh_all_controllers(interaction.guild_id)
-        if not state.is_playing and state.current is None:
+        if not self._is_active_playback(interaction.guild_id):
             await self._play_next(interaction.guild_id)
 
     @app_commands.command(name="mymusic", description="Play a song from your personal user library")
@@ -1563,7 +1634,7 @@ class Music(commands.Cog):
         state.queue.append(item)
         await interaction.followup.send(f"🎵 Added **{item.title}** from your library to the queue.", ephemeral=True)
         await self.refresh_all_controllers(interaction.guild_id)
-        if not state.is_playing and state.current is None:
+        if not self._is_active_playback(interaction.guild_id):
             await self._play_next(interaction.guild_id)
 
     @app_commands.command(name="publicmusic", description="Play a track from the community public library")
@@ -1586,7 +1657,7 @@ class Music(commands.Cog):
         state.queue.append(item)
         await interaction.followup.send(f"🎵 Added **{item.title}** from public library to queue.")
         await self.refresh_all_controllers(interaction.guild_id)
-        if not state.is_playing and state.current is None:
+        if not self._is_active_playback(interaction.guild_id):
             await self._play_next(interaction.guild_id)
 
     @app_commands.command(name="streamupload", description="Directly upload and queue an audio file (up to 100 MB)")
@@ -1621,7 +1692,7 @@ class Music(commands.Cog):
             await interaction.followup.send(embed=embed)
             await self.refresh_all_controllers(interaction.guild_id)
 
-            if not state.is_playing and state.current is None:
+            if not self._is_active_playback(interaction.guild_id):
                 await self._play_next(interaction.guild_id)
         except Exception as exc:
             try:
@@ -1758,7 +1829,7 @@ class Music(commands.Cog):
             queued_count += 1
 
         await self.refresh_all_controllers(guild_id)
-        if not state.is_playing and state.current is None:
+        if not self._is_active_playback(guild_id):
             await self._play_next(guild_id)
 
         return True, queued_count, f"Loaded {queued_count} tracks from playlist '{name}'"
@@ -2009,6 +2080,9 @@ class Music(commands.Cog):
             self._cancel_inactivity_timer(interaction.guild_id)
             await interaction.response.send_message("▶️ Resumed.")
             await self.refresh_all_controllers(interaction.guild_id)
+        elif state.queue and not self._is_active_playback(interaction.guild_id):
+            await interaction.response.send_message("▶️ Starting playback from queue.")
+            await self._play_next(interaction.guild_id)
         else:
             await interaction.response.send_message("❌ Nothing is paused.", ephemeral=True)
 

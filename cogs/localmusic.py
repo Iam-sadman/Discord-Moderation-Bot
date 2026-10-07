@@ -80,8 +80,11 @@ class LocalMusic(commands.Cog):
         await interaction.response.defer()
 
         try:
-            vc = await music_cog._ensure_voice(interaction)
+            res = await music_cog._ensure_voice(interaction)
+            vc = res[0] if isinstance(res, tuple) else res
+            err = res[1] if isinstance(res, tuple) and len(res) > 1 else None
             if not vc:
+                await interaction.followup.send(err or "❌ Failed to connect to voice channel.", ephemeral=True)
                 return
 
             state = music_cog.get_state(interaction.guild_id)
@@ -98,7 +101,10 @@ class LocalMusic(commands.Cog):
             embed.set_footer(text=f"Requested by {interaction.user}")
             await interaction.followup.send(embed=embed)
 
-            if not state.is_playing:
+            if hasattr(music_cog, "_is_active_playback"):
+                if not music_cog._is_active_playback(interaction.guild_id):
+                    await music_cog._play_next(interaction.guild_id)
+            elif not state.is_playing:
                 await music_cog._play_next(interaction.guild_id)
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
