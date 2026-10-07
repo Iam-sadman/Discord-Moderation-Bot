@@ -1673,6 +1673,25 @@ class Music(commands.Cog):
             )
         await interaction.response.send_message(embed=embed)
 
+    @playlist_group.command(name="remove", description="Remove a track from a playlist by position number")
+    @app_commands.describe(name="Playlist name", position="Position number from /playlist view (e.g. 1)")
+    @app_commands.autocomplete(name=_autocomplete_playlists)
+    async def pl_remove(self, interaction: discord.Interaction, name: str, position: int):
+        pl_data = await Config.get_playlist(interaction.guild_id, name)
+        if not pl_data:
+            await interaction.response.send_message(f"❌ Playlist **{name}** not found.", ephemeral=True)
+            return
+
+        if pl_data["created_by"] != interaction.user.id and not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ Only the playlist creator or an Administrator can edit this playlist.", ephemeral=True)
+            return
+
+        removed_title = await Config.remove_track_from_playlist(interaction.guild_id, name, position)
+        if removed_title:
+            await interaction.response.send_message(f"✅ Removed track `#{position}` (**{removed_title}**) from playlist **{name}**.")
+        else:
+            await interaction.response.send_message(f"❌ Invalid track position `#{position}`. Use `/playlist view {name}` to see track numbers.", ephemeral=True)
+
     @playlist_group.command(name="delete", description="Delete a saved playlist")
     @app_commands.describe(name="Playlist name")
     @app_commands.autocomplete(name=_autocomplete_playlists)

@@ -125,6 +125,7 @@ Servers can configure a dedicated music channel (e.g. `#music-player`) using `/m
 - `/playlist add <name> <query>`: Add a track to a playlist (with autocomplete).
 - `/playlist play <name>`: Enqueue and play all tracks from a playlist (with autocomplete).
 - `/playlist view <name>`: View all tracks in a saved playlist (with autocomplete).
+- `/playlist remove <name> <position>`: Remove a track by position number (with autocomplete).
 - `/playlist list`: List all saved playlists in the server.
 - `/playlist delete <name>`: Delete a playlist (creator or Admin only).
 
