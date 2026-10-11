@@ -629,6 +629,58 @@ class TestModerationSystem(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(cog)
         self.assertEqual(cog.mod_group.name, "mod")
 
+    async def test_31_publish_to_private_channel_handling(self):
+        """31. Private channel publishing fetches via API and provides clear permission diagnostics."""
+        async with self.client.session_transaction() as sess:
+            sess["user_id"] = "admin"
+            sess["role"] = "Administrator"
+
+        # Create panel targeting private channel
+        private_ch_id = 888888888888888888
+        create_res = await self.client.post(f"/api/guild/{self.mock_guild.id}/role_panels/create", json={
+            "channel_id": private_ch_id,
+            "title": "Private Mod Panel",
+            "items": []
+        })
+        self.assertEqual(create_res.status_code, 200)
+        panel_id = (await create_res.get_json())["panel"]["id"]
+
+        # 1. Bot cannot access private channel at all (Forbidden)
+        self.mock_guild.get_channel.return_value = None
+        self.mock_bot.fetch_channel.side_effect = discord.Forbidden(MagicMock(), "Missing Access")
+        res_forbidden = await self.client.post(f"/api/guild/{self.mock_guild.id}/role_panels/{panel_id}/publish")
+        self.assertEqual(res_forbidden.status_code, 403)
+        self.assertIn("Channel #888888888888888888 is private and the bot lacks permission", (await res_forbidden.get_json())["error"])
+
+        # 2. Private channel fetched, but bot lacks Send Messages permission
+        mock_private_channel = MagicMock(spec=discord.TextChannel)
+        mock_private_channel.id = private_ch_id
+        mock_private_channel.name = "staff-private"
+        mock_private_channel.guild = self.mock_guild
+        mock_perms = MagicMock()
+        mock_perms.view_channel = True
+        mock_perms.send_messages = False
+        mock_perms.embed_links = True
+        mock_perms.add_reactions = True
+        mock_private_channel.permissions_for.return_value = mock_perms
+        self.mock_bot.fetch_channel.side_effect = None
+        self.mock_bot.fetch_channel.return_value = mock_private_channel
+
+        res_missing_perm = await self.client.post(f"/api/guild/{self.mock_guild.id}/role_panels/{panel_id}/publish")
+        self.assertEqual(res_missing_perm.status_code, 403)
+        self.assertIn("Send Messages", (await res_missing_perm.get_json())["error"])
+
+        # 3. Private channel with proper permissions succeeds
+        mock_perms.send_messages = True
+        sent_mock = MagicMock()
+        sent_mock.id = 777777777777777777
+        sent_mock.jump_url = "https://discord.com/channels/123/888/777"
+        mock_private_channel.send = AsyncMock(return_value=sent_mock)
+
+        res_ok = await self.client.post(f"/api/guild/{self.mock_guild.id}/role_panels/{panel_id}/publish")
+        self.assertEqual(res_ok.status_code, 200)
+        self.assertTrue((await res_ok.get_json())["success"])
+
 
 if __name__ == "__main__":
     unittest.main()

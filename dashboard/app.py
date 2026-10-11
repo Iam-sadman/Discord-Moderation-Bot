@@ -468,7 +468,31 @@ def create_dashboard(bot):
         filtered_users = settings.get("log_filtered_users", [])
 
         # Channels and roles
-        text_channels = [{"id": c.id, "name": c.name} for c in guild.text_channels]
+        bot_member = guild.me
+        text_channels = []
+        for c in getattr(guild, "channels", []):
+            if hasattr(c, "send"):
+                is_private = False
+                can_bot_send = True
+                if bot_member:
+                    perms = c.permissions_for(bot_member)
+                    can_bot_send = bool(getattr(perms, "view_channel", True) and getattr(perms, "send_messages", True))
+                    if hasattr(guild, "default_role") and guild.default_role:
+                        is_private = not getattr(c.permissions_for(guild.default_role), "view_channel", True)
+                label = f"#{c.name}"
+                if is_private:
+                    label += " 🔒 (Private)"
+                if not can_bot_send:
+                    label += " ⚠️ (Missing Bot Perms)"
+                text_channels.append({
+                    "id": c.id,
+                    "name": c.name,
+                    "label": label,
+                    "is_private": is_private,
+                    "can_bot_send": can_bot_send
+                })
+        if not text_channels and hasattr(guild, "text_channels"):
+            text_channels = [{"id": c.id, "name": c.name, "label": f"#{c.name}"} for c in guild.text_channels]
         voice_channels = [{"id": c.id, "name": c.name} for c in guild.voice_channels]
         roles = [{"id": r.id, "name": r.name, "color": str(r.color)} for r in guild.roles if not r.managed]
         members = [{"id": m.id, "name": str(m)} for m in guild.members if not m.bot][:100]

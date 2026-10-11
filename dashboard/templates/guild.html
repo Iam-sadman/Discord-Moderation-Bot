@@ -2670,11 +2670,18 @@
 
             <div class="form-group">
                 <label class="form-label">Destination Discord Channel <span style="color: var(--accent-rose);">*</span></label>
-                <select class="form-select" id="panel-channel-select">
+                <select class="form-select" id="panel-channel-select" onchange="onPanelChannelSelectChange(this.value)">
                     {% for ch in text_channels %}
-                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
+                    <option value="{{ ch.id }}">{{ ch.label if ch.label else '#' ~ ch.name }}</option>
                     {% endfor %}
+                    <option value="custom">➕ Enter Custom / Private Channel ID...</option>
                 </select>
+                <div id="panel-custom-channel-container" style="display: none; margin-top: 8px;">
+                    <input type="text" class="form-input" id="panel-custom-channel-input" placeholder="Paste Channel ID (e.g. 123456789012345678)">
+                </div>
+                <small style="display: block; margin-top: 6px; font-size: 11px; color: var(--text-dim);">
+                    🔒 <em>Private Channels:</em> Make sure the bot (or the bot's role) has been added to the private channel with <strong>View Channel</strong>, <strong>Send Messages</strong>, and <strong>Embed Links</strong> permissions.
+                </small>
             </div>
 
             <div class="form-group">
@@ -5380,8 +5387,28 @@ function updatePanelLivePreview() {
     }
 }
 
+function onPanelChannelSelectChange(val) {
+    const box = document.getElementById('panel-custom-channel-container');
+    if (box) {
+        box.style.display = (val === 'custom') ? 'block' : 'none';
+        if (val === 'custom') {
+            document.getElementById('panel-custom-channel-input')?.focus();
+        }
+    }
+}
+
+function getEffectivePanelChannelId() {
+    const sel = document.getElementById('panel-channel-select');
+    if (!sel) return null;
+    if (sel.value === 'custom') {
+        const customVal = document.getElementById('panel-custom-channel-input')?.value.trim();
+        return customVal || null;
+    }
+    return sel.value;
+}
+
 async function savePanelDraft() {
-    const channelId = document.getElementById('panel-channel-select')?.value;
+    const channelId = getEffectivePanelChannelId();
     const title = document.getElementById('panel-title-input')?.value.trim();
     const desc = document.getElementById('panel-desc-input')?.value.trim();
     const color = document.getElementById('panel-color-hex')?.value.trim();
@@ -5390,7 +5417,7 @@ async function savePanelDraft() {
     const panelId = document.getElementById('panel-builder-id')?.value;
 
     if (!channelId || !title) {
-        alert('Destination channel and Title are required.');
+        alert('Destination channel (or Channel ID) and Title are required.');
         return;
     }
 
@@ -5421,7 +5448,7 @@ async function savePanelDraft() {
 
 async function publishPanelToDiscord() {
     // Save draft first, then publish
-    const channelId = document.getElementById('panel-channel-select')?.value;
+    const channelId = getEffectivePanelChannelId();
     const title = document.getElementById('panel-title-input')?.value.trim();
     const desc = document.getElementById('panel-desc-input')?.value.trim();
     const color = document.getElementById('panel-color-hex')?.value.trim();
@@ -5430,7 +5457,7 @@ async function publishPanelToDiscord() {
     let panelId = document.getElementById('panel-builder-id')?.value;
 
     if (!channelId || !title) {
-        alert('Channel and Title are required.');
+        alert('Destination channel (or Channel ID) and Title are required.');
         return;
     }
 
@@ -5523,8 +5550,16 @@ async function editExistingPanel(panelId) {
 
     document.getElementById('panel-builder-id').value = p.id;
     document.getElementById('panel-form-title').textContent = `✏️ Edit Panel #${p.id}`;
-    document.getElementById('panel-status-pill').textContent = p.message_id ? 'Published' : 'Draft';
-    document.getElementById('panel-channel-select').value = p.channel_id;
+    const sel = document.getElementById('panel-channel-select');
+    sel.value = p.channel_id;
+    if (sel.value !== String(p.channel_id)) {
+        sel.value = 'custom';
+        document.getElementById('panel-custom-channel-container').style.display = 'block';
+        document.getElementById('panel-custom-channel-input').value = p.channel_id;
+    } else {
+        document.getElementById('panel-custom-channel-container').style.display = 'none';
+        document.getElementById('panel-custom-channel-input').value = '';
+    }
     document.getElementById('panel-title-input').value = p.title;
     document.getElementById('panel-desc-input').value = p.description || '';
     document.getElementById('panel-color-hex').value = p.color || '#5865F2';

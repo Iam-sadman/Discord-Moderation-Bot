@@ -270,14 +270,22 @@ class ModerationDB:
             return panel_id
 
     async def update_role_panel(self, panel_id: int, title: str, description: str, color: str,
-                                image_url: str = "", thumbnail_url: str = "", is_enabled: bool = True):
+                                image_url: str = "", thumbnail_url: str = "", is_enabled: bool = True,
+                                channel_id: Optional[int] = None):
         await self.init_db()
         async with self.get_connection() as db:
-            await db.execute("""
-                UPDATE role_panels
-                SET title = ?, description = ?, color = ?, image_url = ?, thumbnail_url = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (title, description, color, image_url, thumbnail_url, is_enabled, panel_id))
+            if channel_id is not None:
+                await db.execute("""
+                    UPDATE role_panels
+                    SET title = ?, description = ?, color = ?, image_url = ?, thumbnail_url = ?, is_enabled = ?, channel_id = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (title, description, color, image_url, thumbnail_url, is_enabled, channel_id, panel_id))
+            else:
+                await db.execute("""
+                    UPDATE role_panels
+                    SET title = ?, description = ?, color = ?, image_url = ?, thumbnail_url = ?, is_enabled = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (title, description, color, image_url, thumbnail_url, is_enabled, panel_id))
             await db.commit()
 
     async def set_panel_message_id(self, panel_id: int, message_id: int):

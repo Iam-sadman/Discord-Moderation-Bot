@@ -288,6 +288,7 @@ async def api_edit_role_panel(guild_id, panel_id):
         return jsonify({"error": err}), 403
 
     data = await request.get_json() or {}
+    channel_id = data.get("channel_id")
     title = (data.get("title") or "").strip()
     description = (data.get("description") or "").strip()
     color = (data.get("color") or "#5865F2").strip()
@@ -300,7 +301,7 @@ async def api_edit_role_panel(guild_id, panel_id):
     await db.update_role_panel(
         panel_id=panel_id, title=title, description=description,
         color=color, image_url=image_url, thumbnail_url=thumbnail_url,
-        is_enabled=is_enabled
+        is_enabled=is_enabled, channel_id=int(channel_id) if channel_id else None
     )
     if items is not None:
         await db.set_panel_items(panel_id, items)
@@ -312,6 +313,11 @@ async def api_edit_role_panel(guild_id, panel_id):
         guild = bot.get_guild(guild_id) if bot else None
         if guild:
             ch = guild.get_channel(panel["channel_id"])
+            if not ch and bot:
+                try:
+                    ch = await bot.fetch_channel(panel["channel_id"])
+                except Exception:
+                    ch = None
             if ch:
                 try:
                     msg = await ch.fetch_message(panel["message_id"])
@@ -343,9 +349,50 @@ async def api_publish_role_panel(guild_id, panel_id):
     if not guild:
         return jsonify({"error": "Guild not found"}), 404
 
-    channel = guild.get_channel(panel["channel_id"])
+    target_channel_id = panel["channel_id"]
+    channel = guild.get_channel(target_channel_id)
+    if not channel and bot:
+        try:
+            channel = await bot.fetch_channel(target_channel_id)
+        except discord.NotFound:
+            return jsonify({"error": f"Destination channel #{target_channel_id} does not exist on Discord"}), 404
+        except discord.Forbidden:
+            return jsonify({
+                "error": f"Channel #{target_channel_id} is private and the bot lacks permission to access it. Please add the bot or bot's role to the channel permissions in Discord with 'View Channel', 'Send Messages', and 'Embed Links'."
+            }), 403
+        except Exception as e:
+            logger.warning("Error fetching channel %s: %s", target_channel_id, e)
+            channel = None
+
     if not channel:
-        return jsonify({"error": "Destination channel not found in server"}), 404
+        return jsonify({
+            "error": f"Destination channel #{target_channel_id} is not accessible. If this is a private channel, make sure the bot (or the bot's role) has been added with 'View Channel' permission in Discord."
+        }), 404
+
+    # Ensure channel belongs to this guild
+    if getattr(channel, "guild", None) and channel.guild.id != guild_id:
+        return jsonify({"error": "Destination channel belongs to a different server"}), 400
+
+    # Explicit permission inspection before attempting to send
+    if hasattr(channel, "permissions_for") and guild.me:
+        perms = channel.permissions_for(guild.me)
+        missing_perms = []
+        if not perms.view_channel:
+            missing_perms.append("View Channel")
+        if not perms.send_messages:
+            missing_perms.append("Send Messages")
+        if not perms.embed_links:
+            missing_perms.append("Embed Links")
+
+        has_reactions = any(item.get("item_type") == "reaction" for item in panel.get("items", []))
+        if has_reactions and not perms.add_reactions:
+            missing_perms.append("Add Reactions")
+
+        if missing_perms:
+            ch_name = getattr(channel, "name", str(target_channel_id))
+            return jsonify({
+                "error": f"Bot lacks required permissions in #{ch_name}: {', '.join(missing_perms)}. In private channels, grant the bot or the bot's role these permissions in the channel settings."
+            }), 403
 
     color_int = 0x5865F2
     try:
@@ -375,7 +422,10 @@ async def api_publish_role_panel(guild_id, panel_id):
 
         return jsonify({"success": True, "message_id": str(sent_msg.id), "jump_url": sent_msg.jump_url})
     except discord.Forbidden:
-        return jsonify({"error": "Bot lacks permission to send messages or embed links in the target channel"}), 403
+        ch_name = getattr(channel, "name", "the channel")
+        return jsonify({
+            "error": f"Bot lacks permission to post in #{ch_name}. In private channels, please grant the bot 'View Channel', 'Send Messages', and 'Embed Links' permissions in Discord."
+        }), 403
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
