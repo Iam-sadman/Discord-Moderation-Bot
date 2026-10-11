@@ -3366,7 +3366,7 @@
 <!-- ========================================== -->
 <!-- CONFIRMATION MODAL COMPONENT               -->
 <!-- ========================================== -->
-<div id="mod-confirm-modal" style="display: none; position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center;">
+<div id="mod-confirm-modal" onclick="if(event.target === this) closeConfirmModal()" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); align-items: center; justify-content: center;">
     <div style="background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 480px; box-shadow: var(--shadow-glow);">
         <h4 style="font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #ffffff;" id="modal-confirm-title">Confirm Destructive Action</h4>
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 18px;" id="modal-confirm-desc">Are you sure you want to proceed?</p>
