@@ -980,6 +980,24 @@
     <button class="tab-btn active" onclick="switchGuildTab('overview', this)" id="tab-btn-overview">
         📊 Overview
     </button>
+    <button class="tab-btn" onclick="switchGuildTab('roles', this)" id="tab-btn-roles">
+        🛡️ Role Manager
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('role-panels', this)" id="tab-btn-role-panels">
+        📋 Role Panels
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('moderation', this)" id="tab-btn-moderation">
+        ⚡ Moderation Center
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('bulk-mod', this)" id="tab-btn-bulk-mod">
+        👥 Bulk Moderation
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('mod-audit', this)" id="tab-btn-mod-audit">
+        📜 Moderation Audit
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('mod-config', this)" id="tab-btn-mod-config">
+        ⚙️ Mod Config & Safety
+    </button>
     <button class="tab-btn" onclick="switchGuildTab('cogs', this)" id="tab-btn-cogs">
         📦 Cogs & Slash Commands
     </button>
@@ -2483,6 +2501,887 @@
     </div>
     {% endif %}
 </div>
+
+<!-- ========================================== -->
+<!-- 8. ROLE MANAGER TAB                        -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-roles">
+    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h3 style="font-size: 20px; font-weight: 700;">Server Roles & Member Manager</h3>
+            <p style="font-size: 13px; color: var(--text-muted);">
+                Inspect role hierarchies, assign or remove roles from members, and manage the self-service role whitelist.
+            </p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-sm btn-secondary" onclick="loadRolesCatalog(); loadMembersList(0);">
+                🔄 Refresh Roles & Members
+            </button>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1.4fr; gap: 24px; align-items: start;">
+        <!-- Left: Roles Catalog & Allowlist -->
+        <div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <h4>🛡️ Server Role Hierarchy</h4>
+                    <span style="font-size: 11px; color: var(--text-dim);">Sorted by Position</span>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
+                    Roles outranked by the bot can be managed. Roles marked with ⭐ are allowed on self-service panels.
+                </p>
+                <div class="table-container" style="max-height: 480px; overflow-y: auto;">
+                    <table class="data-table" id="roles-catalog-table">
+                        <thead>
+                            <tr>
+                                <th>Role</th>
+                                <th>Members</th>
+                                <th>Status</th>
+                                <th>Self-Service</th>
+                            </tr>
+                        </thead>
+                        <tbody id="roles-catalog-tbody">
+                            <tr><td colspan="4" style="text-align: center; padding: 20px;">Loading server roles...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Member Lookup & Role Editor -->
+        <div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <h4>👤 Member Role Inspector</h4>
+                    <span style="font-size: 11px; color: var(--text-dim);" id="members-count-badge">Search Members</span>
+                </div>
+
+                <!-- Member Search Filters -->
+                <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                    <input type="text" class="form-input" id="member-search-input" placeholder="Search by username, display name, or user ID..." style="flex: 1;" oninput="debounceMemberSearch()">
+                    <select class="form-select" id="member-role-filter" style="width: 180px;" onchange="loadMembersList(0)">
+                        <option value="">All Roles</option>
+                    </select>
+                </div>
+
+                <!-- Member Selection List -->
+                <div class="table-container" style="max-height: 260px; overflow-y: auto; margin-bottom: 18px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Member</th>
+                                <th>Top Role</th>
+                                <th>Roles Count</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="members-list-tbody">
+                            <tr><td colspan="4" style="text-align: center; padding: 20px;">Loading members...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Active Member Inspector Card -->
+                <div id="member-inspector-card" style="display: none; background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-hover); border-radius: var(--radius-md); padding: 18px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <img id="insp-avatar" src="" style="width: 44px; height: 44px; border-radius: 50%; object-fit: cover;">
+                            <div>
+                                <h4 id="insp-name" style="font-size: 15px; font-weight: 700; color: #ffffff;">User</h4>
+                                <span id="insp-id" style="font-size: 11px; font-family: 'JetBrains Mono'; color: var(--text-dim);">ID</span>
+                            </div>
+                        </div>
+                        <span id="insp-protection" class="role-badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 11px;">Standard Member</span>
+                    </div>
+
+                    <!-- Current Roles -->
+                    <div style="margin-bottom: 14px;">
+                        <label class="form-label" style="font-size: 11px;">Current Roles:</label>
+                        <div id="insp-current-roles" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;"></div>
+                    </div>
+
+                    <!-- Role Modification Form -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">Assign Manageable Role:</label>
+                            <select class="form-select" id="insp-assign-role-select">
+                                <option value="">Select Role to Add...</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-primary" style="margin-top: 6px; width: 100%;" onclick="submitRoleChange('assign')">
+                                ➕ Assign Role
+                            </button>
+                        </div>
+                        <div>
+                            <label class="form-label" style="font-size: 11px;">Remove Existing Role:</label>
+                            <select class="form-select" id="insp-remove-role-select">
+                                <option value="">Select Role to Remove...</option>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-danger" style="margin-top: 6px; width: 100%;" onclick="submitRoleChange('remove')">
+                                ➖ Remove Role
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Reason & DM Checkbox -->
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <input type="text" class="form-input" id="insp-reason-input" placeholder="Reason for audit log (optional)..." style="flex: 1; font-size: 12px;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; white-space: nowrap;">
+                            <input type="checkbox" id="insp-notify-dm" checked>
+                            Notify via DM
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 9. ROLE PANEL BUILDER TAB                  -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-role-panels">
+    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h3 style="font-size: 20px; font-weight: 700;">Self-Service Role Panel Builder</h3>
+            <p style="font-size: 13px; color: var(--text-muted);">
+                Design embed panels with persistent interactive buttons and reaction roles that survive bot restarts.
+            </p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-sm btn-primary" onclick="resetPanelBuilderForm()">
+                ➕ New Role Panel
+            </button>
+            <button class="btn btn-sm btn-secondary" onclick="loadRolePanels()">
+                🔄 Refresh Panels
+            </button>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start;">
+        <!-- Left: Panel Builder Form -->
+        <div class="glass-card">
+            <div class="card-header">
+                <h4 id="panel-form-title">🎨 Configure Role Panel</h4>
+                <span class="role-badge" id="panel-status-pill" style="font-size: 11px;">Draft</span>
+            </div>
+
+            <input type="hidden" id="panel-builder-id" value="">
+
+            <div class="form-group">
+                <label class="form-label">Destination Discord Channel <span style="color: var(--accent-rose);">*</span></label>
+                <select class="form-select" id="panel-channel-select">
+                    {% for ch in text_channels %}
+                    <option value="{{ ch.id }}">#{{ ch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Embed Panel Title <span style="color: var(--accent-rose);">*</span></label>
+                <input type="text" class="form-input" id="panel-title-input" placeholder="e.g. Choose Your Community Roles" oninput="updatePanelLivePreview()">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Embed Description / Instructions</label>
+                <textarea class="form-textarea" id="panel-desc-input" rows="3" placeholder="Click the buttons below to assign or remove roles..." oninput="updatePanelLivePreview()"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                <div class="form-group">
+                    <label class="form-label">Embed Accent Color</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="color" id="panel-color-picker" value="#5865F2" style="width: 36px; height: 36px; border: none; background: none; cursor: pointer;" onchange="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();">
+                        <input type="text" class="form-input" id="panel-color-hex" value="#5865F2" style="font-family: 'JetBrains Mono'; text-transform: uppercase;" oninput="document.getElementById('panel-color-picker').value = this.value; updatePanelLivePreview();">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Thumbnail URL (Optional)</label>
+                    <input type="url" class="form-input" id="panel-thumb-url" placeholder="https://..." oninput="updatePanelLivePreview()">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Banner Image URL (Optional)</label>
+                <input type="url" class="form-input" id="panel-image-url" placeholder="https://..." oninput="updatePanelLivePreview()">
+            </div>
+
+            <!-- Interactive Buttons & Reactions Config -->
+            <div style="margin-top: 18px; border-top: 1px solid var(--border-subtle); padding-top: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <label class="form-label" style="margin-bottom: 0;">Interactive Buttons & Reactions</label>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="addPanelItemRow()">
+                        ➕ Add Role Button
+                    </button>
+                </div>
+                <div id="panel-items-container" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- Dynamic Rows Rendered Here -->
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="savePanelDraft()">
+                    💾 Save Draft
+                </button>
+                <button type="button" class="btn btn-primary" onclick="publishPanelToDiscord()">
+                    🚀 Publish to Discord Channel
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: Live Preview & Existing Panels -->
+        <div>
+            <!-- Discord Embed Preview -->
+            <div class="glass-card" style="margin-bottom: 24px;">
+                <div class="card-header">
+                    <h4>👁️ Live Discord Preview</h4>
+                    <span style="font-size: 11px; color: var(--text-dim);">Real-Time Component Mirror</span>
+                </div>
+
+                <div class="discord-preview-box">
+                    <div class="discord-message-row">
+                        <div class="discord-author-avatar">
+                            {% if bot.user and bot.user.display_avatar %}
+                            <img src="{{ bot.user.display_avatar.url }}">
+                            {% else %}
+                            🤖
+                            {% endif %}
+                        </div>
+                        <div class="discord-message-content">
+                            <div class="discord-author-name">
+                                {{ bot.user.name if bot.user else "ModularBot" }}
+                                <span class="discord-bot-tag">BOT</span>
+                            </div>
+
+                            <!-- Live Embed Preview -->
+                            <div class="discord-embed-card" id="panel-preview-card" style="border-left-color: #5865F2;">
+                                <div style="display: flex; justify-content: space-between; gap: 12px;">
+                                    <div style="flex: 1;">
+                                        <div class="discord-embed-title" id="panel-preview-title">Choose Your Roles</div>
+                                        <div class="discord-embed-desc" id="panel-preview-desc">Click the buttons below to assign or remove roles.</div>
+                                    </div>
+                                    <img id="panel-preview-thumb" src="" style="width: 60px; height: 60px; border-radius: 4px; object-fit: cover; display: none;">
+                                </div>
+                                <img id="panel-preview-image" src="" style="width: 100%; border-radius: 4px; margin-top: 10px; display: none;">
+                                <div class="discord-btn-row" id="panel-preview-buttons">
+                                    <!-- Live Preview Buttons Rendered Here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Existing Panels List -->
+            <div class="glass-card">
+                <div class="card-header">
+                    <h4>📋 Server Role Panels</h4>
+                    <span style="font-size: 11px; color: var(--text-dim);" id="panel-count-label">0 Panels</span>
+                </div>
+                <div id="existing-panels-container" style="display: flex; flex-direction: column; gap: 12px;">
+                    <div style="text-align: center; padding: 20px; color: var(--text-dim);">Loading panels...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 10. MODERATION CENTER TAB                  -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-moderation">
+    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h3 style="font-size: 20px; font-weight: 700;">Server Moderation Center</h3>
+            <p style="font-size: 13px; color: var(--text-muted);">
+                Execute timeouts, kicks, permanent bans, durable temporary bans, and unbans with hierarchy protection.
+            </p>
+        </div>
+        <div>
+            <span class="role-badge {{ 'admin' if not is_emergency_locked else 'leave' }}" style="font-size: 12px;">
+                {{ '🟢 Moderation Engine Active' if not is_emergency_locked else '🚨 Emergency Circuit Breaker Locked' }}
+            </span>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; align-items: start;">
+        <!-- Left: Moderation Action Form -->
+        <div class="glass-card">
+            <div class="card-header">
+                <h4>⚡ Execute Moderation Action</h4>
+                <span style="font-size: 11px; color: var(--text-dim);">Server-Validated</span>
+            </div>
+
+            <!-- Target Selection -->
+            <div class="form-group">
+                <label class="form-label">Target Member or User ID <span style="color: var(--accent-rose);">*</span></label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" class="form-input" id="mod-target-input" placeholder="Enter username or 18-digit Discord ID..." style="flex: 1;" oninput="debounceTargetResolve()">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="resolveTargetMember()">
+                        🔍 Inspect
+                    </button>
+                </div>
+                <div id="target-resolved-card" style="display: none; margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.25); border-radius: 6px; border: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 10px;">
+                    <img id="target-res-avatar" src="" style="width: 36px; height: 36px; border-radius: 50%;">
+                    <div>
+                        <div id="target-res-name" style="font-size: 13px; font-weight: 700; color: #ffffff;">User</div>
+                        <div id="target-res-info" style="font-size: 11px; color: var(--text-dim);">ID</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Sub-tabs -->
+            <div class="tab-bar" style="margin-bottom: 18px; margin-top: 14px;">
+                <button type="button" class="tab-btn active" onclick="switchModAction('timeout', this)" id="btn-mod-tab-timeout">
+                    ⏱️ Timeout
+                </button>
+                <button type="button" class="tab-btn" onclick="switchModAction('kick', this)" id="btn-mod-tab-kick">
+                    👢 Kick
+                </button>
+                <button type="button" class="tab-btn" onclick="switchModAction('tempban', this)" id="btn-mod-tab-tempban">
+                    ⏳ Temp-Ban
+                </button>
+                <button type="button" class="tab-btn" onclick="switchModAction('ban', this)" id="btn-mod-tab-ban">
+                    🔨 Ban
+                </button>
+            </div>
+
+            <!-- Action Form Fields -->
+            <div id="mod-action-form">
+                <!-- Duration Group (for timeout & tempban) -->
+                <div class="form-group" id="mod-duration-group">
+                    <label class="form-label">Action Duration</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;" id="duration-presets-container">
+                        <!-- Preset Pills -->
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="number" class="form-input" id="mod-custom-duration-num" placeholder="Duration amount..." style="flex: 1;" min="1">
+                        <select class="form-select" id="mod-custom-duration-unit" style="width: 120px;">
+                            <option value="60">Minutes</option>
+                            <option value="3600">Hours</option>
+                            <option value="86400">Days</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Message History Deletion (for ban & tempban) -->
+                <div class="form-group" id="mod-msg-delete-group" style="display: none;">
+                    <label class="form-label">Delete Message History</label>
+                    <select class="form-select" id="mod-delete-days-select">
+                        <option value="0">Don't delete any messages</option>
+                        <option value="1">Previous 24 Hours (1 Day)</option>
+                        <option value="7">Previous 7 Days</option>
+                    </select>
+                </div>
+
+                <!-- Reason -->
+                <div class="form-group">
+                    <label class="form-label">Moderation Reason (Discord Audit Log)</label>
+                    <input type="text" class="form-input" id="mod-reason-input" placeholder="e.g. Violation of Rule 2: Inappropriate language">
+                </div>
+
+                <!-- DM Notification -->
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-main); cursor: pointer;">
+                        <input type="checkbox" id="mod-notify-dm-toggle" checked onchange="toggleCustomDmField()">
+                        Send DM notice to target user before executing
+                    </label>
+                    <div id="mod-custom-dm-container" style="margin-top: 8px; display: none;">
+                        <textarea class="form-textarea" id="mod-custom-dm-input" rows="2" placeholder="Custom DM message (leave blank to use configured message template)..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div style="margin-top: 24px;">
+                    <button type="button" class="btn btn-primary" id="btn-submit-mod-action" style="width: 100%; padding: 12px;" onclick="promptConfirmModAction()">
+                        Execute Action
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Server Ban List & Active Temp-Bans -->
+        <div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <h4>🔨 Server Ban List & Unban</h4>
+                    <button class="btn btn-sm btn-secondary" onclick="loadBanList()">
+                        🔄 Refresh Bans
+                    </button>
+                </div>
+                <div style="margin-bottom: 14px;">
+                    <input type="text" class="form-input" id="ban-search-input" placeholder="Search banned users by name or ID..." oninput="filterBanList()">
+                </div>
+                <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Reason</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ban-list-tbody">
+                            <tr><td colspan="3" style="text-align: center; padding: 20px;">Loading banned users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 11. BULK MODERATION TAB                    -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-bulk-mod">
+    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h3 style="font-size: 20px; font-weight: 700;">Bulk Moderation & Filter Engine</h3>
+            <p style="font-size: 13px; color: var(--text-muted);">
+                Safely filter, preview, and apply bulk role changes or moderation actions with bounded rate limiting and emergency cancellation.
+            </p>
+        </div>
+        <div>
+            <span class="role-badge staff" style="font-size: 12px;">
+                Bounded Max: 250 Targets
+            </span>
+        </div>
+    </div>
+
+    <!-- Active Job Live Progress (If running) -->
+    <div id="bulk-active-job-banner" style="display: none; margin-bottom: 24px; background: rgba(30, 41, 59, 0.9); border: 1px solid var(--accent-primary); border-radius: var(--radius-lg); padding: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div>
+                <h4 style="font-size: 16px; font-weight: 700; color: #ffffff;" id="bulk-job-title">Executing Bulk Operation...</h4>
+                <div style="font-size: 12px; color: var(--text-muted);" id="bulk-job-meta">Job ID: —</div>
+            </div>
+            <button class="btn btn-sm btn-danger" onclick="cancelActiveBulkJob()" id="btn-cancel-bulk-job">
+                🛑 Cancel Job
+            </button>
+        </div>
+
+        <div style="background: rgba(0,0,0,0.4); border-radius: 999px; height: 12px; overflow: hidden; margin-bottom: 12px;">
+            <div id="bulk-job-progress-bar" style="background: linear-gradient(90deg, var(--accent-primary), var(--accent-cyan)); height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--text-main);">
+            <span id="bulk-job-counters">Processed 0 / 0</span>
+            <span id="bulk-job-stats" style="color: var(--accent-emerald);">Success: 0 | Failed: 0 | Skipped: 0</span>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; align-items: start;">
+        <!-- Left: Filter Builder -->
+        <div class="glass-card">
+            <div class="card-header">
+                <h4>🎯 Target Filter Builder</h4>
+                <span style="font-size: 11px; color: var(--text-dim);">Live Snapshot</span>
+            </div>
+
+            <!-- Role Inclusions / Exclusions -->
+            <div class="form-group">
+                <label class="form-label">Members Who Possess Role(s):</label>
+                <select class="form-select" id="bulk-filter-has-roles" multiple style="height: 90px;">
+                    {% for r in roles %}
+                    <option value="{{ r.id }}">@{{ r.name }}</option>
+                    {% endfor %}
+                </select>
+                <span style="font-size: 11px; color: var(--text-dim);">Hold Ctrl/Cmd to select multiple roles</span>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Members Who Lack Role(s):</label>
+                <select class="form-select" id="bulk-filter-lacks-roles" multiple style="height: 90px;">
+                    {% for r in roles %}
+                    <option value="{{ r.id }}">@{{ r.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Join Date Filters -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                <div class="form-group">
+                    <label class="form-label">Joined Before:</label>
+                    <input type="datetime-local" class="form-input" id="bulk-filter-joined-before">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Joined After:</label>
+                    <input type="datetime-local" class="form-input" id="bulk-filter-joined-after">
+                </div>
+            </div>
+
+            <!-- Account Age & Bot status -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                <div class="form-group">
+                    <label class="form-label">Discord Account Created Before:</label>
+                    <input type="datetime-local" class="form-input" id="bulk-filter-account-before">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Target Type:</label>
+                    <select class="form-select" id="bulk-filter-is-bot">
+                        <option value="false">Human Members Only</option>
+                        <option value="true">Bots Only</option>
+                        <option value="">Both Humans & Bots</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Explicit Exclusions -->
+            <div class="form-group">
+                <label class="form-label">Explicit Exclusions (Comma-separated User IDs):</label>
+                <input type="text" class="form-input" id="bulk-filter-exclusions" placeholder="e.g. 123456789012345678, 234567890123456789">
+            </div>
+
+            <!-- Preview Button -->
+            <div style="margin-top: 18px;">
+                <button type="button" class="btn btn-primary" style="width: 100%;" onclick="runBulkPreview()">
+                    🔍 Calculate & Preview Matching Targets
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: Preview Snapshot & Action Launcher -->
+        <div>
+            <div class="glass-card">
+                <div class="card-header">
+                    <h4>📊 Filter Match Preview</h4>
+                    <span id="bulk-preview-count-pill" class="role-badge admin">0 Matches</span>
+                </div>
+
+                <div id="bulk-preview-summary" style="margin-bottom: 14px; font-size: 13px; color: var(--text-muted);">
+                    Click "Calculate & Preview Matching Targets" on the left to inspect matches.
+                </div>
+
+                <!-- Preview Sample Members -->
+                <div class="table-container" style="max-height: 220px; overflow-y: auto; margin-bottom: 20px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Target</th>
+                                <th>Joined</th>
+                                <th>Roles</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulk-preview-tbody">
+                            <tr><td colspan="3" style="text-align: center; padding: 16px; color: var(--text-dim);">No preview calculated yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Action Execution Selector -->
+                <div style="border-top: 1px solid var(--border-subtle); padding-top: 16px;">
+                    <h5 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: #ffffff;">Configure Bulk Action</h5>
+
+                    <div class="form-group">
+                        <label class="form-label">Action to Apply</label>
+                        <select class="form-select" id="bulk-action-type-select" onchange="toggleBulkActionOptions()">
+                            <option value="role_add">Assign Role</option>
+                            <option value="role_remove">Remove Role</option>
+                            <option value="timeout">Timeout</option>
+                            <option value="kick">Kick Members</option>
+                            <option value="ban">Ban Members</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="bulk-role-select-group">
+                        <label class="form-label">Select Target Role</label>
+                        <select class="form-select" id="bulk-target-role-select">
+                            {% for r in roles %}
+                            <option value="{{ r.id }}">@{{ r.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="bulk-duration-group" style="display: none;">
+                        <label class="form-label">Timeout Duration (Minutes)</label>
+                        <input type="number" class="form-input" id="bulk-duration-input" value="10" min="1" max="40320">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Audit Reason</label>
+                        <input type="text" class="form-input" id="bulk-reason-input" placeholder="Bulk action reason for audit history...">
+                    </div>
+
+                    <!-- Safety Confirmation Phrase for Kick/Ban -->
+                    <div class="form-group" id="bulk-confirm-phrase-group" style="display: none; background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 6px; padding: 12px;">
+                        <label class="form-label" style="color: #fca5a5;">High-Impact Confirmation Required:</label>
+                        <p style="font-size: 11px; color: #fecdd3; margin-bottom: 8px;">
+                            To prevent accidental mass moderation, type <strong id="bulk-expected-phrase" style="font-family:'JetBrains Mono';">CONFIRM KICK</strong> below:
+                        </p>
+                        <input type="text" class="form-input" id="bulk-confirm-phrase-input" placeholder="Type confirmation phrase here...">
+                    </div>
+
+                    <button type="button" class="btn btn-danger" id="btn-launch-bulk-job" style="width: 100%; padding: 12px;" onclick="launchBulkJob()">
+                        🚀 Execute Bulk Job
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 12. MODERATION AUDIT LOGS TAB              -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-mod-audit">
+    <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div>
+            <h3 style="font-size: 20px; font-weight: 700;">Moderation & Role Management Audit</h3>
+            <p style="font-size: 13px; color: var(--text-muted);">
+                Immutable records of all role changes, timeouts, kicks, bans, temp-bans, and bulk operations.
+            </p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-sm btn-secondary" onclick="loadModAuditLogs(0)">
+                🔄 Refresh Audit Logs
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters Bar -->
+    <div class="glass-card" style="padding: 16px; margin-bottom: 20px;">
+        <div style="display: flex; gap: 14px; flex-wrap: wrap; align-items: center;">
+            <div style="flex: 1; min-width: 200px;">
+                <input type="text" class="form-input" id="mod-audit-search" placeholder="Search by target user, actor, or reason..." oninput="debounceModAuditSearch()">
+            </div>
+            <div style="width: 200px;">
+                <select class="form-select" id="mod-audit-type-filter" onchange="loadModAuditLogs(0)">
+                    <option value="all">All Action Types</option>
+                    <option value="TIMEOUT">TIMEOUT</option>
+                    <option value="KICK">KICK</option>
+                    <option value="BAN">BAN</option>
+                    <option value="TEMPBAN">TEMPBAN</option>
+                    <option value="UNBAN">UNBAN</option>
+                    <option value="ROLE_ASSIGN">ROLE_ASSIGN</option>
+                    <option value="ROLE_REMOVE">ROLE_REMOVE</option>
+                    <option value="BULK_ROLE_ADD_START">BULK ROLE ADD</option>
+                    <option value="BULK_ROLE_REMOVE_START">BULK ROLE REMOVE</option>
+                    <option value="BULK_KICK_START">BULK KICK</option>
+                    <option value="BULK_BAN_START">BULK BAN</option>
+                    <option value="EMERGENCY_LOCK_TOGGLE">EMERGENCY CIRCUIT BREAKER</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audit Logs Table -->
+    <div class="glass-card">
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Actor</th>
+                        <th>Action</th>
+                        <th>Target</th>
+                        <th>DM Status</th>
+                        <th>Outcome</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="mod-audit-tbody">
+                    <tr><td colspan="7" style="text-align: center; padding: 24px;">Loading moderation audit logs...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 18px;">
+            <span style="font-size: 12px; color: var(--text-dim);" id="mod-audit-pagination-info">Showing 0 of 0</span>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-sm btn-secondary" id="btn-mod-audit-prev" onclick="prevModAuditPage()" disabled>Previous</button>
+                <button class="btn btn-sm btn-secondary" id="btn-mod-audit-next" onclick="nextModAuditPage()" disabled>Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 13. MOD CONFIG & CIRCUIT BREAKER TAB       -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-mod-config">
+    <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 20px; font-weight: 700;">Moderation Configuration & Safety Controls</h3>
+        <p style="font-size: 13px; color: var(--text-muted);">
+            Manage emergency circuit breaker locks, dashboard action capabilities, and customized DM notification templates.
+        </p>
+    </div>
+
+    <!-- Circuit Breaker Emergency Card -->
+    <div class="glass-card" style="margin-bottom: 24px; border: 1px solid {{ 'rgba(239, 68, 68, 0.5)' if is_emergency_locked else 'var(--border-subtle)' }}; background: {{ 'rgba(239, 68, 68, 0.08)' if is_emergency_locked else 'var(--bg-card)' }};">
+        <div class="card-header">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 22px;">{{ '🚨' if is_emergency_locked else '🛡️' }}</span>
+                <div>
+                    <h4 style="color: {{ '#f87171' if is_emergency_locked else '#ffffff' }};">Global Emergency Circuit Breaker</h4>
+                    <span style="font-size: 12px; color: var(--text-dim);">Immediate Server-Wide Protection</span>
+                </div>
+            </div>
+            <span class="role-badge {{ 'leave' if is_emergency_locked else 'join' }}">
+                {{ 'CIRCUIT BREAKER: LOCKED' if is_emergency_locked else 'CIRCUIT BREAKER: OPERATIONAL' }}
+            </span>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+            When locked, all destructive moderation operations (kicks, bans, timeouts, role changes) and bulk jobs are immediately rejected by the backend server.
+        </p>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <input type="text" class="form-input" id="emergency-reason-input" placeholder="Reason for toggling emergency circuit breaker..." style="flex: 1;">
+            <button class="btn {{ 'btn-success' if is_emergency_locked else 'btn-danger' }}" onclick="toggleEmergencyCircuitBreaker()">
+                {{ 'Disarm Circuit Breaker' if is_emergency_locked else '🚨 Activate Emergency Stop' }}
+            </button>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+        <!-- Left: Action Capabilities Matrix -->
+        <div class="glass-card">
+            <div class="card-header">
+                <h4>🔐 Action Capability Matrix</h4>
+                <span style="font-size: 11px; color: var(--text-dim);">Per Dashboard Role</span>
+            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">
+                Define which dashboard roles have permission to execute specific moderation actions.
+            </p>
+
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Capability</th>
+                            <th>Admin</th>
+                            <th>Moderator</th>
+                            <th>Viewer</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matrix-tbody">
+                        <tr>
+                            <td>Manage Roles</td>
+                            <td><input type="checkbox" id="perm-admin-manage_roles" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-manage_roles" checked></td>
+                            <td><input type="checkbox" id="perm-viewer-manage_roles"></td>
+                        </tr>
+                        <tr>
+                            <td>Create Role Panels</td>
+                            <td><input type="checkbox" id="perm-admin-create_panels" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-create_panels" checked></td>
+                            <td><input type="checkbox" id="perm-viewer-create_panels"></td>
+                        </tr>
+                        <tr>
+                            <td>Timeout Members</td>
+                            <td><input type="checkbox" id="perm-admin-timeout" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-timeout" checked></td>
+                            <td><input type="checkbox" id="perm-viewer-timeout"></td>
+                        </tr>
+                        <tr>
+                            <td>Kick Members</td>
+                            <td><input type="checkbox" id="perm-admin-kick" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-kick" checked></td>
+                            <td><input type="checkbox" id="perm-viewer-kick"></td>
+                        </tr>
+                        <tr>
+                            <td>Permanent Ban</td>
+                            <td><input type="checkbox" id="perm-admin-ban" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-ban"></td>
+                            <td><input type="checkbox" id="perm-viewer-ban"></td>
+                        </tr>
+                        <tr>
+                            <td>Temporary Ban</td>
+                            <td><input type="checkbox" id="perm-admin-tempban" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-tempban" checked></td>
+                            <td><input type="checkbox" id="perm-viewer-tempban"></td>
+                        </tr>
+                        <tr>
+                            <td>Unban Members</td>
+                            <td><input type="checkbox" id="perm-admin-unban" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-unban" checked></td>
+                            <td><input type="checkbox" id="perm-viewer-unban"></td>
+                        </tr>
+                        <tr>
+                            <td>Bulk Moderation</td>
+                            <td><input type="checkbox" id="perm-admin-bulk_mod" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-bulk_mod"></td>
+                            <td><input type="checkbox" id="perm-viewer-bulk_mod"></td>
+                        </tr>
+                        <tr>
+                            <td>Emergency Circuit Breaker</td>
+                            <td><input type="checkbox" id="perm-admin-emergency" checked disabled></td>
+                            <td><input type="checkbox" id="perm-mod-emergency"></td>
+                            <td><input type="checkbox" id="perm-viewer-emergency"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top: 16px; text-align: right;">
+                <button type="button" class="btn btn-primary btn-sm" onclick="savePermissionsMatrix()">
+                    💾 Save Permissions Matrix
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: Message DM Templates Editor -->
+        <div class="glass-card">
+            <div class="card-header">
+                <h4>💬 DM Notification Templates</h4>
+                <span style="font-size: 11px; color: var(--text-dim);">Custom Placeholders</span>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Select Action Template</label>
+                <select class="form-select" id="template-action-select" onchange="loadSelectedTemplate()">
+                    <option value="timeout">Timeout Notice</option>
+                    <option value="kick">Kick Notice</option>
+                    <option value="ban">Permanent Ban Notice</option>
+                    <option value="tempban">Temporary Ban Notice</option>
+                    <option value="unban">Unban Notice</option>
+                    <option value="role_assigned">Role Assigned Notice</option>
+                    <option value="role_removed">Role Removed Notice</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Template Content</label>
+                <textarea class="form-textarea" id="template-text-editor" rows="4"></textarea>
+            </div>
+
+            <div style="background: rgba(0,0,0,0.25); border-radius: 6px; padding: 10px; margin-bottom: 14px; font-size: 11px; color: var(--text-dim);">
+                Supported Placeholders: <code>{user}</code>, <code>{server}</code>, <code>{role}</code>, <code>{reason}</code>, <code>{duration}</code>, <code>{action}</code>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer;">
+                    <input type="checkbox" id="template-enabled-toggle" checked>
+                    Enable this notification
+                </label>
+                <button type="button" class="btn btn-primary btn-sm" onclick="saveCurrentTemplate()">
+                    💾 Save Template
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- CONFIRMATION MODAL COMPONENT               -->
+<!-- ========================================== -->
+<div id="mod-confirm-modal" style="display: none; position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 480px; box-shadow: var(--shadow-glow);">
+        <h4 style="font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #ffffff;" id="modal-confirm-title">Confirm Destructive Action</h4>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 18px;" id="modal-confirm-desc">Are you sure you want to proceed?</p>
+
+        <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 14px; margin-bottom: 20px; font-size: 12px;" id="modal-confirm-details">
+            <!-- Populated dynamically -->
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 12px;">
+            <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
+            <button class="btn btn-danger" id="modal-confirm-btn" onclick="executeConfirmedModAction()">Confirm & Execute</button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -2527,6 +3426,22 @@
         } else if (tabName === 'music') {
             fetchAndRefreshMusicUI();
             startMusicAutoPolling();
+        } else if (tabName === 'roles') {
+            loadRolesCatalog();
+            loadMembersList(0);
+            loadAllowedSelfRoles();
+        } else if (tabName === 'role-panels') {
+            loadRolePanels();
+        } else if (tabName === 'moderation') {
+            loadBanList();
+        } else if (tabName === 'bulk-mod') {
+            // Bulk tab active
+        } else if (tabName === 'mod-audit') {
+            loadModAuditLogs(0);
+        } else if (tabName === 'mod-config') {
+            loadModPermissions();
+            loadModTemplates();
+            loadEmergencyStatus();
         } else {
             stopMusicAutoPolling();
         }
@@ -4042,12 +4957,1184 @@
         return text.replace(/[&<>"']/g, m => map[m]);
     }
 
+// =============================================================================
+// MODERATION & ROLE MANAGEMENT JAVASCRIPT LOGIC
+// =============================================================================
+
+let cachedRolesCatalog = [];
+let cachedAllowedSelfRoles = [];
+let selectedInspectorMember = null;
+let currentMemberSearchTimeout = null;
+let currentModAuditTimeout = null;
+let activeBulkJobId = null;
+let bulkJobPollInterval = null;
+let pendingModActionData = null;
+let currentModAuditOffset = 0;
+const modAuditLimit = 25;
+
+// Duration Presets for Timeout & Tempban
+const timeoutPresets = [
+    { label: "60s", seconds: 60 },
+    { label: "5m", seconds: 300 },
+    { label: "10m", seconds: 600 },
+    { label: "1h", seconds: 3600 },
+    { label: "1d", seconds: 86400 },
+    { label: "7d", seconds: 604800 },
+    { label: "28d", seconds: 2419200 }
+];
+
+const tempbanPresets = [
+    { label: "1h", seconds: 3600 },
+    { label: "6h", seconds: 21600 },
+    { label: "12h", seconds: 43200 },
+    { label: "1d", seconds: 86400 },
+    { label: "3d", seconds: 259200 },
+    { label: "7d", seconds: 604800 },
+    { label: "14d", seconds: 1209600 },
+    { label: "30d", seconds: 2592000 }
+];
+
+let currentModAction = 'timeout';
+
+// ──── Tab Initializers ────
+function initModerationSystem() {
+    renderDurationPresets();
+    resetPanelBuilderForm();
+    loadRolesCatalog();
+    loadAllowedSelfRoles();
+    loadRolePanels();
+    loadBanList();
+    loadEmergencyStatus();
+    loadModPermissions();
+    loadModTemplates();
+}
+
+// =============================================================================
+// 1. Roles & Member Manager Logic
+// =============================================================================
+
+async function loadRolesCatalog() {
+    const tbody = document.getElementById('roles-catalog-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Loading roles...</td></tr>';
+
+    const data = await apiRequest(`/api/guild/${guildId}/roles/catalog`, 'GET');
+    if (!data || !data.roles) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--accent-rose); padding: 20px;">Failed to load roles</td></tr>';
+        return;
+    }
+
+    cachedRolesCatalog = data.roles;
+    await loadAllowedSelfRoles();
+    renderRolesCatalogTable();
+    populateRoleDropdowns();
+}
+
+async function loadAllowedSelfRoles() {
+    const data = await apiRequest(`/api/guild/${guildId}/roles/allowed_self`, 'GET');
+    if (data && data.allowed_roles) {
+        cachedAllowedSelfRoles = data.allowed_roles;
+    }
+}
+
+function renderRolesCatalogTable() {
+    const tbody = document.getElementById('roles-catalog-tbody');
+    if (!tbody) return;
+
+    if (cachedRolesCatalog.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No roles found.</td></tr>';
+        return;
+    }
+
+    let html = '';
+    cachedRolesCatalog.forEach(r => {
+        const isSelfAllowed = cachedAllowedSelfRoles.includes(r.id);
+        const canManage = r.can_bot_manage;
+        const statusBadge = canManage
+            ? '<span class="event-badge join" style="font-size:10px;">Manageable</span>'
+            : '<span class="event-badge leave" style="font-size:10px;">Protected</span>';
+
+        const starBtn = `<button type="button" onclick="toggleRoleSelfService(${r.id}, ${isSelfAllowed})" class="btn btn-sm ${isSelfAllowed ? 'btn-primary' : 'btn-secondary'}" style="font-size:11px; padding:3px 8px;" title="${isSelfAllowed ? 'Remove from self-service allowlist' : 'Add to self-service allowlist'}">
+            ${isSelfAllowed ? '⭐ Whitelisted' : '☆ Not Allowed'}
+        </button>`;
+
+        html += `
+            <tr>
+                <td>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${r.color !== '#000000' ? r.color : '#94a3b8'};"></span>
+                        <strong style="color:#ffffff;">@${escapeHtml(r.name)}</strong>
+                    </div>
+                </td>
+                <td style="font-size:12px; color:var(--text-muted);">${r.member_count}</td>
+                <td>${statusBadge}</td>
+                <td>${starBtn}</td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+async function toggleRoleSelfService(roleId, isCurrentlyAllowed) {
+    const action = isCurrentlyAllowed ? 'remove' : 'add';
+    const res = await apiRequest(`/api/guild/${guildId}/roles/allowed_self`, 'POST', {
+        role_id: roleId,
+        action: action
+    });
+    if (res && res.success) {
+        cachedAllowedSelfRoles = res.allowed_roles;
+        renderRolesCatalogTable();
+    } else {
+        alert(res?.error || 'Failed to update role allowlist');
+    }
+}
+
+function populateRoleDropdowns() {
+    // Populate role filter dropdown
+    const filterSelect = document.getElementById('member-role-filter');
+    const bulkHasSelect = document.getElementById('bulk-filter-has-roles');
+    const bulkLacksSelect = document.getElementById('bulk-filter-lacks-roles');
+    const bulkTargetRoleSelect = document.getElementById('bulk-target-role-select');
+
+    if (filterSelect) {
+        filterSelect.innerHTML = '<option value="">All Roles</option>' +
+            cachedRolesCatalog.map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+    }
+    if (bulkHasSelect) {
+        bulkHasSelect.innerHTML = cachedRolesCatalog.map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+    }
+    if (bulkLacksSelect) {
+        bulkLacksSelect.innerHTML = cachedRolesCatalog.map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+    }
+    if (bulkTargetRoleSelect) {
+        bulkTargetRoleSelect.innerHTML = cachedRolesCatalog.filter(r => r.can_bot_manage).map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+    }
+}
+
+function debounceMemberSearch() {
+    clearTimeout(currentMemberSearchTimeout);
+    currentMemberSearchTimeout = setTimeout(() => loadMembersList(0), 300);
+}
+
+async function loadMembersList(offset = 0) {
+    const tbody = document.getElementById('members-list-tbody');
+    if (!tbody) return;
+
+    const search = document.getElementById('member-search-input')?.value.trim() || '';
+    const roleId = document.getElementById('member-role-filter')?.value || '';
+
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Searching members...</td></tr>';
+
+    let url = `/api/guild/${guildId}/roles/members?limit=25&offset=${offset}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (roleId) url += `&role_id=${encodeURIComponent(roleId)}`;
+
+    const data = await apiRequest(url, 'GET');
+    if (!data || !data.members) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No members found matching filter.</td></tr>';
+        return;
+    }
+
+    const badge = document.getElementById('members-count-badge');
+    if (badge) badge.textContent = `${data.total} Members Found`;
+
+    if (data.members.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color:var(--text-dim);">No members found.</td></tr>';
+        return;
+    }
+
+    let html = '';
+    data.members.forEach(m => {
+        html += `
+            <tr>
+                <td>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <img src="${m.avatar}" style="width:28px; height:28px; border-radius:50%; object-fit:cover;">
+                        <div>
+                            <div style="font-weight:600; color:#ffffff; font-size:13px;">${escapeHtml(m.display_name)}</div>
+                            <div style="font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono';">${escapeHtml(m.name)}</div>
+                        </div>
+                    </div>
+                </td>
+                <td style="font-size:12px; color:#c084fc;">@${escapeHtml(m.top_role)}</td>
+                <td style="font-size:12px; color:var(--text-muted);">${m.roles.length} roles</td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick='selectMemberForInspector(${JSON.stringify(m).replace(/'/g, "&#39;")})'>
+                        🔍 Inspect
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+function selectMemberForInspector(member) {
+    selectedInspectorMember = member;
+    const card = document.getElementById('member-inspector-card');
+    if (!card) return;
+
+    card.style.display = 'block';
+    document.getElementById('insp-avatar').src = member.avatar;
+    document.getElementById('insp-name').textContent = member.display_name;
+    document.getElementById('insp-id').textContent = `ID: ${member.id} • Joined: ${member.joined_at}`;
+
+    const prot = document.getElementById('insp-protection');
+    if (member.is_protected) {
+        prot.textContent = '🛡️ Protected (Admin/Owner)';
+        prot.style.background = 'rgba(239, 68, 68, 0.2)';
+        prot.style.color = '#f87171';
+    } else {
+        prot.textContent = 'Standard Member';
+        prot.style.background = 'rgba(16, 185, 129, 0.2)';
+        prot.style.color = '#34d399';
+    }
+
+    // Render current roles chips
+    const rolesDiv = document.getElementById('insp-current-roles');
+    if (member.roles.length === 0) {
+        rolesDiv.innerHTML = '<span style="font-size:12px; color:var(--text-dim);">No custom roles assigned</span>';
+    } else {
+        rolesDiv.innerHTML = member.roles.map(r => `
+            <span class="user-chip" style="border-left: 3px solid ${r.color !== '#000000' ? r.color : '#94a3b8'};">
+                @${escapeHtml(r.name)}
+            </span>
+        `).join('');
+    }
+
+    // Populate manageable assign dropdown (roles member doesn't have)
+    const memberRoleIds = new Set(member.roles.map(r => Number(r.id)));
+    const assignSelect = document.getElementById('insp-assign-role-select');
+    assignSelect.innerHTML = '<option value="">Select Role to Add...</option>' +
+        cachedRolesCatalog
+            .filter(r => r.can_bot_manage && !memberRoleIds.has(Number(r.id)))
+            .map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+
+    // Populate remove dropdown (manageable roles member currently has)
+    const removeSelect = document.getElementById('insp-remove-role-select');
+    removeSelect.innerHTML = '<option value="">Select Role to Remove...</option>' +
+        cachedRolesCatalog
+            .filter(r => r.can_bot_manage && memberRoleIds.has(Number(r.id)))
+            .map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+}
+
+async function submitRoleChange(action) {
+    if (!selectedInspectorMember) return;
+
+    const selectElem = action === 'assign'
+        ? document.getElementById('insp-assign-role-select')
+        : document.getElementById('insp-remove-role-select');
+    const roleId = selectElem?.value;
+    if (!roleId) {
+        alert('Please select a role first.');
+        return;
+    }
+
+    const reason = document.getElementById('insp-reason-input')?.value.trim() || '';
+    const notifyDm = document.getElementById('insp-notify-dm')?.checked || false;
+
+    const endpoint = action === 'assign' ? `/api/guild/${guildId}/roles/assign` : `/api/guild/${guildId}/roles/remove`;
+    const res = await apiRequest(endpoint, 'POST', {
+        user_id: selectedInspectorMember.id,
+        role_id: Number(roleId),
+        reason: reason,
+        notify_dm: notifyDm
+    });
+
+    if (res && res.success) {
+        alert(`Successfully ${action === 'assign' ? 'assigned' : 'removed'} role!`);
+        // Refresh member details
+        loadMembersList(0);
+        document.getElementById('member-inspector-card').style.display = 'none';
+        selectedInspectorMember = null;
+    } else {
+        alert(res?.error || 'Role change failed');
+    }
+}
+
+// =============================================================================
+// 2. Role Panel Builder Logic
+// =============================================================================
+
+let panelItemsState = [];
+
+function resetPanelBuilderForm() {
+    document.getElementById('panel-builder-id').value = '';
+    document.getElementById('panel-form-title').textContent = '🎨 Configure Role Panel';
+    document.getElementById('panel-status-pill').textContent = 'New Draft';
+    document.getElementById('panel-title-input').value = 'Choose Your Community Roles';
+    document.getElementById('panel-desc-input').value = 'Click the buttons below to assign or remove roles from your profile!';
+    document.getElementById('panel-color-hex').value = '#5865F2';
+    document.getElementById('panel-color-picker').value = '#5865F2';
+    document.getElementById('panel-thumb-url').value = '';
+    document.getElementById('panel-image-url').value = '';
+
+    panelItemsState = [
+        { item_type: 'button', role_id: '', label: 'Member Role', style: 'primary', emoji: '⭐', toggle: true }
+    ];
+    renderPanelItemsRows();
+    updatePanelLivePreview();
+}
+
+function addPanelItemRow() {
+    if (panelItemsState.length >= 25) {
+        alert('Discord allows a maximum of 25 interactive items per panel.');
+        return;
+    }
+    panelItemsState.push({
+        item_type: 'button',
+        role_id: '',
+        label: 'Role Button',
+        style: 'secondary',
+        emoji: '',
+        toggle: true
+    });
+    renderPanelItemsRows();
+    updatePanelLivePreview();
+}
+
+function removePanelItemRow(idx) {
+    panelItemsState.splice(idx, 1);
+    renderPanelItemsRows();
+    updatePanelLivePreview();
+}
+
+function renderPanelItemsRows() {
+    const container = document.getElementById('panel-items-container');
+    if (!container) return;
+
+    if (panelItemsState.length === 0) {
+        container.innerHTML = '<div style="font-size:12px; color:var(--text-dim); text-align:center; padding:10px;">No buttons added yet. Click "Add Role Button" above.</div>';
+        return;
+    }
+
+    container.innerHTML = panelItemsState.map((item, idx) => `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px; display: grid; grid-template-columns: 120px 1fr 140px 110px 90px 32px; gap: 8px; align-items: center;">
+            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].item_type = this.value; renderPanelItemsRows(); updatePanelLivePreview();">
+                <option value="button" ${item.item_type === 'button' ? 'selected' : ''}>🔘 Button</option>
+                <option value="reaction" ${item.item_type === 'reaction' ? 'selected' : ''}>😀 Reaction</option>
+            </select>
+
+            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].role_id = Number(this.value); updatePanelLivePreview();">
+                <option value="">Select Role...</option>
+                ${cachedRolesCatalog.map(r => `
+                    <option value="${r.id}" ${Number(item.role_id) === Number(r.id) ? 'selected' : ''}>
+                        @${escapeHtml(r.name)} ${cachedAllowedSelfRoles.includes(r.id) ? '⭐' : '(Not Whitelisted)'}
+                    </option>
+                `).join('')}
+            </select>
+
+            <input type="text" class="form-input" style="font-size:12px;" placeholder="${item.item_type === 'button' ? 'Label...' : 'Emoji name...'}" value="${escapeHtml(item.label || '')}" oninput="panelItemsState[${idx}].label = this.value; updatePanelLivePreview();" ${item.item_type === 'reaction' ? 'disabled' : ''}>
+
+            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].style = this.value; updatePanelLivePreview();" ${item.item_type === 'reaction' ? 'disabled' : ''}>
+                <option value="primary" ${item.style === 'primary' ? 'selected' : ''}>Primary (Blurple)</option>
+                <option value="secondary" ${item.style === 'secondary' ? 'selected' : ''}>Secondary (Grey)</option>
+                <option value="success" ${item.style === 'success' ? 'selected' : ''}>Success (Green)</option>
+                <option value="danger" ${item.style === 'danger' ? 'selected' : ''}>Danger (Red)</option>
+            </select>
+
+            <input type="text" class="form-input" style="font-size:12px; text-align:center;" placeholder="Emoji" value="${escapeHtml(item.emoji || '')}" oninput="panelItemsState[${idx}].emoji = this.value; updatePanelLivePreview();">
+
+            <button type="button" onclick="removePanelItemRow(${idx})" style="background:none; border:none; color:var(--accent-rose); font-size:16px; cursor:pointer;" title="Delete item">✕</button>
+        </div>
+    `).join('');
+}
+
+function updatePanelLivePreview() {
+    const title = document.getElementById('panel-title-input')?.value || 'Choose Your Roles';
+    const desc = document.getElementById('panel-desc-input')?.value || 'Click the buttons below to assign or remove roles.';
+    const color = document.getElementById('panel-color-hex')?.value || '#5865F2';
+    const thumbUrl = document.getElementById('panel-thumb-url')?.value.trim() || '';
+    const imageUrl = document.getElementById('panel-image-url')?.value.trim() || '';
+
+    const card = document.getElementById('panel-preview-card');
+    if (card) card.style.borderLeftColor = color;
+
+    const titleElem = document.getElementById('panel-preview-title');
+    if (titleElem) titleElem.textContent = title;
+
+    const descElem = document.getElementById('panel-preview-desc');
+    if (descElem) descElem.innerHTML = renderDiscordMarkdown(desc);
+
+    const thumbElem = document.getElementById('panel-preview-thumb');
+    if (thumbElem) {
+        if (thumbUrl) { thumbElem.src = thumbUrl; thumbElem.style.display = 'block'; }
+        else { thumbElem.style.display = 'none'; }
+    }
+
+    const imgElem = document.getElementById('panel-preview-image');
+    if (imgElem) {
+        if (imageUrl) { imgElem.src = imageUrl; imgElem.style.display = 'block'; }
+        else { imgElem.style.display = 'none'; }
+    }
+
+    // Render Preview Buttons
+    const btnContainer = document.getElementById('panel-preview-buttons');
+    if (btnContainer) {
+        btnContainer.innerHTML = panelItemsState.map(item => {
+            const styleColor = item.style === 'primary' ? '#5865f2' : (item.style === 'success' ? '#248046' : (item.style === 'danger' ? '#da373c' : '#4e5058'));
+            const emojiSpan = item.emoji ? `<span>${escapeHtml(item.emoji)}</span>` : '';
+            const labelSpan = item.label ? `<span>${escapeHtml(item.label)}</span>` : '';
+            return `<div class="discord-link-btn" style="background:${styleColor};">${emojiSpan} ${labelSpan}</div>`;
+        }).join('');
+    }
+}
+
+async function savePanelDraft() {
+    const channelId = document.getElementById('panel-channel-select')?.value;
+    const title = document.getElementById('panel-title-input')?.value.trim();
+    const desc = document.getElementById('panel-desc-input')?.value.trim();
+    const color = document.getElementById('panel-color-hex')?.value.trim();
+    const thumb = document.getElementById('panel-thumb-url')?.value.trim();
+    const image = document.getElementById('panel-image-url')?.value.trim();
+    const panelId = document.getElementById('panel-builder-id')?.value;
+
+    if (!channelId || !title) {
+        alert('Destination channel and Title are required.');
+        return;
+    }
+
+    const payload = {
+        channel_id: Number(channelId),
+        title: title,
+        description: desc,
+        color: color,
+        thumbnail_url: thumb,
+        image_url: image,
+        items: panelItemsState
+    };
+
+    let res;
+    if (panelId) {
+        res = await apiRequest(`/api/guild/${guildId}/role_panels/${panelId}/edit`, 'POST', payload);
+    } else {
+        res = await apiRequest(`/api/guild/${guildId}/role_panels/create`, 'POST', payload);
+    }
+
+    if (res && res.success) {
+        alert('Role panel draft saved successfully!');
+        loadRolePanels();
+    } else {
+        alert(res?.error || 'Failed to save panel draft');
+    }
+}
+
+async function publishPanelToDiscord() {
+    // Save draft first, then publish
+    const channelId = document.getElementById('panel-channel-select')?.value;
+    const title = document.getElementById('panel-title-input')?.value.trim();
+    const desc = document.getElementById('panel-desc-input')?.value.trim();
+    const color = document.getElementById('panel-color-hex')?.value.trim();
+    const thumb = document.getElementById('panel-thumb-url')?.value.trim();
+    const image = document.getElementById('panel-image-url')?.value.trim();
+    let panelId = document.getElementById('panel-builder-id')?.value;
+
+    if (!channelId || !title) {
+        alert('Channel and Title are required.');
+        return;
+    }
+
+    // Check if any role is not in allowlist
+    const notWhitelisted = panelItemsState.filter(it => it.role_id && !cachedAllowedSelfRoles.includes(Number(it.role_id)));
+    if (notWhitelisted.length > 0) {
+        if (!confirm('Warning: One or more selected roles are NOT in the self-service whitelist. Users will receive an error when clicking those buttons. Do you want to proceed?')) {
+            return;
+        }
+    }
+
+    const payload = {
+        channel_id: Number(channelId),
+        title: title,
+        description: desc,
+        color: color,
+        thumbnail_url: thumb,
+        image_url: image,
+        items: panelItemsState
+    };
+
+    if (!panelId) {
+        const createRes = await apiRequest(`/api/guild/${guildId}/role_panels/create`, 'POST', payload);
+        if (!createRes || !createRes.success) {
+            alert(createRes?.error || 'Failed to create panel draft');
+            return;
+        }
+        panelId = createRes.panel.id;
+        document.getElementById('panel-builder-id').value = panelId;
+    } else {
+        await apiRequest(`/api/guild/${guildId}/role_panels/${panelId}/edit`, 'POST', payload);
+    }
+
+    const pubRes = await apiRequest(`/api/guild/${guildId}/role_panels/${panelId}/publish`, 'POST');
+    if (pubRes && pubRes.success) {
+        alert('🎉 Role Panel published live to Discord channel successfully!');
+        loadRolePanels();
+    } else {
+        alert(pubRes?.error || 'Failed to publish role panel to Discord');
+    }
+}
+
+async function loadRolePanels() {
+    const container = document.getElementById('existing-panels-container');
+    if (!container) return;
+
+    const data = await apiRequest(`/api/guild/${guildId}/role_panels`, 'GET');
+    if (!data || !data.panels) {
+        container.innerHTML = '<div style="color:var(--text-dim); text-align:center;">No role panels created yet.</div>';
+        return;
+    }
+
+    const countLabel = document.getElementById('panel-count-label');
+    if (countLabel) countLabel.textContent = `${data.panels.length} Panels`;
+
+    if (data.panels.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-dim); text-align:center; padding:18px;">No panels created yet. Design your first panel above!</div>';
+        return;
+    }
+
+    container.innerHTML = data.panels.map(p => `
+        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h5 style="font-size:14px; font-weight:700; color:#ffffff;">${escapeHtml(p.title)}</h5>
+                <span class="role-badge ${p.message_id ? 'join' : 'staff'}" style="font-size:10px;">
+                    ${p.message_id ? 'Published' : 'Draft'}
+                </span>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:10px;">
+                Destination: <strong>#${getChannelName(p.channel_id)}</strong> • ${p.items ? p.items.length : 0} buttons
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button type="button" class="btn btn-sm btn-primary" onclick="editExistingPanel(${p.id})">Edit</button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="republishPanel(${p.id})">Publish</button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="deleteExistingPanel(${p.id})" style="color:var(--accent-rose);">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function getChannelName(chId) {
+    const ch = guildChannels.find(x => String(x.id) === String(chId));
+    return ch ? ch.name : chId;
+}
+
+async function editExistingPanel(panelId) {
+    const data = await apiRequest(`/api/guild/${guildId}/role_panels`, 'GET');
+    const p = data?.panels?.find(x => x.id === panelId);
+    if (!p) return;
+
+    document.getElementById('panel-builder-id').value = p.id;
+    document.getElementById('panel-form-title').textContent = `✏️ Edit Panel #${p.id}`;
+    document.getElementById('panel-status-pill').textContent = p.message_id ? 'Published' : 'Draft';
+    document.getElementById('panel-channel-select').value = p.channel_id;
+    document.getElementById('panel-title-input').value = p.title;
+    document.getElementById('panel-desc-input').value = p.description || '';
+    document.getElementById('panel-color-hex').value = p.color || '#5865F2';
+    document.getElementById('panel-color-picker').value = p.color || '#5865F2';
+    document.getElementById('panel-thumb-url').value = p.thumbnail_url || '';
+    document.getElementById('panel-image-url').value = p.image_url || '';
+
+    panelItemsState = p.items || [];
+    renderPanelItemsRows();
+    updatePanelLivePreview();
+}
+
+async function republishPanel(panelId) {
+    const res = await apiRequest(`/api/guild/${guildId}/role_panels/${panelId}/publish`, 'POST');
+    if (res && res.success) {
+        alert('Role panel published to channel!');
+        loadRolePanels();
+    } else {
+        alert(res?.error || 'Publish failed');
+    }
+}
+
+async function deleteExistingPanel(panelId) {
+    if (!confirm('Are you sure you want to delete this role panel configuration?')) return;
+    const res = await apiRequest(`/api/guild/${guildId}/role_panels/${panelId}`, 'DELETE');
+    if (res && res.success) {
+        alert('Role panel deleted.');
+        loadRolePanels();
+    }
+}
+
+// =============================================================================
+// 3. Moderation Center Logic
+// =============================================================================
+
+function renderDurationPresets() {
+    const container = document.getElementById('duration-presets-container');
+    if (!container) return;
+
+    const list = currentModAction === 'timeout' ? timeoutPresets : tempbanPresets;
+    container.innerHTML = list.map((item, idx) => `
+        <button type="button" class="btn btn-sm btn-secondary" onclick="applyDurationPreset(${item.seconds}, this)" style="padding:3px 8px; font-size:11px;">
+            ${item.label}
+        </button>
+    `).join('');
+}
+
+function applyDurationPreset(seconds, btn) {
+    document.querySelectorAll('#duration-presets-container button').forEach(b => b.classList.remove('btn-primary'));
+    btn.classList.add('btn-primary');
+
+    if (seconds >= 86400) {
+        document.getElementById('mod-custom-duration-num').value = Math.floor(seconds / 86400);
+        document.getElementById('mod-custom-duration-unit').value = "86400";
+    } else if (seconds >= 3600) {
+        document.getElementById('mod-custom-duration-num').value = Math.floor(seconds / 3600);
+        document.getElementById('mod-custom-duration-unit').value = "3600";
+    } else {
+        document.getElementById('mod-custom-duration-num').value = Math.floor(seconds / 60);
+        document.getElementById('mod-custom-duration-unit').value = "60";
+    }
+}
+
+function switchModAction(action, btn) {
+    currentModAction = action;
+    document.querySelectorAll('#mod-action-form .tab-bar .tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const durationGrp = document.getElementById('mod-duration-group');
+    const msgDeleteGrp = document.getElementById('mod-msg-delete-group');
+    const submitBtn = document.getElementById('btn-submit-mod-action');
+
+    renderDurationPresets();
+
+    if (action === 'timeout') {
+        durationGrp.style.display = 'block';
+        msgDeleteGrp.style.display = 'none';
+        submitBtn.textContent = '⏱️ Apply Timeout';
+        submitBtn.className = 'btn btn-primary';
+    } else if (action === 'kick') {
+        durationGrp.style.display = 'none';
+        msgDeleteGrp.style.display = 'none';
+        submitBtn.textContent = '👢 Kick Member';
+        submitBtn.className = 'btn btn-danger';
+    } else if (action === 'tempban') {
+        durationGrp.style.display = 'block';
+        msgDeleteGrp.style.display = 'block';
+        submitBtn.textContent = '⏳ Temporarily Ban';
+        submitBtn.className = 'btn btn-danger';
+    } else if (action === 'ban') {
+        durationGrp.style.display = 'none';
+        msgDeleteGrp.style.display = 'block';
+        submitBtn.textContent = '🔨 Permanently Ban';
+        submitBtn.className = 'btn btn-danger';
+    }
+}
+
+function toggleCustomDmField() {
+    const isChecked = document.getElementById('mod-notify-dm-toggle')?.checked;
+    const container = document.getElementById('mod-custom-dm-container');
+    if (container) container.style.display = isChecked ? 'block' : 'none';
+}
+
+function debounceTargetResolve() {
+    // Lightweight debounce for ID inputs
+}
+
+async function resolveTargetMember() {
+    const targetInput = document.getElementById('mod-target-input')?.value.trim();
+    if (!targetInput) return;
+
+    const data = await apiRequest(`/api/guild/${guildId}/roles/members?search=${encodeURIComponent(targetInput)}&limit=1`, 'GET');
+    const card = document.getElementById('target-resolved-card');
+    if (data && data.members && data.members.length > 0) {
+        const m = data.members[0];
+        card.style.display = 'flex';
+        document.getElementById('target-res-avatar').src = m.avatar;
+        document.getElementById('target-res-name').textContent = m.display_name;
+        document.getElementById('target-res-info').textContent = `ID: ${m.id} • ${m.name} • ${m.top_role}`;
+    } else {
+        card.style.display = 'flex';
+        document.getElementById('target-res-avatar').src = 'https://cdn.discordapp.com/embed/avatars/0.png';
+        document.getElementById('target-res-name').textContent = `User #${targetInput}`;
+        document.getElementById('target-res-info').textContent = 'Direct Discord User ID';
+    }
+}
+
+async function loadBanList() {
+    const tbody = document.getElementById('ban-list-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px;">Fetching bans from Discord...</td></tr>';
+
+    const data = await apiRequest(`/api/guild/${guildId}/moderation/bans`, 'GET');
+    if (!data || !data.bans) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-dim);">Unable to fetch bans (or no users currently banned).</td></tr>';
+        return;
+    }
+
+    if (data.bans.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-dim);">No banned users found in this server.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = data.bans.map(b => `
+        <tr>
+            <td>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <img src="${b.avatar}" style="width:24px; height:24px; border-radius:50%;">
+                    <div>
+                        <div style="font-weight:600; font-size:12px; color:#ffffff;">${escapeHtml(b.user_name)}</div>
+                        <div style="font-size:10px; color:var(--text-dim); font-family:'JetBrains Mono';">${b.user_id}</div>
+                    </div>
+                </div>
+            </td>
+            <td style="font-size:12px; color:var(--text-muted);">${escapeHtml(b.reason)}</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="unbanUser('${b.user_id}', ${JSON.stringify(b.user_name)})">
+                    Unban
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function unbanUser(userId, userName) {
+    const reason = prompt(`Reason for unbanning ${userName}:`, 'Appealed via dashboard');
+    if (reason === null) return;
+
+    const res = await apiRequest(`/api/guild/${guildId}/moderation/unban`, 'POST', {
+        user_id: userId,
+        reason: reason
+    });
+    if (res && res.success) {
+        alert(`Successfully unbanned ${userName}!`);
+        loadBanList();
+    } else {
+        alert(res?.error || 'Unban failed');
+    }
+}
+
+function promptConfirmModAction() {
+    const targetInput = document.getElementById('mod-target-input')?.value.trim();
+    if (!targetInput) {
+        alert('Please enter a target member or User ID.');
+        return;
+    }
+
+    const reason = document.getElementById('mod-reason-input')?.value.trim() || 'No reason provided';
+    const notifyDm = document.getElementById('mod-notify-dm-toggle')?.checked || false;
+    const customDm = document.getElementById('mod-custom-dm-input')?.value.trim() || '';
+
+    let durationSecs = 0;
+    if (currentModAction === 'timeout' || currentModAction === 'tempban') {
+        const num = Number(document.getElementById('mod-custom-duration-num')?.value) || 10;
+        const unit = Number(document.getElementById('mod-custom-duration-unit')?.value) || 60;
+        durationSecs = num * unit;
+    }
+
+    const deleteDays = Number(document.getElementById('mod-delete-days-select')?.value) || 0;
+
+    pendingModActionData = {
+        action: currentModAction,
+        target_id: targetInput,
+        reason: reason,
+        notify_dm: notifyDm,
+        custom_dm: customDm,
+        duration_seconds: durationSecs,
+        delete_message_days: deleteDays
+    };
+
+    // Populate modal
+    document.getElementById('modal-confirm-title').textContent = `Confirm ${currentModAction.toUpperCase()}`;
+    document.getElementById('modal-confirm-desc').textContent = `Are you sure you want to execute ${currentModAction} on user ${targetInput}?`;
+
+    let detailsHtml = `
+        <div><strong>Action:</strong> <span class="event-badge ${currentModAction === 'timeout' ? 'update' : 'leave'}">${currentModAction.toUpperCase()}</span></div>
+        <div><strong>Target:</strong> ${escapeHtml(targetInput)}</div>
+        <div><strong>Reason:</strong> ${escapeHtml(reason)}</div>
+        <div><strong>DM Notification:</strong> ${notifyDm ? 'Enabled' : 'Disabled'}</div>
+    `;
+    if (durationSecs > 0) {
+        detailsHtml += `<div><strong>Duration:</strong> ${Math.floor(durationSecs / 60)} minutes (${durationSecs}s)</div>`;
+    }
+    if (deleteDays > 0) {
+        detailsHtml += `<div><strong>Delete Message History:</strong> ${deleteDays} days</div>`;
+    }
+    document.getElementById('modal-confirm-details').innerHTML = detailsHtml;
+
+    document.getElementById('mod-confirm-modal').style.display = 'flex';
+}
+
+function closeConfirmModal() {
+    document.getElementById('mod-confirm-modal').style.display = 'none';
+    pendingModActionData = null;
+}
+
+async function executeConfirmedModAction() {
+    if (!pendingModActionData) return;
+
+    const data = pendingModActionData;
+    closeConfirmModal();
+
+    let endpoint = `/api/guild/${guildId}/moderation/${data.action}`;
+    const res = await apiRequest(endpoint, 'POST', {
+        user_id: data.target_id,
+        reason: data.reason,
+        notify_dm: data.notify_dm,
+        custom_dm: data.custom_dm,
+        duration_seconds: data.duration_seconds,
+        delete_message_days: data.delete_message_days
+    });
+
+    if (res && res.success) {
+        alert(`Successfully executed ${data.action} on target user!`);
+        document.getElementById('mod-target-input').value = '';
+        document.getElementById('target-resolved-card').style.display = 'none';
+        if (data.action === 'ban' || data.action === 'tempban') {
+            loadBanList();
+        }
+    } else {
+        alert(res?.error || 'Operation failed');
+    }
+}
+
+// =============================================================================
+// 4. Bulk Moderation Logic
+// =============================================================================
+
+function toggleBulkActionOptions() {
+    const act = document.getElementById('bulk-action-type-select')?.value;
+    const roleGrp = document.getElementById('bulk-role-select-group');
+    const durGrp = document.getElementById('bulk-duration-group');
+    const confirmPhraseGrp = document.getElementById('bulk-confirm-phrase-group');
+    const expectedPhrase = document.getElementById('bulk-expected-phrase');
+
+    if (act === 'role_add' || act === 'role_remove') {
+        roleGrp.style.display = 'block';
+        durGrp.style.display = 'none';
+        confirmPhraseGrp.style.display = 'none';
+    } else if (act === 'timeout') {
+        roleGrp.style.display = 'none';
+        durGrp.style.display = 'block';
+        confirmPhraseGrp.style.display = 'none';
+    } else if (act === 'kick' || act === 'ban') {
+        roleGrp.style.display = 'none';
+        durGrp.style.display = 'none';
+        confirmPhraseGrp.style.display = 'block';
+        expectedPhrase.textContent = `CONFIRM ${act.toUpperCase()}`;
+    }
+}
+
+function collectBulkFilters() {
+    const hasRolesSelect = document.getElementById('bulk-filter-has-roles');
+    const lacksRolesSelect = document.getElementById('bulk-filter-lacks-roles');
+
+    const hasRoles = Array.from(hasRolesSelect?.selectedOptions || []).map(o => o.value);
+    const lacksRoles = Array.from(lacksRolesSelect?.selectedOptions || []).map(o => o.value);
+    const joinedBefore = document.getElementById('bulk-filter-joined-before')?.value;
+    const joinedAfter = document.getElementById('bulk-filter-joined-after')?.value;
+    const accountBefore = document.getElementById('bulk-filter-account-before')?.value;
+    const isBot = document.getElementById('bulk-filter-is-bot')?.value;
+    const exclusionsRaw = document.getElementById('bulk-filter-exclusions')?.value || '';
+    const exclusions = exclusionsRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+    return {
+        has_roles: hasRoles,
+        lacks_roles: lacksRoles,
+        joined_before: joinedBefore || null,
+        joined_after: joinedAfter || null,
+        account_before: accountBefore || null,
+        is_bot: isBot === 'true' ? true : (isBot === 'false' ? false : null),
+        explicit_exclusions: exclusions
+    };
+}
+
+async function runBulkPreview() {
+    const filters = collectBulkFilters();
+    const tbody = document.getElementById('bulk-preview-tbody');
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 16px;">Calculating filter snapshot...</td></tr>';
+
+    const res = await apiRequest(`/api/guild/${guildId}/bulk/preview`, 'POST', { filters: filters });
+    if (!res || !res.success) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--accent-rose);">Failed to calculate preview.</td></tr>';
+        return;
+    }
+
+    document.getElementById('bulk-preview-count-pill').textContent = `${res.total_matched} Matching Targets`;
+    document.getElementById('bulk-preview-summary').innerHTML = `
+        Found <strong>${res.total_matched}</strong> members eligible for action. <br>
+        <span style="color:var(--accent-emerald);">🛡️ ${res.protected_excluded} Protected Members safely excluded</span> (Server Owner, Bots, Admins).
+    `;
+
+    if (res.sample_targets.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 16px; color:var(--text-dim);">No members matched filter criteria.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = res.sample_targets.map(m => `
+        <tr>
+            <td>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <img src="${m.avatar}" style="width:24px; height:24px; border-radius:50%;">
+                    <div>
+                        <div style="font-weight:600; font-size:12px; color:#ffffff;">${escapeHtml(m.display_name)}</div>
+                        <div style="font-size:10px; color:var(--text-dim);">${m.name}</div>
+                    </div>
+                </div>
+            </td>
+            <td style="font-size:11px; color:var(--text-muted);">${m.joined_at}</td>
+            <td style="font-size:11px; color:#c084fc;">${m.roles.join(', ') || 'None'}</td>
+        </tr>
+    `).join('');
+}
+
+async function launchBulkJob() {
+    const action = document.getElementById('bulk-action-type-select')?.value;
+    const filters = collectBulkFilters();
+    const reason = document.getElementById('bulk-reason-input')?.value.trim() || 'Bulk moderation execution';
+    const roleId = document.getElementById('bulk-target-role-select')?.value;
+    const duration = Number(document.getElementById('bulk-duration-input')?.value) * 60;
+    const confirmPhrase = document.getElementById('bulk-confirm-phrase-input')?.value.trim() || '';
+
+    const payload = {
+        action_type: action,
+        filters: filters,
+        reason: reason,
+        role_id: roleId ? Number(roleId) : null,
+        duration_seconds: duration,
+        confirmation_phrase: confirmPhrase
+    };
+
+    const res = await apiRequest(`/api/guild/${guildId}/bulk/execute`, 'POST', payload);
+    if (!res || !res.success) {
+        alert(res?.error || 'Bulk job launch failed');
+        return;
+    }
+
+    alert(`Bulk job started! Processing ${res.total_targets} targets in the background.`);
+    activeBulkJobId = res.job_id;
+    startBulkJobPolling(activeBulkJobId);
+}
+
+function startBulkJobPolling(jobId) {
+    const banner = document.getElementById('bulk-active-job-banner');
+    if (banner) banner.style.display = 'block';
+
+    clearInterval(bulkJobPollInterval);
+    bulkJobPollInterval = setInterval(async () => {
+        const data = await apiRequest(`/api/guild/${guildId}/bulk/jobs/${jobId}`, 'GET');
+        if (!data || !data.job) return;
+
+        const j = data.job;
+        const total = j.total_targets || 1;
+        const processed = (j.completed_targets || 0) + (j.failed_targets || 0) + (j.skipped_targets || 0);
+        const pct = Math.min(100, Math.floor((processed / total) * 100));
+
+        document.getElementById('bulk-job-title').textContent = `Bulk ${j.action_type.toUpperCase()} • ${j.status.toUpperCase()}`;
+        document.getElementById('bulk-job-meta').textContent = `Job ID: ${j.job_id} • Target Count: ${total}`;
+        document.getElementById('bulk-job-progress-bar').style.width = `${pct}%`;
+        document.getElementById('bulk-job-counters').textContent = `Processed ${processed} / ${total} (${pct}%)`;
+        document.getElementById('bulk-job-stats').textContent = `Success: ${j.completed_targets} | Failed: ${j.failed_targets} | Skipped: ${j.skipped_targets}`;
+
+        if (j.status === 'completed' || j.status === 'cancelled' || j.status === 'failed' || j.status === 'partially_completed') {
+            clearInterval(bulkJobPollInterval);
+            document.getElementById('btn-cancel-bulk-job').style.display = 'none';
+        }
+    }, 1500);
+}
+
+async function cancelActiveBulkJob() {
+    if (!activeBulkJobId) return;
+    if (!confirm('Are you sure you want to cancel this bulk operation? Completed actions cannot be undone.')) return;
+
+    const res = await apiRequest(`/api/guild/${guildId}/bulk/jobs/${activeBulkJobId}/cancel`, 'POST');
+    if (res && res.success) {
+        alert('Cancellation requested. Worker will halt after current target.');
+    }
+}
+
+// =============================================================================
+// 5. Moderation Audit Logs Logic
+// =============================================================================
+
+function debounceModAuditSearch() {
+    clearTimeout(currentModAuditTimeout);
+    currentModAuditTimeout = setTimeout(() => loadModAuditLogs(0), 300);
+}
+
+async function loadModAuditLogs(offset = 0) {
+    currentModAuditOffset = offset;
+    const tbody = document.getElementById('mod-audit-tbody');
+    if (!tbody) return;
+
+    const search = document.getElementById('mod-audit-search')?.value.trim() || '';
+    const typeFilter = document.getElementById('mod-audit-type-filter')?.value || 'all';
+
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px;">Loading moderation audit history...</td></tr>';
+
+    let url = `/api/guild/${guildId}/moderation/audit_logs?limit=${modAuditLimit}&offset=${offset}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (typeFilter && typeFilter !== 'all') url += `&action_type=${encodeURIComponent(typeFilter)}`;
+
+    const data = await apiRequest(url, 'GET');
+    if (!data || !data.logs || data.logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-dim);">No moderation audit records found.</td></tr>';
+        document.getElementById('mod-audit-pagination-info').textContent = 'Showing 0 of 0';
+        document.getElementById('btn-mod-audit-prev').disabled = true;
+        document.getElementById('btn-mod-audit-next').disabled = true;
+        return;
+    }
+
+    const total = data.total;
+    const startIdx = offset + 1;
+    const endIdx = Math.min(total, offset + modAuditLimit);
+    document.getElementById('mod-audit-pagination-info').textContent = `Showing ${startIdx}-${endIdx} of ${total}`;
+    document.getElementById('btn-mod-audit-prev').disabled = offset <= 0;
+    document.getElementById('btn-mod-audit-next').disabled = offset + modAuditLimit >= total;
+
+    let html = '';
+    data.logs.forEach(log => {
+        let badgeClass = 'auth';
+        if (log.action_type.includes('KICK') || log.action_type.includes('BAN')) badgeClass = 'leave';
+        else if (log.action_type.includes('TIMEOUT')) badgeClass = 'update';
+        else if (log.action_type.includes('ROLE')) badgeClass = 'join';
+
+        html += `
+            <tr>
+                <td style="font-family:'JetBrains Mono'; font-size:11px; color:var(--text-dim);">${log.created_at}</td>
+                <td><strong style="color:var(--accent-cyan);">${escapeHtml(log.actor_name || log.actor_id)}</strong></td>
+                <td><span class="event-badge ${badgeClass}">${escapeHtml(log.action_type)}</span></td>
+                <td><strong>${escapeHtml(log.target_name || String(log.target_id || '—'))}</strong></td>
+                <td style="font-size:11px;">${escapeHtml(log.dm_status || 'not_requested')}</td>
+                <td><span class="event-badge ${log.outcome === 'SUCCESS' ? 'join' : 'leave'}">${escapeHtml(log.outcome)}</span></td>
+                <td style="font-size:12px; color:#f1f5f9;">${escapeHtml(log.details || log.reason || '—')}</td>
+            </tr>
+        `;
+    });
+    tbody.innerHTML = html;
+}
+
+function prevModAuditPage() {
+    loadModAuditLogs(Math.max(0, currentModAuditOffset - modAuditLimit));
+}
+
+function nextModAuditPage() {
+    loadModAuditLogs(currentModAuditOffset + modAuditLimit);
+}
+
+// =============================================================================
+// 6. Moderation Config & Safety Logic
+// =============================================================================
+
+async function loadEmergencyStatus() {
+    const data = await apiRequest(`/api/guild/${guildId}/moderation/emergency_status`, 'GET');
+    // State reflected in UI
+}
+
+async function toggleEmergencyCircuitBreaker() {
+    const reason = document.getElementById('emergency-reason-input')?.value.trim() || 'Manual emergency circuit breaker toggle';
+    const isCurrentlyLocked = {{ 'true' if is_emergency_locked else 'false' }};
+    const newState = !isCurrentlyLocked;
+
+    if (!confirm(`Are you sure you want to ${newState ? 'ACTIVATE EMERGENCY STOP' : 'DISARM EMERGENCY STOP'}?`)) return;
+
+    const res = await apiRequest(`/api/guild/${guildId}/moderation/emergency_stop`, 'POST', {
+        is_locked: newState,
+        reason: reason
+    });
+    if (res && res.success) {
+        alert(`Emergency Circuit Breaker set to: ${newState ? 'LOCKED' : 'OPERATIONAL'}`);
+        window.location.reload();
+    } else {
+        alert(res?.error || 'Failed to toggle emergency circuit breaker');
+    }
+}
+
+async function loadModPermissions() {
+    const data = await apiRequest(`/api/guild/${guildId}/moderation/permissions`, 'GET');
+    if (!data || !data.permissions) return;
+
+    const p = data.permissions;
+    // Populate checkboxes for Moderator and Viewer
+    const roles = ['Moderator', 'Viewer'];
+    const caps = ['manage_roles', 'create_panels', 'timeout', 'kick', 'ban', 'tempban', 'unban', 'bulk_mod', 'emergency'];
+
+    roles.forEach(role => {
+        const prefix = role.toLowerCase().substring(0, 3);
+        const rData = p[role] || {};
+        caps.forEach(cap => {
+            const dbKey = cap === 'emergency' ? 'can_emergency_stop' : (cap === 'manage_roles' ? 'can_manage_roles' : `can_${cap}`);
+            const el = document.getElementById(`perm-${prefix}-${cap}`);
+            if (el) el.checked = Boolean(rData[dbKey]);
+        });
+    });
+}
+
+async function savePermissionsMatrix() {
+    const caps = ['manage_roles', 'create_panels', 'timeout', 'kick', 'ban', 'tempban', 'unban', 'bulk_mod', 'emergency'];
+    const roles = ['Moderator', 'Viewer'];
+
+    for (const role of roles) {
+        const prefix = role.toLowerCase().substring(0, 3);
+        const capObj = {};
+        caps.forEach(cap => {
+            const dbKey = cap === 'emergency' ? 'can_emergency_stop' : (cap === 'manage_roles' ? 'can_manage_roles' : `can_${cap}`);
+            const el = document.getElementById(`perm-${prefix}-${cap}`);
+            capObj[dbKey] = el ? el.checked : false;
+        });
+
+        await apiRequest(`/api/guild/${guildId}/moderation/permissions`, 'POST', {
+            role: role,
+            capabilities: capObj
+        });
+    }
+    alert('Permissions matrix updated successfully!');
+}
+
+let cachedTemplates = {};
+
+async function loadModTemplates() {
+    const data = await apiRequest(`/api/guild/${guildId}/moderation/templates`, 'GET');
+    if (data && data.templates) {
+        cachedTemplates = data.templates;
+        loadSelectedTemplate();
+    }
+}
+
+function loadSelectedTemplate() {
+    const action = document.getElementById('template-action-select')?.value || 'timeout';
+    const tpl = cachedTemplates[action] || { template_text: '', is_enabled: true };
+
+    const editor = document.getElementById('template-text-editor');
+    const toggle = document.getElementById('template-enabled-toggle');
+
+    if (editor) editor.value = tpl.template_text || '';
+    if (toggle) toggle.checked = Boolean(tpl.is_enabled);
+}
+
+async function saveCurrentTemplate() {
+    const action = document.getElementById('template-action-select')?.value;
+    const text = document.getElementById('template-text-editor')?.value.trim();
+    const isEnabled = document.getElementById('template-enabled-toggle')?.checked || false;
+
+    if (!action || !text) {
+        alert('Action type and template content are required.');
+        return;
+    }
+
+    const res = await apiRequest(`/api/guild/${guildId}/moderation/templates`, 'POST', {
+        action_type: action,
+        template_text: text,
+        is_enabled: isEnabled
+    });
+
+    if (res && res.success) {
+        alert('Template saved successfully!');
+        cachedTemplates[action] = { template_text: text, is_enabled: isEnabled };
+    } else {
+        alert(res?.error || 'Failed to save template');
+    }
+}
+
+
     // Initializations on page ready
     document.addEventListener('DOMContentLoaded', () => {
         loadServerLogs(0);
         renderAnnouncementButtonsUI();
         handleMentionChange();
         updateAnnouncementPreview();
+        initModerationSystem();
     });
 </script>
 {% endblock %}

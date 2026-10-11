@@ -220,6 +220,10 @@ class Config:
             "settings": {
                 "access_level": "admin_only",
                 "allowed_roles": []
+            },
+            "moderation": {
+                "access_level": "roles_only",
+                "allowed_roles": []
             }
         }
 

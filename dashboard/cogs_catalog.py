@@ -53,6 +53,10 @@ def resolve_command_permissions(cmd_name: str, cog_name: str, app_cmd_perms: Any
             return "Manage Messages"
         return "Everyone (Voice Channel)"
 
+    # Moderation Cog
+    if cog_name == "Moderation" or c.startswith("/mod"):
+        return "Manage Server / Moderator"
+
     # Default fallback using discord permission flags
     if app_cmd_perms:
         if getattr(app_cmd_perms, "administrator", False):
@@ -115,11 +119,18 @@ def get_cogs_and_commands_catalog(bot) -> List[Dict[str, Any]]:
             "category": "Entertainment",
             "color": "#EC4899",
             "description": "High-fidelity voice audio streaming from YouTube, Spotify, SoundCloud, local server libraries, SQLite playlists, and dedicated interactive music channel."
+        },
+        "Moderation": {
+            "display_name": "Role Management & Moderation",
+            "icon": "⚖️",
+            "category": "Moderation & Roles",
+            "color": "#6366F1",
+            "description": "Complete role manager, persistent self-service role panels, individual moderation (timeout, kick, ban, unban, tempban), and filter-based bulk moderation."
         }
     }
 
     # Desired canonical presentation order
-    canonical_order = ["Settings", "LabelerTracker", "Announcement", "Loa", "Logger", "Music"]
+    canonical_order = ["Settings", "Moderation", "LabelerTracker", "Announcement", "Loa", "Logger", "Music"]
 
     # Function to parse an app_command (command or group)
     def parse_app_command(cmd, cog_name: str, prefix="/") -> List[Dict[str, Any]]:

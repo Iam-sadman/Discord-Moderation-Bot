@@ -31,7 +31,6 @@ data/*.log
 
 # Private Scraper & Reverse Engineering (Confidential - DO NOT PUBLISH)
 standalone_scraper.py
-services/
 services/labeler_scraper.py
 utils/arc_test_fetch.py
 cogs/labeler_tracker.py

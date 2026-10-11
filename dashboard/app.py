@@ -287,6 +287,10 @@ def create_dashboard(bot):
     app = Quart(__name__, template_folder=template_dir)
     app.secret_key = Config.WEB_SECRET
     app = cors(app)
+    app.discord_bot = bot
+
+    from dashboard.moderation_api import moderation_bp
+    app.register_blueprint(moderation_bp)
 
     # ──── Helper: Record Security Event ────
     async def record_audit_event(action: str, target: str, details: str):
@@ -547,6 +551,16 @@ def create_dashboard(bot):
         except Exception:
             server_playlists = []
 
+        # Moderation & Role Manager context
+        from services.moderation_db import ModerationDB
+        mod_db = ModerationDB.get_instance()
+        is_emergency_locked = await mod_db.is_emergency_locked(guild_id)
+        role_panels = await mod_db.list_role_panels(guild_id)
+        allowed_self_roles = await mod_db.get_allowed_self_roles(guild_id)
+        mod_templates = await mod_db.get_all_message_templates(guild_id)
+        mod_permissions = await mod_db.get_dashboard_permissions(guild_id)
+        operator_role = session.get("role", "Viewer")
+
         return await render_template(
             "guild.html",
             guild=guild,
@@ -569,7 +583,13 @@ def create_dashboard(bot):
             latency=latency,
             bot=bot,
             dashboard_author_name=dashboard_author_name,
-            dashboard_author_avatar=dashboard_author_avatar
+            dashboard_author_avatar=dashboard_author_avatar,
+            is_emergency_locked=is_emergency_locked,
+            role_panels=role_panels,
+            allowed_self_roles=allowed_self_roles,
+            mod_templates=mod_templates,
+            mod_permissions=mod_permissions,
+            operator_role=operator_role
         )
 
     # ──── API Routes: Logs & Catalog ────
