@@ -61,6 +61,7 @@ class TestModerationSystem(unittest.IsolatedAsyncioTestCase):
         self.mock_bot_top_role.name = "Bot Master Role"
         self.mock_bot_top_role.position = 100
         self.mock_bot_member.top_role = self.mock_bot_top_role
+        self.mock_bot_member.guild_permissions.administrator = False
         self.mock_guild.me = self.mock_bot_member
 
         # Target member

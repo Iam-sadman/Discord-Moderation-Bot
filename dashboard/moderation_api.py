@@ -373,19 +373,25 @@ async def api_publish_role_panel(guild_id, panel_id):
     if getattr(channel, "guild", None) and channel.guild.id != guild_id:
         return jsonify({"error": "Destination channel belongs to a different server"}), 400
 
-    # Explicit permission inspection before attempting to send
-    if hasattr(channel, "permissions_for") and guild.me:
+    if not hasattr(channel, "send"):
+        return jsonify({
+            "error": f"Channel #{getattr(channel, 'name', target_channel_id)} cannot directly receive text messages. Please select a text channel."
+        }), 400
+
+    # Explicit permission inspection (Administrators bypass all channel-level overrides)
+    is_admin = bool(guild.me and getattr(getattr(guild.me, "guild_permissions", None), "administrator", False))
+    if not is_admin and hasattr(channel, "permissions_for") and guild.me:
         perms = channel.permissions_for(guild.me)
         missing_perms = []
-        if not perms.view_channel:
+        if not getattr(perms, "view_channel", True):
             missing_perms.append("View Channel")
-        if not perms.send_messages:
+        if not getattr(perms, "send_messages", True):
             missing_perms.append("Send Messages")
-        if not perms.embed_links:
+        if not getattr(perms, "embed_links", True):
             missing_perms.append("Embed Links")
 
         has_reactions = any(item.get("item_type") == "reaction" for item in panel.get("items", []))
-        if has_reactions and not perms.add_reactions:
+        if has_reactions and not getattr(perms, "add_reactions", True):
             missing_perms.append("Add Reactions")
 
         if missing_perms:
