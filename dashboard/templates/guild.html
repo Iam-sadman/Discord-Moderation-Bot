@@ -2746,35 +2746,36 @@
                     <span style="font-size: 11px; color: var(--text-dim);">Real-Time Component Mirror</span>
                 </div>
 
-                <div class="discord-preview-box">
-                    <div class="discord-message-row">
-                        <div class="discord-author-avatar">
-                            {% if bot.user and bot.user.display_avatar %}
-                            <img src="{{ bot.user.display_avatar.url }}">
+                <div class="discord-chat-container">
+                    <div class="discord-msg-header">
+                        <div class="discord-msg-avatar">
+                            {% if bot and bot.user and bot.user.display_avatar %}
+                            <img src="{{ bot.user.display_avatar.url }}" alt="{{ bot.user.name }}">
                             {% else %}
-                            🤖
+                            <div style="display:flex;align-items:center;justify-content:center;height:100%;color:#fff;font-weight:700;">🤖</div>
                             {% endif %}
                         </div>
-                        <div class="discord-message-content">
-                            <div class="discord-author-name">
-                                {{ bot.user.name if bot.user else "ModularBot" }}
+                        <div>
+                            <div class="discord-msg-author">
+                                <span>{{ bot.user.name if bot and bot.user else "ARC Bot" }}</span>
                                 <span class="discord-bot-tag">BOT</span>
+                                <span class="discord-msg-time">Today at 12:00 PM</span>
                             </div>
+                        </div>
+                    </div>
 
-                            <!-- Live Embed Preview -->
-                            <div class="discord-embed-card" id="panel-preview-card" style="border-left-color: #5865F2;">
-                                <div style="display: flex; justify-content: space-between; gap: 12px;">
-                                    <div style="flex: 1;">
-                                        <div class="discord-embed-title" id="panel-preview-title">Choose Your Roles</div>
-                                        <div class="discord-embed-desc" id="panel-preview-desc">Click the buttons below to assign or remove roles.</div>
-                                    </div>
-                                    <img id="panel-preview-thumb" src="" style="width: 60px; height: 60px; border-radius: 4px; object-fit: cover; display: none;">
-                                </div>
-                                <img id="panel-preview-image" src="" style="width: 100%; border-radius: 4px; margin-top: 10px; display: none;">
-                                <div class="discord-btn-row" id="panel-preview-buttons">
-                                    <!-- Live Preview Buttons Rendered Here -->
-                                </div>
+                    <!-- Live Embed Preview -->
+                    <div class="discord-embed-card" id="panel-preview-card" style="border-left-color: #5865F2;">
+                        <div style="display: flex; justify-content: space-between; gap: 12px;">
+                            <div style="flex: 1;">
+                                <div class="discord-embed-title" id="panel-preview-title">Choose Your Community Roles</div>
+                                <div class="discord-embed-desc" id="panel-preview-desc">Click the buttons below to assign or remove roles from your profile!</div>
                             </div>
+                            <img id="panel-preview-thumb" src="" style="width: 60px; height: 60px; border-radius: 4px; object-fit: cover; display: none;">
+                        </div>
+                        <img id="panel-preview-image" src="" style="width: 100%; border-radius: 4px; margin-top: 10px; display: none;">
+                        <div class="discord-btn-row" id="panel-preview-buttons">
+                            <!-- Live Preview Buttons Rendered Here -->
                         </div>
                     </div>
                 </div>
@@ -5057,13 +5058,13 @@ function renderRolesCatalogTable() {
 
     let html = '';
     cachedRolesCatalog.forEach(r => {
-        const isSelfAllowed = cachedAllowedSelfRoles.includes(r.id);
+        const isSelfAllowed = cachedAllowedSelfRoles.map(String).includes(String(r.id));
         const canManage = r.can_bot_manage;
         const statusBadge = canManage
             ? '<span class="event-badge join" style="font-size:10px;">Manageable</span>'
             : '<span class="event-badge leave" style="font-size:10px;">Protected</span>';
 
-        const starBtn = `<button type="button" onclick="toggleRoleSelfService(${r.id}, ${isSelfAllowed})" class="btn btn-sm ${isSelfAllowed ? 'btn-primary' : 'btn-secondary'}" style="font-size:11px; padding:3px 8px;" title="${isSelfAllowed ? 'Remove from self-service allowlist' : 'Add to self-service allowlist'}">
+        const starBtn = `<button type="button" onclick="toggleRoleSelfService('${r.id}', ${isSelfAllowed})" class="btn btn-sm ${isSelfAllowed ? 'btn-primary' : 'btn-secondary'}" style="font-size:11px; padding:3px 8px;" title="${isSelfAllowed ? 'Remove from self-service allowlist' : 'Add to self-service allowlist'}">
             ${isSelfAllowed ? '⭐ Whitelisted' : '☆ Not Allowed'}
         </button>`;
 
@@ -5214,18 +5215,18 @@ function selectMemberForInspector(member) {
     }
 
     // Populate manageable assign dropdown (roles member doesn't have)
-    const memberRoleIds = new Set(member.roles.map(r => Number(r.id)));
+    const memberRoleIds = new Set(member.roles.map(r => String(r.id)));
     const assignSelect = document.getElementById('insp-assign-role-select');
     assignSelect.innerHTML = '<option value="">Select Role to Add...</option>' +
         cachedRolesCatalog
-            .filter(r => r.can_bot_manage && !memberRoleIds.has(Number(r.id)))
+            .filter(r => r.can_bot_manage && !memberRoleIds.has(String(r.id)))
             .map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
 
     // Populate remove dropdown (manageable roles member currently has)
     const removeSelect = document.getElementById('insp-remove-role-select');
     removeSelect.innerHTML = '<option value="">Select Role to Remove...</option>' +
         cachedRolesCatalog
-            .filter(r => r.can_bot_manage && memberRoleIds.has(Number(r.id)))
+            .filter(r => r.can_bot_manage && memberRoleIds.has(String(r.id)))
             .map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
 }
 
@@ -5247,7 +5248,7 @@ async function submitRoleChange(action) {
     const endpoint = action === 'assign' ? `/api/guild/${guildId}/roles/assign` : `/api/guild/${guildId}/roles/remove`;
     const res = await apiRequest(endpoint, 'POST', {
         user_id: selectedInspectorMember.id,
-        role_id: Number(roleId),
+        role_id: String(roleId),
         reason: reason,
         notify_dm: notifyDm
     });
@@ -5326,11 +5327,11 @@ function renderPanelItemsRows() {
                 <option value="reaction" ${item.item_type === 'reaction' ? 'selected' : ''}>😀 Reaction</option>
             </select>
 
-            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].role_id = Number(this.value); updatePanelLivePreview();">
+            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].role_id = String(this.value); updatePanelLivePreview();">
                 <option value="">Select Role...</option>
                 ${cachedRolesCatalog.map(r => `
-                    <option value="${r.id}" ${Number(item.role_id) === Number(r.id) ? 'selected' : ''}>
-                        @${escapeHtml(r.name)} ${cachedAllowedSelfRoles.includes(r.id) ? '⭐' : '(Not Whitelisted)'}
+                    <option value="${r.id}" ${String(item.role_id) === String(r.id) ? 'selected' : ''}>
+                        @${escapeHtml(r.name)} ${cachedAllowedSelfRoles.map(String).includes(String(r.id)) ? '⭐' : '(Not Whitelisted)'}
                     </option>
                 `).join('')}
             </select>
@@ -5426,7 +5427,7 @@ async function savePanelDraft() {
     }
 
     const payload = {
-        channel_id: Number(channelId),
+        channel_id: String(channelId),
         title: title,
         description: desc,
         color: color,
@@ -5466,7 +5467,7 @@ async function publishPanelToDiscord() {
     }
 
     // Check if any role is not in allowlist
-    const notWhitelisted = panelItemsState.filter(it => it.role_id && !cachedAllowedSelfRoles.includes(Number(it.role_id)));
+    const notWhitelisted = panelItemsState.filter(it => it.role_id && !cachedAllowedSelfRoles.map(String).includes(String(it.role_id)));
     if (notWhitelisted.length > 0) {
         if (!confirm('Warning: One or more selected roles are NOT in the self-service whitelist. Users will receive an error when clicking those buttons. Do you want to proceed?')) {
             return;
@@ -5474,7 +5475,7 @@ async function publishPanelToDiscord() {
     }
 
     const payload = {
-        channel_id: Number(channelId),
+        channel_id: String(channelId),
         title: title,
         description: desc,
         color: color,
@@ -5999,7 +6000,7 @@ async function launchBulkJob() {
         action_type: action,
         filters: filters,
         reason: reason,
-        role_id: roleId ? Number(roleId) : null,
+        role_id: roleId ? String(roleId) : null,
         duration_seconds: duration,
         confirmation_phrase: confirmPhrase
     };

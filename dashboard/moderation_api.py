@@ -67,7 +67,7 @@ async def api_roles_catalog(guild_id):
         r_pos = getattr(r, "position", 0)
         can_bot = bool(bot_top_role and r_pos < bot_pos and not getattr(r, "managed", False) and not is_def)
         roles_data.append({
-            "id": r.id,
+            "id": str(r.id),
             "name": r.name,
             "color": str(r.color),
             "position": r_pos,
@@ -200,7 +200,7 @@ async def api_roles_remove(guild_id):
 async def api_get_allowed_self_roles(guild_id):
     db = ModerationDB.get_instance()
     allowed_ids = await db.get_allowed_self_roles(guild_id)
-    return jsonify({"success": True, "allowed_roles": allowed_ids})
+    return jsonify({"success": True, "allowed_roles": [str(x) for x in allowed_ids]})
 
 
 @moderation_bp.route("/api/guild/<int:guild_id>/roles/allowed_self", methods=["POST"])
@@ -234,18 +234,37 @@ async def api_set_allowed_self_roles(guild_id):
         await db.remove_allowed_self_role(guild_id, int(role_id))
 
     allowed_ids = await db.get_allowed_self_roles(guild_id)
-    return jsonify({"success": True, "allowed_roles": allowed_ids})
+    return jsonify({"success": True, "allowed_roles": [str(x) for x in allowed_ids]})
 
 
 # =============================================================================
 # 2. Self-Service Role Panel Builder
 # =============================================================================
 
+def _format_panel_for_api(panel: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not panel:
+        return None
+    p = dict(panel)
+    if "channel_id" in p and p["channel_id"] is not None:
+        p["channel_id"] = str(p["channel_id"])
+    if "message_id" in p and p["message_id"] is not None:
+        p["message_id"] = str(p["message_id"])
+    if "items" in p and p["items"]:
+        formatted_items = []
+        for it in p["items"]:
+            item_copy = dict(it)
+            if "role_id" in item_copy and item_copy["role_id"] is not None:
+                item_copy["role_id"] = str(item_copy["role_id"])
+            formatted_items.append(item_copy)
+        p["items"] = formatted_items
+    return p
+
+
 @moderation_bp.route("/api/guild/<int:guild_id>/role_panels", methods=["GET"])
 async def api_list_role_panels(guild_id):
     db = ModerationDB.get_instance()
     panels = await db.list_role_panels(guild_id)
-    return jsonify({"success": True, "panels": panels})
+    return jsonify({"success": True, "panels": [_format_panel_for_api(p) for p in panels]})
 
 
 @moderation_bp.route("/api/guild/<int:guild_id>/role_panels/create", methods=["POST"])
@@ -278,7 +297,7 @@ async def api_create_role_panel(guild_id):
         await db.set_panel_items(panel_id, items)
 
     panel = await db.get_role_panel(panel_id)
-    return jsonify({"success": True, "panel": panel})
+    return jsonify({"success": True, "panel": _format_panel_for_api(panel)})
 
 
 @moderation_bp.route("/api/guild/<int:guild_id>/role_panels/<int:panel_id>/edit", methods=["POST"])
@@ -330,7 +349,7 @@ async def api_edit_role_panel(guild_id, panel_id):
                 except Exception as e:
                     logger.warning("Failed to refresh Discord message for panel %d: %s", panel_id, e)
 
-    return jsonify({"success": True, "panel": panel})
+    return jsonify({"success": True, "panel": _format_panel_for_api(panel)})
 
 
 @moderation_bp.route("/api/guild/<int:guild_id>/role_panels/<int:panel_id>/publish", methods=["POST"])
