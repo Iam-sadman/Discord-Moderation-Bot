@@ -2990,7 +2990,7 @@
             <!-- Role Inclusions / Exclusions -->
             <div class="form-group">
                 <label class="form-label">Members Who Possess Role(s):</label>
-                <select class="form-select" id="bulk-filter-has-roles" multiple style="height: 90px;">
+                <select class="form-select" id="bulk-filter-has-roles" multiple style="height: 90px;" onchange="toggleBulkActionOptions()">
                     {% for r in roles %}
                     <option value="{{ r.id }}">@{{ r.name }}</option>
                     {% endfor %}
@@ -3093,12 +3093,14 @@
                     </div>
 
                     <div class="form-group" id="bulk-role-select-group">
-                        <label class="form-label">Select Target Role</label>
+                        <label class="form-label" id="bulk-role-select-label">Select Role to Assign (+)</label>
                         <select class="form-select" id="bulk-target-role-select">
+                            <option value="" disabled selected>-- Choose Role --</option>
                             {% for r in roles %}
                             <option value="{{ r.id }}">@{{ r.name }}</option>
                             {% endfor %}
                         </select>
+                        <div id="bulk-role-sync-hint" style="display: none; font-size: 11px; margin-top: 6px;"></div>
                     </div>
 
                     <div class="form-group" id="bulk-duration-group" style="display: none;">
@@ -3442,7 +3444,7 @@
         } else if (tabName === 'moderation') {
             loadBanList();
         } else if (tabName === 'bulk-mod') {
-            // Bulk tab active
+            toggleBulkActionOptions();
         } else if (tabName === 'mod-audit') {
             loadModAuditLogs(0);
         } else if (tabName === 'mod-config') {
@@ -5114,8 +5116,10 @@ function populateRoleDropdowns() {
         bulkLacksSelect.innerHTML = cachedRolesCatalog.map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
     }
     if (bulkTargetRoleSelect) {
-        bulkTargetRoleSelect.innerHTML = cachedRolesCatalog.filter(r => r.can_bot_manage).map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+        bulkTargetRoleSelect.innerHTML = '<option value="" disabled selected>-- Choose Role --</option>' +
+            cachedRolesCatalog.filter(r => r.can_bot_manage).map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
     }
+    toggleBulkActionOptions();
 }
 
 function debounceMemberSearch() {
@@ -5834,20 +5838,71 @@ function toggleBulkActionOptions() {
     const durGrp = document.getElementById('bulk-duration-group');
     const confirmPhraseGrp = document.getElementById('bulk-confirm-phrase-group');
     const expectedPhrase = document.getElementById('bulk-expected-phrase');
+    const roleSelect = document.getElementById('bulk-target-role-select');
+    const roleLabel = document.getElementById('bulk-role-select-label');
+    const roleHint = document.getElementById('bulk-role-sync-hint');
 
-    if (act === 'role_add' || act === 'role_remove') {
-        roleGrp.style.display = 'block';
-        durGrp.style.display = 'none';
-        confirmPhraseGrp.style.display = 'none';
+    if (act === 'role_add') {
+        if (roleGrp) roleGrp.style.display = 'block';
+        if (durGrp) durGrp.style.display = 'none';
+        if (confirmPhraseGrp) confirmPhraseGrp.style.display = 'none';
+        if (roleLabel) roleLabel.innerHTML = 'Select Role to Assign <span style="color:var(--accent-emerald); font-weight:600;">(+)</span>';
+        if (roleSelect) roleSelect.disabled = false;
+        if (roleHint) {
+            roleHint.style.display = 'none';
+            roleHint.innerHTML = '';
+        }
+    } else if (act === 'role_remove') {
+        if (roleGrp) roleGrp.style.display = 'block';
+        if (durGrp) durGrp.style.display = 'none';
+        if (confirmPhraseGrp) confirmPhraseGrp.style.display = 'none';
+
+        // Check if user selected role(s) in "Members Who Possess Role(s)" filter on the left
+        const hasRolesSelect = document.getElementById('bulk-filter-has-roles');
+        const filteredHasRoles = Array.from(hasRolesSelect?.selectedOptions || []).map(o => ({ id: o.value, text: o.text }));
+
+        if (filteredHasRoles.length === 1) {
+            // Auto-lock and disable because user is removing the exact role filtered on the left
+            if (roleSelect) {
+                roleSelect.value = filteredHasRoles[0].id;
+                roleSelect.disabled = true;
+            }
+            if (roleLabel) {
+                roleLabel.innerHTML = 'Target Role to Remove <span style="font-size:11px; color:var(--accent-rose); font-weight:normal;">(Auto-locked from filter)</span>';
+            }
+            if (roleHint) {
+                roleHint.style.display = 'block';
+                roleHint.innerHTML = `<span style="color:#38bdf8; display:flex; align-items:center; gap:4px;">🔒 <strong>Auto-locked:</strong> Removing <code>${escapeHtml(filteredHasRoles[0].text)}</code> (auto-detected from left filter). Selection is disabled to prevent accidental misconfiguration.</span>`;
+            }
+        } else if (filteredHasRoles.length > 1) {
+            if (roleSelect) roleSelect.disabled = false;
+            if (roleLabel) {
+                roleLabel.innerHTML = 'Select Role to Remove <span style="color:var(--accent-rose); font-weight:600;">(-)</span>';
+            }
+            if (roleHint) {
+                roleHint.style.display = 'block';
+                roleHint.innerHTML = `<span style="color:#fbbf24;">⚠️ Multiple roles selected in left filter. Please choose which role to remove.</span>`;
+            }
+        } else {
+            // No role selected in left filter (e.g., filtered by join date only)
+            if (roleSelect) roleSelect.disabled = false;
+            if (roleLabel) {
+                roleLabel.innerHTML = 'Select Role to Remove <span style="color:var(--accent-rose); font-weight:600;">(-)</span>';
+            }
+            if (roleHint) {
+                roleHint.style.display = 'block';
+                roleHint.innerHTML = `<span style="color:var(--text-dim);">Select which role to remove from the matched members.</span>`;
+            }
+        }
     } else if (act === 'timeout') {
-        roleGrp.style.display = 'none';
-        durGrp.style.display = 'block';
-        confirmPhraseGrp.style.display = 'none';
+        if (roleGrp) roleGrp.style.display = 'none';
+        if (durGrp) durGrp.style.display = 'block';
+        if (confirmPhraseGrp) confirmPhraseGrp.style.display = 'none';
     } else if (act === 'kick' || act === 'ban') {
-        roleGrp.style.display = 'none';
-        durGrp.style.display = 'none';
-        confirmPhraseGrp.style.display = 'block';
-        expectedPhrase.textContent = `CONFIRM ${act.toUpperCase()}`;
+        if (roleGrp) roleGrp.style.display = 'none';
+        if (durGrp) durGrp.style.display = 'none';
+        if (confirmPhraseGrp) confirmPhraseGrp.style.display = 'block';
+        if (expectedPhrase) expectedPhrase.textContent = `CONFIRM ${act.toUpperCase()}`;
     }
 }
 
@@ -5918,7 +5973,25 @@ async function launchBulkJob() {
     const action = document.getElementById('bulk-action-type-select')?.value;
     const filters = collectBulkFilters();
     const reason = document.getElementById('bulk-reason-input')?.value.trim() || 'Bulk moderation execution';
-    const roleId = document.getElementById('bulk-target-role-select')?.value;
+    const roleSelect = document.getElementById('bulk-target-role-select');
+    let roleId = roleSelect?.value;
+
+    // If role_remove and left filter has 1 role, ensure roleId is taken from that filtered role even if select is disabled
+    if (action === 'role_remove') {
+        const hasRolesSelect = document.getElementById('bulk-filter-has-roles');
+        const selectedFilteredRoles = Array.from(hasRolesSelect?.selectedOptions || []).map(o => o.value);
+        if (selectedFilteredRoles.length === 1) {
+            roleId = selectedFilteredRoles[0];
+        }
+    }
+
+    if (action === 'role_add' || action === 'role_remove') {
+        if (!roleId) {
+            alert(action === 'role_add' ? 'Please select a role to assign.' : 'Please select a role to remove.');
+            return;
+        }
+    }
+
     const duration = Number(document.getElementById('bulk-duration-input')?.value) * 60;
     const confirmPhrase = document.getElementById('bulk-confirm-phrase-input')?.value.trim() || '';
 
