@@ -126,11 +126,25 @@ def get_cogs_and_commands_catalog(bot) -> List[Dict[str, Any]]:
             "category": "Moderation & Roles",
             "color": "#6366F1",
             "description": "Complete role manager, persistent self-service role panels, individual moderation (timeout, kick, ban, unban, tempban), and filter-based bulk moderation."
+        },
+        "FormsCog": {
+            "display_name": "Forms Builder & Management",
+            "icon": "📝",
+            "category": "Community & Operations",
+            "color": "#14B8A6",
+            "description": "Production-ready form builder with customizable fields, multi-page modals, approval/rejection workflows, live scheduling, and Excel/CSV exports."
+        },
+        "Forms": {
+            "display_name": "Forms Builder & Management",
+            "icon": "📝",
+            "category": "Community & Operations",
+            "color": "#14B8A6",
+            "description": "Production-ready form builder with customizable fields, multi-page modals, approval/rejection workflows, live scheduling, and Excel/CSV exports."
         }
     }
 
     # Desired canonical presentation order
-    canonical_order = ["Settings", "Moderation", "LabelerTracker", "Announcement", "Loa", "Logger", "Music"]
+    canonical_order = ["Settings", "Moderation", "FormsCog", "Forms", "LabelerTracker", "Announcement", "Loa", "Logger", "Music"]
 
     # Function to parse an app_command (command or group)
     def parse_app_command(cmd, cog_name: str, prefix="/") -> List[Dict[str, Any]]:

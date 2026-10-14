@@ -292,6 +292,9 @@ def create_dashboard(bot):
     from dashboard.moderation_api import moderation_bp
     app.register_blueprint(moderation_bp)
 
+    from dashboard.forms_api import forms_bp
+    app.register_blueprint(forms_bp)
+
     # ──── Helper: Record Security Event ────
     async def record_audit_event(action: str, target: str, details: str):
         user_id = session.get("user_id", "anonymous")
@@ -315,6 +318,9 @@ def create_dashboard(bot):
         if request.path.startswith("/login"):
             return
         if request.path.startswith("/favicon.ico"):
+            return
+        # Allow internal localhost bridge with secret header authentication
+        if request.path.startswith("/api/internal/"):
             return
 
         # Check for active session
@@ -585,6 +591,10 @@ def create_dashboard(bot):
         mod_permissions = await mod_db.get_dashboard_permissions(guild_id)
         operator_role = session.get("role", "Viewer")
 
+        from services.forms_db import FormsDB
+        forms_db = FormsDB.get_instance()
+        guild_forms = await forms_db.list_forms(guild_id)
+
         return await render_template(
             "guild.html",
             guild=guild,
@@ -613,7 +623,8 @@ def create_dashboard(bot):
             allowed_self_roles=allowed_self_roles,
             mod_templates=mod_templates,
             mod_permissions=mod_permissions,
-            operator_role=operator_role
+            operator_role=operator_role,
+            forms=guild_forms
         )
 
     # ──── API Routes: Logs & Catalog ────

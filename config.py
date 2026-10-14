@@ -17,6 +17,8 @@ class Config:
     CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
     REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "http://localhost:5000/callback")
     DB_PATH = os.path.join(os.path.dirname(__file__), "data", "settings.db")
+    FORMS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "forms.db")
+    INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", os.getenv("WEB_SECRET_KEY", "forms_internal_bridge_secret"))
 
     # Optional fallbacks from environment
     SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", 300))

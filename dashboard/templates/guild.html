@@ -1013,6 +1013,9 @@
     <button class="tab-btn" onclick="switchGuildTab('security-logs', this)" id="tab-btn-security-logs">
         🔒 Security & Access Logs
     </button>
+    <button class="tab-btn" onclick="switchGuildTab('forms', this)" id="tab-btn-forms">
+        📝 Form Builder & Management
+    </button>
     <button class="tab-btn" onclick="switchGuildTab('music', this)" id="tab-btn-music">
         🎵 Music Engine
     </button>
@@ -3374,6 +3377,364 @@
 </div>
 
 <!-- ========================================== -->
+<!-- FORMS BUILDER & MANAGEMENT TAB             -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-forms">
+    <!-- Header Section -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+        <div>
+            <h2 style="font-size: 22px; font-weight: 800; color: #ffffff; display: flex; align-items: center; gap: 10px;">
+                <span>📝</span> Dynamic Form Builder & Management
+            </h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+                Create custom application forms, chained multi-page modals, automated timing schedules with live countdowns, staff approval workflows, and Excel/CSV exports.
+            </p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-secondary" onclick="loadGuildForms()" title="Refresh forms list">
+                🔄 Refresh
+            </button>
+            <button class="btn btn-primary" onclick="openCreateFormModal()">
+                ➕ Create New Form
+            </button>
+        </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1; max-width: 400px;">
+            <input type="text" id="forms-search-input" class="form-control" placeholder="Search forms by title or ID..." oninput="filterFormsList()" style="width: 100%;">
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 12px; color: var(--text-muted);">Status Filter:</span>
+            <select id="forms-status-filter" class="form-control" onchange="filterFormsList()" style="width: auto; padding: 6px 12px; font-size: 12px;">
+                <option value="all">All Forms</option>
+                <option value="open">🟢 Active / Open</option>
+                <option value="scheduled">⏳ Scheduled</option>
+                <option value="closed">🔴 Closed</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Forms Cards Grid Container -->
+    <div id="forms-cards-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
+        <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-muted);">
+            <div style="font-size: 36px; margin-bottom: 12px;">⏳</div>
+            Loading server forms...
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 1. FORM BUILDER / EDIT MODAL               -->
+<!-- ========================================== -->
+<div id="modal-form-builder" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 20px; overflow-y: auto;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 650px; box-shadow: var(--shadow-glow); max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
+            <h3 id="form-builder-modal-title" style="font-size: 18px; font-weight: 700; color: #ffffff;">Create New Form</h3>
+            <button onclick="closeFormBuilderModal()" style="background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer;">&times;</button>
+        </div>
+
+        <form id="form-builder-form" onsubmit="handleFormBuilderSubmit(event)">
+            <input type="hidden" id="form-builder-id" value="">
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+                    Form Title <span style="color: var(--accent-rose);">*</span>
+                </label>
+                <input type="text" id="fb-title" class="form-control" placeholder="e.g. Moderator Application, Community Feedback" required maxlength="100">
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+                    Instructions / Description
+                </label>
+                <textarea id="fb-description" class="form-control" rows="2" placeholder="Brief explanation or rules displayed on the public Discord panel..."></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+                        Destination Channel <span style="color: var(--accent-rose);">*</span>
+                    </label>
+                    <select id="fb-dest-channel" class="form-control" required>
+                        <option value="">Select text channel...</option>
+                        {% for ch in text_channels %}
+                        <option value="{{ ch.id }}">#{{ ch.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <small style="color: var(--text-muted); font-size: 11px;">Where new submissions are delivered.</small>
+                </div>
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+                        Public Panel Channel
+                    </label>
+                    <select id="fb-panel-channel" class="form-control">
+                        <option value="">(Optional - select channel)</option>
+                        {% for ch in text_channels %}
+                        <option value="{{ ch.id }}">#{{ ch.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <small style="color: var(--text-muted); font-size: 11px;">Where the 'Fill Form' button is published.</small>
+                </div>
+            </div>
+
+            <!-- Review System Toggle & Role -->
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px; margin-bottom: 16px;">
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text-main); cursor: pointer;">
+                    <input type="checkbox" id="fb-review-toggle" onchange="toggleReviewRoleVisibility()">
+                    Enable Review & Approval System
+                </label>
+                <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 10px 24px;">
+                    When enabled, submissions require staff approval/rejection with action buttons, DM alerts, and optional auto-role granting.
+                </p>
+                <div id="fb-approved-role-box" style="display: none; margin-left: 24px;">
+                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">
+                        Role Granted on Approval (Optional):
+                    </label>
+                    <select id="fb-approved-role" class="form-control">
+                        <option value="">None (Don't assign role)</option>
+                        {% for r in roles %}
+                        {% if not r.managed and not r.is_default %}
+                        <option value="{{ r.id }}">@{{ r.name }}</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                    <small style="color: var(--accent-amber); font-size: 11px;">Must be below the bot's highest role and cannot possess Admin/Manage Server permissions.</small>
+                </div>
+            </div>
+
+            <!-- Submissions Limits & Cooldown -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+                        Max Submissions per User
+                    </label>
+                    <input type="number" id="fb-max-subs" class="form-control" min="0" value="0" placeholder="0 = Unlimited">
+                    <small style="color: var(--text-muted); font-size: 11px;">Set to 1 for one-time applications.</small>
+                </div>
+                <div>
+                    <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">
+                        User Cooldown (Seconds)
+                    </label>
+                    <input type="number" id="fb-cooldown" class="form-control" min="0" value="60" placeholder="60">
+                    <small style="color: var(--text-muted); font-size: 11px;">Prevents repeated rapid spam clicks.</small>
+                </div>
+            </div>
+
+            <!-- Schedule Section -->
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 14px; margin-bottom: 20px;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--text-main); margin-bottom: 8px;">
+                    ⏱️ Timing & Schedule (Optional)
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div>
+                        <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-muted);">
+                            Opens At (Local Date/Time):
+                        </label>
+                        <input type="datetime-local" id="fb-opens-at" class="form-control">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 12px; margin-bottom: 4px; color: var(--text-muted);">
+                            Closes At (Local Date/Time):
+                        </label>
+                        <input type="datetime-local" id="fb-closes-at" class="form-control">
+                    </div>
+                </div>
+                <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 11px; color: var(--text-muted);">Quick Duration Helper:</span>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDuration(3600)">1h</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDuration(18000)">5h</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDuration(86400)">24h</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDuration(604800)">7d</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="clearScheduleDates()">Clear</button>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                <button type="button" class="btn btn-secondary" onclick="closeFormBuilderModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="fb-submit-btn">Save Form</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 2. QUESTIONS BUILDER DRAWER / MODAL        -->
+<!-- ========================================== -->
+<div id="modal-manage-questions" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 750px; box-shadow: var(--shadow-glow); max-height: 90vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
+            <div>
+                <h3 id="mq-modal-title" style="font-size: 18px; font-weight: 700; color: #ffffff;">Manage Form Questions</h3>
+                <p id="mq-modal-subtitle" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;"></p>
+            </div>
+            <button onclick="closeQuestionsModal()" style="background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer;">&times;</button>
+        </div>
+
+        <input type="hidden" id="mq-form-id" value="">
+
+        <!-- Questions List Container -->
+        <div id="mq-questions-list" style="flex: 1; overflow-y: auto; margin-bottom: 20px; padding-right: 6px;">
+            <!-- Rendered dynamically -->
+        </div>
+
+        <!-- Add Question Sub-Panel -->
+        <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 16px;">
+            <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-main);">➕ Add New Question</h4>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 10px;">
+                <div>
+                    <label style="display: block; font-size: 11px; margin-bottom: 4px; color: var(--text-muted);">Question Title / Label (Max 45 chars):</label>
+                    <input type="text" id="mq-new-label" class="form-control" placeholder="e.g. Why do you want to join our team?" maxlength="45">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 11px; margin-bottom: 4px; color: var(--text-muted);">Field Style:</label>
+                    <select id="mq-new-style" class="form-control">
+                        <option value="short">Short Single-Line</option>
+                        <option value="paragraph">Paragraph Multi-Line</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div>
+                    <label style="display: block; font-size: 11px; margin-bottom: 4px; color: var(--text-muted);">Placeholder Hint (Max 100 chars):</label>
+                    <input type="text" id="mq-new-placeholder" class="form-control" placeholder="Optional helper text..." maxlength="100">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 11px; margin-bottom: 4px; color: var(--text-muted);">Min Length:</label>
+                    <input type="number" id="mq-new-min" class="form-control" min="0" max="1000" value="0">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 11px; margin-bottom: 4px; color: var(--text-muted);">Max Length (≤1000):</label>
+                    <input type="number" id="mq-new-max" class="form-control" min="1" max="1000" value="1000">
+                </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-main); cursor: pointer;">
+                    <input type="checkbox" id="mq-new-required" checked>
+                    Mandatory / Required Field
+                </label>
+                <button type="button" class="btn btn-primary btn-sm" onclick="addNewQuestionSubmit()">
+                    Add Question to Form
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 3. SUBMISSIONS VIEWER & EXPORT DRAWER      -->
+<!-- ========================================== -->
+<div id="modal-manage-submissions" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 950px; box-shadow: var(--shadow-glow); max-height: 90vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
+            <div>
+                <h3 id="ms-modal-title" style="font-size: 18px; font-weight: 700; color: #ffffff;">Form Submissions</h3>
+                <p id="ms-modal-subtitle" style="font-size: 12px; color: var(--text-muted); margin-top: 2px;"></p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-secondary btn-sm" onclick="downloadCurrentFormExport('csv')">
+                    📥 Export CSV
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadCurrentFormExport('xlsx')">
+                    📥 Export Excel
+                </button>
+                <button onclick="closeSubmissionsModal()" style="background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; margin-left: 8px;">&times;</button>
+            </div>
+        </div>
+
+        <input type="hidden" id="ms-form-id" value="">
+
+        <!-- Filter Pills Bar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; gap: 6px;" id="ms-filter-pills">
+                <button class="btn btn-sm btn-primary" onclick="setSubmissionFilter('all', this)" id="sub-filter-all">All (0)</button>
+                <button class="btn btn-sm btn-secondary" onclick="setSubmissionFilter('pending', this)" id="sub-filter-pending">Pending (0)</button>
+                <button class="btn btn-sm btn-secondary" onclick="setSubmissionFilter('approved', this)" id="sub-filter-approved">Approved (0)</button>
+                <button class="btn btn-sm btn-secondary" onclick="setSubmissionFilter('rejected', this)" id="sub-filter-rejected">Rejected (0)</button>
+            </div>
+            <div>
+                <input type="text" id="ms-search-input" class="form-control" placeholder="Search by user or ID..." oninput="renderFilteredSubmissionsTable()" style="width: 220px; padding: 6px 10px; font-size: 12px;">
+            </div>
+        </div>
+
+        <!-- Submissions Table Container -->
+        <div style="flex: 1; overflow-y: auto;">
+            <table class="data-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">ID</th>
+                        <th>Submitter</th>
+                        <th style="width: 140px;">Submitted At</th>
+                        <th style="width: 110px;">Status</th>
+                        <th>Answers Summary</th>
+                        <th style="width: 160px; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="ms-table-body">
+                    <!-- Populated dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 4. SUBMISSION DETAILS MODAL                -->
+<!-- ========================================== -->
+<div id="modal-submission-details" style="display: none; position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 680px; box-shadow: var(--shadow-glow); max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px;">
+            <h3 id="sd-modal-title" style="font-size: 18px; font-weight: 700; color: #ffffff;">Submission Details</h3>
+            <button onclick="closeSubmissionDetailsModal()" style="background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer;">&times;</button>
+        </div>
+
+        <div id="sd-header-info" style="display: flex; gap: 14px; align-items: center; background: rgba(0,0,0,0.3); padding: 12px 16px; border-radius: 8px; margin-bottom: 18px;">
+            <!-- Populated dynamically with avatar, name, ID, and status -->
+        </div>
+
+        <div id="sd-answers-container" style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px;">
+            <!-- Populated dynamically with question label and answer -->
+        </div>
+
+        <div id="sd-review-info-box" style="display: none; background: rgba(0,0,0,0.25); border-left: 3px solid var(--accent-primary); padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 12px;">
+            <!-- Populated dynamically with reviewer note -->
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-subtle); padding-top: 16px;">
+            <div id="sd-action-buttons" style="display: flex; gap: 8px;">
+                <!-- Approve, Reject, DM buttons -->
+            </div>
+            <button class="btn btn-secondary" onclick="closeSubmissionDetailsModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- 5. REVIEW ACTION (APPROVE/REJECT/DM) MODAL -->
+<!-- ========================================== -->
+<div id="modal-review-action" style="display: none; position: fixed; inset: 0; z-index: 10001; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: var(--bg-card); border: 1px solid var(--border-hover); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 500px; box-shadow: var(--shadow-glow);">
+        <h4 id="ra-modal-title" style="font-size: 17px; font-weight: 700; margin-bottom: 8px; color: #ffffff;">Review Action</h4>
+        <p id="ra-modal-desc" style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;"></p>
+
+        <input type="hidden" id="ra-form-id" value="">
+        <input type="hidden" id="ra-sub-id" value="">
+        <input type="hidden" id="ra-action" value="">
+
+        <div style="margin-bottom: 18px;">
+            <label id="ra-input-label" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">Note</label>
+            <textarea id="ra-input-text" class="form-control" rows="4" placeholder="Enter note..."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button class="btn btn-secondary" onclick="closeReviewActionModal()">Cancel</button>
+            <button class="btn btn-primary" id="ra-submit-btn" onclick="executeReviewActionSubmit()">Submit</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
 <!-- CONFIRMATION MODAL COMPONENT               -->
 <!-- ========================================== -->
 <div id="mod-confirm-modal" onclick="if(event.target === this) closeConfirmModal()" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px); align-items: center; justify-content: center;">
@@ -3452,6 +3813,8 @@
             loadModPermissions();
             loadModTemplates();
             loadEmergencyStatus();
+        } else if (tabName === 'forms') {
+            loadGuildForms();
         } else {
             stopMusicAutoPolling();
         }
@@ -6236,6 +6599,733 @@ async function saveCurrentTemplate() {
     }
 }
 
+
+    // =========================================================================
+    // FORMS BUILDER & MANAGEMENT CLIENT-SIDE CONTROLLER
+    // =========================================================================
+
+    let cachedGuildForms = [];
+    let currentViewingFormId = null;
+    let currentFormQuestions = [];
+    let currentFormSubmissions = [];
+    let currentSubmissionFilter = 'all';
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    async function loadGuildForms() {
+        const container = document.getElementById('forms-cards-container');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-muted);">
+                <div style="font-size: 32px; margin-bottom: 8px;">⏳</div>
+                Loading forms...
+            </div>
+        `;
+
+        const data = await apiRequest(`/api/guild/${guildId}/forms`, 'GET');
+        if (!data || !data.success) {
+            container.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--accent-rose);">
+                    ❌ Failed to load forms. ${data?.error || ''}
+                </div>
+            `;
+            return;
+        }
+
+        cachedGuildForms = data.forms || [];
+        renderFormsCards(cachedGuildForms);
+    }
+
+    function renderFormsCards(forms) {
+        const container = document.getElementById('forms-cards-container');
+        if (!container) return;
+
+        if (!forms || forms.length === 0) {
+            container.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; background: var(--bg-card); border: 1px dashed var(--border-subtle); border-radius: var(--radius-lg);">
+                    <div style="font-size: 40px; margin-bottom: 12px;">📝</div>
+                    <h3 style="font-size: 18px; color: #ffffff; margin-bottom: 6px;">No Forms Configured</h3>
+                    <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 18px;">Create your first custom form to collect applications, feedback, or surveys.</p>
+                    <button class="btn btn-primary" onclick="openCreateFormModal()">➕ Create New Form</button>
+                </div>
+            `;
+            return;
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+
+        container.innerHTML = forms.map(f => {
+            const isClosed = Boolean(f.is_closed) || !Boolean(f.is_enabled);
+            let statusBadge = '<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.4); padding: 4px 8px; border-radius: 4px; font-size: 11px;">🟢 Active</span>';
+
+            if (isClosed) {
+                statusBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 8px; border-radius: 4px; font-size: 11px;">🔴 Closed</span>';
+            } else if (f.opens_at && now < f.opens_at) {
+                statusBadge = `<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.4); padding: 4px 8px; border-radius: 4px; font-size: 11px;">⏳ Opens in ${Math.round((f.opens_at - now)/60)}m</span>`;
+            } else if (f.closes_at && now >= f.closes_at) {
+                statusBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.4); padding: 4px 8px; border-radius: 4px; font-size: 11px;">🔴 Expired</span>';
+            }
+
+            const qCount = f.question_count || 0;
+            const qPages = qCount <= 5 ? (qCount > 0 ? '1 Page Modal' : 'No Questions') : `${Math.ceil(qCount / 5)} Pages (Chained)`;
+            const destCh = guildChannels.find(c => String(c.id) === String(f.dest_channel_id));
+            const destName = destCh ? `#${destCh.name}` : `#Channel (${f.dest_channel_id})`;
+
+            const panelCh = f.panel_channel_id ? guildChannels.find(c => String(c.id) === String(f.panel_channel_id)) : null;
+            const panelName = panelCh ? `#${panelCh.name}` : (f.panel_message_id ? 'Published' : 'Not Published');
+
+            const reviewText = f.review_enabled ? '✅ Required' : 'Disabled (Direct)';
+            const totalSubs = f.total_submissions || 0;
+            const pendingSubs = f.pending_submissions || 0;
+
+            return `
+                <div class="card" style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 22px; display: flex; flex-direction: column; justify-content: space-between; box-shadow: var(--shadow-sm); transition: var(--transition);">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 8px;">
+                            <div>
+                                <span style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;">Form #${f.id}</span>
+                                <h3 style="font-size: 17px; font-weight: 700; color: #ffffff; margin-top: 2px;">${escapeHtml(f.title)}</h3>
+                            </div>
+                            <div>${statusBadge}</div>
+                        </div>
+
+                        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px; min-height: 36px; line-height: 1.4;">
+                            ${escapeHtml(f.description || 'No description provided.')}
+                        </p>
+
+                        <div style="background: rgba(0,0,0,0.25); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 16px; font-size: 12px; display: flex; flex-direction: column; gap: 8px;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--text-dim);">Questions:</span>
+                                <span style="font-weight: 600; color: var(--text-main);">${qCount} <small style="color: var(--text-muted);">(${qPages})</small></span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--text-dim);">Submissions:</span>
+                                <span style="font-weight: 600; color: var(--text-main);">
+                                    ${totalSubs} total
+                                    ${f.review_enabled ? `<span style="color: #F59E0B;">(${pendingSubs} pending)</span>` : ''}
+                                </span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--text-dim);">Destination:</span>
+                                <span style="font-weight: 600; color: var(--text-main);">${escapeHtml(destName)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--text-dim);">Public Panel:</span>
+                                <span style="font-weight: 600; color: var(--text-main);">${escapeHtml(panelName)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: var(--text-dim);">Review Mode:</span>
+                                <span style="font-weight: 600; color: var(--text-main);">${reviewText}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions Bar -->
+                    <div style="border-top: 1px solid var(--border-subtle); padding-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; gap: 6px;">
+                            <button class="btn btn-secondary btn-sm" style="flex: 1;" onclick="openQuestionsModal(${f.id})" title="Manage custom questions">
+                                ❓ Questions (${qCount})
+                            </button>
+                            <button class="btn btn-secondary btn-sm" style="flex: 1;" onclick="openSubmissionsModal(${f.id})" title="View and review submissions">
+                                📥 Submissions (${totalSubs})
+                            </button>
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button class="btn btn-primary btn-sm" style="flex: 1;" onclick="publishFormPanel(${f.id})" title="Publish or update public panel in Discord">
+                                🚀 Publish Panel
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="editFormSettings(${f.id})" title="Edit form settings">
+                                ⚙️
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="toggleFormClosed(${f.id})" title="${isClosed ? 'Reopen Form' : 'Close Form'}">
+                                ${isClosed ? '🟢 Reopen' : '🔒 Close'}
+                            </button>
+                            <button class="btn btn-secondary btn-sm" style="color: var(--accent-rose);" onclick="deleteFormConfirm(${f.id}, '${escapeHtml(f.title).replace(/'/g, "\\'")}')" title="Delete Form">
+                                🗑️
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function filterFormsList() {
+        const query = (document.getElementById('forms-search-input')?.value || '').toLowerCase().trim();
+        const statusFilter = document.getElementById('forms-status-filter')?.value || 'all';
+        const now = Math.floor(Date.now() / 1000);
+
+        const filtered = cachedGuildForms.filter(f => {
+            const matchesQuery = !query || String(f.id).includes(query) || (f.title || '').toLowerCase().includes(query) || (f.description || '').toLowerCase().includes(query);
+            if (!matchesQuery) return false;
+
+            if (statusFilter === 'all') return true;
+            const isClosed = Boolean(f.is_closed) || !Boolean(f.is_enabled) || (f.closes_at && now >= f.closes_at);
+            const isScheduled = f.opens_at && now < f.opens_at && !isClosed;
+            const isOpen = !isClosed && !isScheduled;
+
+            if (statusFilter === 'open') return isOpen;
+            if (statusFilter === 'scheduled') return isScheduled;
+            if (statusFilter === 'closed') return isClosed;
+            return true;
+        });
+
+        renderFormsCards(filtered);
+    }
+
+    function openCreateFormModal() {
+        document.getElementById('form-builder-modal-title').innerText = 'Create New Form';
+        document.getElementById('form-builder-id').value = '';
+        document.getElementById('fb-title').value = '';
+        document.getElementById('fb-description').value = '';
+        document.getElementById('fb-dest-channel').value = '';
+        document.getElementById('fb-panel-channel').value = '';
+        document.getElementById('fb-review-toggle').checked = false;
+        document.getElementById('fb-approved-role').value = '';
+        document.getElementById('fb-approved-role-box').style.display = 'none';
+        document.getElementById('fb-max-subs').value = '0';
+        document.getElementById('fb-cooldown').value = '60';
+        document.getElementById('fb-opens-at').value = '';
+        document.getElementById('fb-closes-at').value = '';
+        document.getElementById('fb-submit-btn').innerText = 'Create Form';
+        document.getElementById('modal-form-builder').style.display = 'flex';
+    }
+
+    function editFormSettings(formId) {
+        const form = cachedGuildForms.find(f => f.id === formId);
+        if (!form) return;
+
+        document.getElementById('form-builder-modal-title').innerText = `Edit Form #${form.id}: ${form.title}`;
+        document.getElementById('form-builder-id').value = form.id;
+        document.getElementById('fb-title').value = form.title || '';
+        document.getElementById('fb-description').value = form.description || '';
+        document.getElementById('fb-dest-channel').value = form.dest_channel_id || '';
+        document.getElementById('fb-panel-channel').value = form.panel_channel_id || '';
+        document.getElementById('fb-review-toggle').checked = Boolean(form.review_enabled);
+        document.getElementById('fb-approved-role').value = form.approved_role_id || '';
+        document.getElementById('fb-approved-role-box').style.display = form.review_enabled ? 'block' : 'none';
+        document.getElementById('fb-max-subs').value = form.max_submissions_per_user || 0;
+        document.getElementById('fb-cooldown').value = form.cooldown_seconds || 60;
+
+        // Populate datetime fields if unix timestamps exist
+        if (form.opens_at) {
+            const dt = new Date(form.opens_at * 1000);
+            document.getElementById('fb-opens-at').value = dt.toISOString().slice(0, 16);
+        } else {
+            document.getElementById('fb-opens-at').value = '';
+        }
+
+        if (form.closes_at) {
+            const dt = new Date(form.closes_at * 1000);
+            document.getElementById('fb-closes-at').value = dt.toISOString().slice(0, 16);
+        } else {
+            document.getElementById('fb-closes-at').value = '';
+        }
+
+        document.getElementById('fb-submit-btn').innerText = 'Save Changes';
+        document.getElementById('modal-form-builder').style.display = 'flex';
+    }
+
+    function closeFormBuilderModal() {
+        document.getElementById('modal-form-builder').style.display = 'none';
+    }
+
+    function toggleReviewRoleVisibility() {
+        const checked = document.getElementById('fb-review-toggle').checked;
+        document.getElementById('fb-approved-role-box').style.display = checked ? 'block' : 'none';
+    }
+
+    function setQuickDuration(seconds) {
+        const now = new Date();
+        const close = new Date(now.getTime() + seconds * 1000);
+        document.getElementById('fb-opens-at').value = now.toISOString().slice(0, 16);
+        document.getElementById('fb-closes-at').value = close.toISOString().slice(0, 16);
+    }
+
+    function clearScheduleDates() {
+        document.getElementById('fb-opens-at').value = '';
+        document.getElementById('fb-closes-at').value = '';
+    }
+
+    async function handleFormBuilderSubmit(e) {
+        e.preventDefault();
+        const formId = document.getElementById('form-builder-id').value;
+        const title = document.getElementById('fb-title').value.trim();
+        const description = document.getElementById('fb-description').value.trim();
+        const destChannelId = document.getElementById('fb-dest-channel').value;
+        const panelChannelId = document.getElementById('fb-panel-channel').value || null;
+        const reviewEnabled = document.getElementById('fb-review-toggle').checked;
+        const approvedRoleId = document.getElementById('fb-approved-role').value || null;
+        const maxSubs = parseInt(document.getElementById('fb-max-subs').value || 0);
+        const cooldown = parseInt(document.getElementById('fb-cooldown').value || 60);
+
+        const opensVal = document.getElementById('fb-opens-at').value;
+        const closesVal = document.getElementById('fb-closes-at').value;
+        const opensAt = opensVal ? Math.floor(new Date(opensVal).getTime() / 1000) : null;
+        const closesAt = closesVal ? Math.floor(new Date(closesVal).getTime() / 1000) : null;
+
+        const payload = {
+            title: title,
+            description: description,
+            dest_channel_id: destChannelId,
+            panel_channel_id: panelChannelId,
+            review_enabled: reviewEnabled,
+            approved_role_id: approvedRoleId,
+            max_submissions_per_user: maxSubs,
+            cooldown_seconds: cooldown,
+            opens_at: opensAt,
+            closes_at: closesAt
+        };
+
+        const method = formId ? 'PUT' : 'POST';
+        const url = formId ? `/api/guild/${guildId}/forms/${formId}` : `/api/guild/${guildId}/forms`;
+
+        const res = await apiRequest(url, method, payload);
+        if (res && res.success) {
+            closeFormBuilderModal();
+            await loadGuildForms();
+            alert(res.message || 'Form saved successfully!');
+        } else {
+            alert(res?.error || 'Failed to save form');
+        }
+    }
+
+    async function publishFormPanel(formId) {
+        if (!confirm(`Publish this form's public interactive panel to Discord now?`)) return;
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${formId}/publish`, 'POST', {});
+        if (res && res.success) {
+            alert(res.message || 'Form panel published successfully!');
+            await loadGuildForms();
+        } else {
+            alert(res?.error || 'Failed to publish form panel');
+        }
+    }
+
+    async function toggleFormClosed(formId) {
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${formId}/toggle_status`, 'POST', {});
+        if (res && res.success) {
+            await loadGuildForms();
+        } else {
+            alert(res?.error || 'Failed to update form status');
+        }
+    }
+
+    async function deleteFormConfirm(formId, title) {
+        if (!confirm(`Are you sure you want to permanently delete form #${formId} ("${title}") and all its questions and submissions? This cannot be undone.`)) {
+            return;
+        }
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${formId}`, 'DELETE');
+        if (res && res.success) {
+            await loadGuildForms();
+            alert('Form deleted successfully.');
+        } else {
+            alert(res?.error || 'Failed to delete form');
+        }
+    }
+
+    // =========================================================================
+    // Questions Management Controller
+    // =========================================================================
+
+    async function openQuestionsModal(formId) {
+        currentViewingFormId = formId;
+        document.getElementById('mq-form-id').value = formId;
+
+        const form = cachedGuildForms.find(f => f.id === formId);
+        document.getElementById('mq-modal-title').innerText = `Manage Questions: ${form ? form.title : '#' + formId}`;
+        document.getElementById('mq-modal-subtitle').innerText = `Add, delete, or reorder custom form fields. (1-5 fields use standard modal; 6+ fields automatically chain into multi-page modals)`;
+
+        document.getElementById('modal-manage-questions').style.display = 'flex';
+        await loadQuestionsList(formId);
+    }
+
+    function closeQuestionsModal() {
+        document.getElementById('modal-manage-questions').style.display = 'none';
+        currentViewingFormId = null;
+    }
+
+    async function loadQuestionsList(formId) {
+        const listContainer = document.getElementById('mq-questions-list');
+        listContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">Loading questions...</div>';
+
+        const data = await apiRequest(`/api/guild/${guildId}/forms/${formId}/questions`, 'GET');
+        if (!data || !data.success) {
+            listContainer.innerHTML = '<div style="color: var(--accent-rose); padding: 10px;">Failed to load questions.</div>';
+            return;
+        }
+
+        currentFormQuestions = data.questions || [];
+        renderQuestionsList();
+    }
+
+    function renderQuestionsList() {
+        const listContainer = document.getElementById('mq-questions-list');
+        if (!currentFormQuestions || currentFormQuestions.length === 0) {
+            listContainer.innerHTML = `
+                <div style="text-align: center; padding: 30px; background: rgba(0,0,0,0.2); border-radius: 8px; color: var(--text-muted); font-size: 13px;">
+                    No questions created yet. Use the form below to add your first question.
+                </div>
+            `;
+            return;
+        }
+
+        listContainer.innerHTML = currentFormQuestions.map((q, idx) => {
+            const isFirst = idx === 0;
+            const isLast = idx === currentFormQuestions.length - 1;
+            const styleBadge = q.style === 'paragraph' ? '📄 Paragraph' : '✏️ Short Text';
+            const reqBadge = q.required ? '<span style="color: #10B981; font-weight: 600;">Required</span>' : '<span style="color: var(--text-dim);">Optional</span>';
+
+            return `
+                <div style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 12px 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="background: var(--bg-surface); color: var(--accent-primary); font-weight: 800; font-size: 12px; padding: 4px 8px; border-radius: 4px;">
+                            #${idx + 1}
+                        </span>
+                        <div>
+                            <div style="font-size: 13px; font-weight: 700; color: #ffffff;">${escapeHtml(q.label)}</div>
+                            <div style="font-size: 11px; color: var(--text-muted); display: flex; gap: 12px; margin-top: 2px;">
+                                <span>${styleBadge}</span>
+                                <span>•</span>
+                                <span>${reqBadge}</span>
+                                <span>•</span>
+                                <span>Limits: ${q.min_length || 0}-${q.max_length || 1000} chars</span>
+                                ${q.placeholder ? `<span>• Placeholder: "<em>${escapeHtml(q.placeholder)}</em>"</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button class="btn btn-secondary btn-sm" onclick="moveQuestionOrder(${idx}, -1)" ${isFirst ? 'disabled style="opacity: 0.3;"' : ''} title="Move Up">▲</button>
+                        <button class="btn btn-secondary btn-sm" onclick="moveQuestionOrder(${idx}, 1)" ${isLast ? 'disabled style="opacity: 0.3;"' : ''} title="Move Down">▼</button>
+                        <button class="btn btn-secondary btn-sm" style="color: var(--accent-rose);" onclick="deleteQuestion(${q.id})" title="Delete Question">🗑️</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function addNewQuestionSubmit() {
+        const formId = currentViewingFormId;
+        const label = document.getElementById('mq-new-label').value.trim();
+        const style = document.getElementById('mq-new-style').value;
+        const placeholder = document.getElementById('mq-new-placeholder').value.trim();
+        const minLen = parseInt(document.getElementById('mq-new-min').value || 0);
+        const maxLen = parseInt(document.getElementById('mq-new-max').value || 1000);
+        const required = document.getElementById('mq-new-required').checked;
+
+        if (!label) {
+            alert('Please enter a question label or prompt.');
+            return;
+        }
+
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${formId}/questions`, 'POST', {
+            label: label,
+            style: style,
+            placeholder: placeholder,
+            min_length: minLen,
+            max_length: maxLen,
+            required: required
+        });
+
+        if (res && res.success) {
+            document.getElementById('mq-new-label').value = '';
+            document.getElementById('mq-new-placeholder').value = '';
+            document.getElementById('mq-new-min').value = '0';
+            document.getElementById('mq-new-max').value = '1000';
+            currentFormQuestions = res.questions || [];
+            renderQuestionsList();
+            await loadGuildForms();
+        } else {
+            alert(res?.error || 'Failed to add question');
+        }
+    }
+
+    async function deleteQuestion(questionId) {
+        if (!confirm('Are you sure you want to delete this question?')) return;
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${currentViewingFormId}/questions/${questionId}`, 'DELETE');
+        if (res && res.success) {
+            currentFormQuestions = res.questions || [];
+            renderQuestionsList();
+            await loadGuildForms();
+        } else {
+            alert(res?.error || 'Failed to delete question');
+        }
+    }
+
+    async function moveQuestionOrder(index, direction) {
+        const targetIndex = index + direction;
+        if (targetIndex < 0 || targetIndex >= currentFormQuestions.length) return;
+
+        // Swap positions in local list
+        const temp = currentFormQuestions[index];
+        currentFormQuestions[index] = currentFormQuestions[targetIndex];
+        currentFormQuestions[targetIndex] = temp;
+        renderQuestionsList();
+
+        // Push new order of question IDs to server
+        const orderedIds = currentFormQuestions.map(q => q.id);
+        await apiRequest(`/api/guild/${guildId}/forms/${currentViewingFormId}/questions/reorder`, 'POST', {
+            question_ids: orderedIds
+        });
+    }
+
+    // =========================================================================
+    // Submissions Viewer & Review Controller
+    // =========================================================================
+
+    async function openSubmissionsModal(formId, filterStatus = 'all') {
+        currentViewingFormId = formId;
+        currentSubmissionFilter = filterStatus;
+        document.getElementById('ms-form-id').value = formId;
+
+        const form = cachedGuildForms.find(f => f.id === formId);
+        document.getElementById('ms-modal-title').innerText = `Submissions: ${form ? form.title : '#' + formId}`;
+
+        document.getElementById('modal-manage-submissions').style.display = 'flex';
+        await loadFormSubmissions(formId);
+    }
+
+    function closeSubmissionsModal() {
+        document.getElementById('modal-manage-submissions').style.display = 'none';
+        currentViewingFormId = null;
+    }
+
+    async function loadFormSubmissions(formId) {
+        const tbody = document.getElementById('ms-table-body');
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-muted);">Loading submissions...</td></tr>';
+
+        const data = await apiRequest(`/api/guild/${guildId}/forms/${formId}/submissions?status=${currentSubmissionFilter}`, 'GET');
+        if (!data || !data.success) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--accent-rose); padding: 20px;">Failed to load submissions.</td></tr>';
+            return;
+        }
+
+        currentFormSubmissions = data.submissions || [];
+        const stats = data.stats || { total: 0, pending: 0, approved: 0, rejected: 0 };
+        currentFormQuestions = data.questions || [];
+
+        // Update filter button counts
+        document.getElementById('sub-filter-all').innerText = `All (${stats.total || 0})`;
+        document.getElementById('sub-filter-pending').innerText = `Pending (${stats.pending || 0})`;
+        document.getElementById('sub-filter-approved').innerText = `Approved (${stats.approved || 0})`;
+        document.getElementById('sub-filter-rejected').innerText = `Rejected (${stats.rejected || 0})`;
+
+        document.getElementById('ms-modal-subtitle').innerText = `Total Submissions: ${stats.total || 0} | Pending Review: ${stats.pending || 0} | Approved: ${stats.approved || 0} | Rejected: ${stats.rejected || 0}`;
+
+        renderFilteredSubmissionsTable();
+    }
+
+    function setSubmissionFilter(status, btn) {
+        currentSubmissionFilter = status;
+        document.querySelectorAll('#ms-filter-pills .btn').forEach(b => {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-secondary');
+        });
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-primary');
+        loadFormSubmissions(currentViewingFormId);
+    }
+
+    function renderFilteredSubmissionsTable() {
+        const query = (document.getElementById('ms-search-input')?.value || '').toLowerCase().trim();
+        const tbody = document.getElementById('ms-table-body');
+        if (!tbody) return;
+
+        const filtered = currentFormSubmissions.filter(s => {
+            if (!query) return true;
+            return String(s.id).includes(query) || (s.user_name || '').toLowerCase().includes(query) || String(s.user_id).includes(query);
+        });
+
+        if (!filtered || filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px; color: var(--text-muted);">No submissions match your query.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(s => {
+            let statusBadge = '<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10B981; padding: 2px 6px; font-size: 11px;">Submitted</span>';
+            if (s.status === 'pending') {
+                statusBadge = '<span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #F59E0B; padding: 2px 6px; font-size: 11px;">⏳ Pending</span>';
+            } else if (s.status === 'approved') {
+                statusBadge = '<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #10B981; padding: 2px 6px; font-size: 11px;">✅ Approved</span>';
+            } else if (s.status === 'rejected') {
+                statusBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #EF4444; padding: 2px 6px; font-size: 11px;">❌ Rejected</span>';
+            }
+
+            const answers = s.answers || {};
+            const snippet = Object.values(answers).slice(0, 2).map(a => escapeHtml(String(a).slice(0, 40))).join(' | ') || '<em>No answers</em>';
+
+            return `
+                <tr>
+                    <td style="font-weight: 700; color: var(--text-main);">#${s.id}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <img src="${s.user_avatar_url || 'https://cdn.discordapp.com/embed/avatars/0.png'}" style="width: 24px; height: 24px; border-radius: 50%;">
+                            <div>
+                                <div style="font-weight: 600; color: #ffffff;">${escapeHtml(s.user_name)}</div>
+                                <div style="font-size: 10px; color: var(--text-dim);">${s.user_id}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td style="font-size: 12px; color: var(--text-muted);">${escapeHtml(s.created_at || '')}</td>
+                    <td>${statusBadge}</td>
+                    <td style="font-size: 12px; color: var(--text-muted); max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        ${snippet}
+                    </td>
+                    <td style="text-align: right;">
+                        <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                            <button class="btn btn-secondary btn-sm" onclick="openSubmissionDetails(${s.id})" title="View full answers">👁️ View</button>
+                            ${s.status === 'pending' ? `
+                                <button class="btn btn-sm" style="background: rgba(16,185,129,0.2); color: #10B981;" onclick="triggerReviewModal(${s.id}, 'approve')" title="Approve">✅</button>
+                                <button class="btn btn-sm" style="background: rgba(239,68,68,0.2); color: #EF4444;" onclick="triggerReviewModal(${s.id}, 'reject')" title="Reject">❌</button>
+                            ` : ''}
+                            <button class="btn btn-secondary btn-sm" onclick="triggerReviewModal(${s.id}, 'dm')" title="DM Submitter">💬</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function openSubmissionDetails(subId) {
+        const sub = currentFormSubmissions.find(s => s.id === subId);
+        if (!sub) return;
+
+        document.getElementById('sd-modal-title').innerText = `Submission #${sub.id}`;
+        document.getElementById('sd-header-info').innerHTML = `
+            <img src="${sub.user_avatar_url || 'https://cdn.discordapp.com/embed/avatars/0.png'}" style="width: 44px; height: 44px; border-radius: 50%;">
+            <div style="flex: 1;">
+                <div style="font-size: 15px; font-weight: 700; color: #ffffff;">${escapeHtml(sub.user_name)}#${sub.user_discriminator || '0'}</div>
+                <div style="font-size: 11px; color: var(--text-dim);">User ID: ${sub.user_id} • Submitted: ${sub.created_at}</div>
+            </div>
+            <div>
+                <span style="font-weight: 700; text-transform: uppercase; font-size: 12px;">${sub.status}</span>
+            </div>
+        `;
+
+        const answers = sub.answers || {};
+        const container = document.getElementById('sd-answers-container');
+        container.innerHTML = currentFormQuestions.map((q, idx) => {
+            const ans = answers[String(q.id)] || answers[q.id] || answers[q.label] || '<em>[No answer provided]</em>';
+            return `
+                <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px;">
+                    <div style="font-size: 12px; font-weight: 700; color: var(--accent-primary); margin-bottom: 4px;">
+                        Q${idx + 1}: ${escapeHtml(q.label)}
+                    </div>
+                    <div style="font-size: 13px; color: var(--text-main); white-space: pre-wrap; line-height: 1.4;">${escapeHtml(ans)}</div>
+                </div>
+            `;
+        }).join('');
+
+        const reviewBox = document.getElementById('sd-review-info-box');
+        if (sub.reviewer_name || sub.review_note) {
+            reviewBox.style.display = 'block';
+            reviewBox.innerHTML = `
+                <div style="font-weight: 700; color: #ffffff; margin-bottom: 2px;">Reviewed by: ${escapeHtml(sub.reviewer_name || 'Staff')} (${escapeHtml(sub.status)})</div>
+                <div>${escapeHtml(sub.review_note || 'No review note.')}</div>
+                <div style="color: var(--text-dim); margin-top: 4px;">Reviewed at: ${sub.reviewed_at || ''}</div>
+            `;
+        } else {
+            reviewBox.style.display = 'none';
+        }
+
+        const actionButtons = document.getElementById('sd-action-buttons');
+        actionButtons.innerHTML = `
+            ${sub.status === 'pending' ? `
+                <button class="btn btn-success btn-sm" onclick="triggerReviewModal(${sub.id}, 'approve')">✅ Approve</button>
+                <button class="btn btn-danger btn-sm" onclick="triggerReviewModal(${sub.id}, 'reject')">❌ Reject</button>
+            ` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="triggerReviewModal(${sub.id}, 'dm')">💬 DM Submitter</button>
+        `;
+
+        document.getElementById('modal-submission-details').style.display = 'flex';
+    }
+
+    function closeSubmissionDetailsModal() {
+        document.getElementById('modal-submission-details').style.display = 'none';
+    }
+
+    function triggerReviewModal(subId, action) {
+        document.getElementById('ra-form-id').value = currentViewingFormId;
+        document.getElementById('ra-sub-id').value = subId;
+        document.getElementById('ra-action').value = action;
+
+        const sub = currentFormSubmissions.find(s => s.id === subId);
+        const userName = sub ? sub.user_name : `User #${subId}`;
+
+        if (action === 'approve') {
+            document.getElementById('ra-modal-title').innerText = `Approve Submission #${subId}`;
+            document.getElementById('ra-modal-desc').innerText = `Approve submission from ${userName}. The user will be notified via DM and the approved server role will be granted (if configured).`;
+            document.getElementById('ra-input-label').innerText = 'Reviewer Note (Optional)';
+            document.getElementById('ra-input-text').placeholder = 'Enter an optional congratulatory message or instruction...';
+            document.getElementById('ra-input-text').required = false;
+            document.getElementById('ra-submit-btn').className = 'btn btn-success';
+            document.getElementById('ra-submit-btn').innerText = 'Confirm Approval';
+        } else if (action === 'reject') {
+            document.getElementById('ra-modal-title').innerText = `Reject Submission #${subId}`;
+            document.getElementById('ra-modal-desc').innerText = `Reject submission from ${userName}. The user will receive an official DM with your rejection reason.`;
+            document.getElementById('ra-input-label').innerText = 'Rejection Reason (Required)';
+            document.getElementById('ra-input-text').placeholder = 'Explain why this submission was rejected...';
+            document.getElementById('ra-input-text').required = true;
+            document.getElementById('ra-submit-btn').className = 'btn btn-danger';
+            document.getElementById('ra-submit-btn').innerText = 'Confirm Rejection';
+        } else if (action === 'dm') {
+            document.getElementById('ra-modal-title').innerText = `Direct Message to ${userName}`;
+            document.getElementById('ra-modal-desc').innerText = `Send an official bot DM to the submitter regarding this submission.`;
+            document.getElementById('ra-input-label').innerText = 'Direct Message Content (Required)';
+            document.getElementById('ra-input-text').placeholder = 'Type your message...';
+            document.getElementById('ra-input-text').required = true;
+            document.getElementById('ra-submit-btn').className = 'btn btn-primary';
+            document.getElementById('ra-submit-btn').innerText = 'Send DM';
+        }
+
+        document.getElementById('ra-input-text').value = '';
+        document.getElementById('modal-review-action').style.display = 'flex';
+    }
+
+    function closeReviewActionModal() {
+        document.getElementById('modal-review-action').style.display = 'none';
+    }
+
+    async function executeReviewActionSubmit() {
+        const formId = document.getElementById('ra-form-id').value;
+        const subId = document.getElementById('ra-sub-id').value;
+        const action = document.getElementById('ra-action').value;
+        const note = document.getElementById('ra-input-text').value.trim();
+
+        if ((action === 'reject' || action === 'dm') && !note) {
+            alert('This action requires a reason or message.');
+            return;
+        }
+
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${formId}/submissions/${subId}/review`, 'POST', {
+            action: action,
+            note: note
+        });
+
+        if (res && res.success) {
+            closeReviewActionModal();
+            closeSubmissionDetailsModal();
+            await loadFormSubmissions(formId);
+            await loadGuildForms();
+            alert(res.message || 'Action executed successfully.');
+        } else {
+            alert(res?.error || 'Failed to execute review action');
+        }
+    }
+
+    function downloadCurrentFormExport(format) {
+        if (!currentViewingFormId) return;
+        const url = `/api/guild/${guildId}/forms/${currentViewingFormId}/export?format=${format}&status=${currentSubmissionFilter}`;
+        window.open(url, '_blank');
+    }
 
     // Initializations on page ready
     document.addEventListener('DOMContentLoaded', () => {

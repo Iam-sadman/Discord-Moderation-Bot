@@ -60,6 +60,7 @@ d:/Projects/DiscordBot/
 │   ├── settings.db            # SQLite: guild configurations, prefixes, and dashboard access logs
 │   ├── logs.db                # SQLite: server audit history (WAL mode)
 │   ├── loa.db                 # SQLite: LOA settings and historical request records
+│   ├── forms.db               # SQLite: form definitions, questions, and submissions (WAL mode)
 │   ├── dashboard_users.xlsx   # Excel: authorized web dashboard accounts & access keys
 │   ├── arc_live_state.json    # JSON: pinned live message ID and payload hash for ARC dashboard
 │   └── bot.log                # Primary application runtime log file
