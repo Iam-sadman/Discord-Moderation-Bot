@@ -33,14 +33,14 @@
                 <span class="server-tag">
                     🛡️ {{ roles|length }} Roles
                 </span>
-                <span class="server-tag gh-s1">>
+                <span class="server-tag gh-s1">
                     ID: {{ guild.id }}
                 </span>
             </div>
         </div>
     </div>
 
-    <div class="gh-s2">>
+    <div class="gh-s2">
         <a href="/" class="btn btn-secondary btn-sm" id="btn-back-servers">← All Servers</a>
         <button class="btn btn-primary btn-sm" onclick="location.reload()" id="btn-refresh-hub">
             ⟳ Sync Data
@@ -106,7 +106,7 @@
             </div>
             <div class="setting-item">
                 <span class="setting-desc">Command Prefix:</span>
-                <strong class="gh-s3" id="overview-prefix">>{{ prefix }}</strong>
+                <strong class="gh-s3" id="overview-prefix">{{ prefix }}</strong>
             </div>
             <div class="setting-item">
                 <span class="setting-desc">Bot Gateway Latency:</span>
@@ -121,7 +121,7 @@
         <div class="glass-card">
             <div class="card-header">
                 <h3>🧩 Active Modules</h3>
-                <span class="gh-s4">>Live Toggles</span>
+                <span class="gh-s4">Live Toggles</span>
             </div>
             <div class="setting-item">
                 <span class="setting-name">🎵 Music Engine</span>
@@ -146,19 +146,19 @@
         <div class="glass-card">
             <div class="card-header">
                 <h3>🔐 Security Telemetry</h3>
-                <span class="security-chip gh-s5">>Audit Active</span>
+                <span class="security-chip gh-s5">Audit Active</span>
             </div>
             <div class="setting-item">
                 <span class="setting-desc">Operator ID:</span>
-                <strong class="gh-s6">>{{ session.get('user_id') }}</strong>
+                <strong class="gh-s6">{{ session.get('user_id') }}</strong>
             </div>
             <div class="setting-item">
                 <span class="setting-desc">Connected IP:</span>
-                <strong class="gh-s7">>{{ session.get('ip') }}</strong>
+                <strong class="gh-s7">{{ session.get('ip') }}</strong>
             </div>
             <div class="setting-item">
                 <span class="setting-desc">Hardware MAC:</span>
-                <strong class="gh-s8">>{{ session.get('mac') }}</strong>
+                <strong class="gh-s8">{{ session.get('mac') }}</strong>
             </div>
         </div>
     </div>
@@ -168,14 +168,14 @@
 <!-- 2. COGS & SLASH COMMANDS DIRECTORY TAB     -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-cogs">
-    <div class="gh-s9">>
+    <div class="gh-s9">
         <div>
-            <h3 class="gh-s10">>Bot Cogs & Commands Directory</h3>
-            <p class="gh-s11">>
+            <h3 class="gh-s10">Bot Cogs & Commands Directory</h3>
+            <p class="gh-s11">
                 Explore all modular cogs, registered /slash commands, arguments, and permission access.
             </p>
         </div>
-        <span class="gh-s12">>
+        <span class="gh-s12">
             {{ cogs_catalog|length }} Modules Loaded
         </span>
     </div>
@@ -188,18 +188,18 @@
                     {{ cog.icon }}
                 </div>
                 <div>
-                    <h4 class="gh-s13">>
+                    <h4 class="gh-s13">
                         {{ cog.display_name }}
-                        <span class="gh-s14">>
+                        <span class="gh-s14">
                             {{ cog.category }}
                         </span>
                     </h4>
-                    <p class="gh-s15">>{{ cog.description }}</p>
+                    <p class="gh-s15">{{ cog.description }}</p>
                 </div>
             </div>
 
-            <div class="gh-s16">>
-                <span class="gh-s17">>
+            <div class="gh-s16">
+                <span class="gh-s17">
                     {{ cog.commands_count }} Commands
                 </span>
                 {% if cog.cog_name.lower() in ['music', 'logger', 'loa', 'labelertracker', 'announcement'] %}
@@ -216,7 +216,7 @@
         <div class="command-list" id="command-list-{{ cog.cog_name }}">
             {% for cmd in cog.commands %}
             <div class="command-row">
-                <div class="gh-s18">>
+                <div class="gh-s18">
                     <span class="cmd-type-badge {{ 'type-prefix' if cmd.type == 'Prefix Command' else 'type-slash' }}">
                         {{ 'Prefix' if cmd.type == 'Prefix Command' else 'Slash' }}
                     </span>
@@ -225,7 +225,7 @@
                 <span class="command-desc">
                     {{ cmd.description }}
                     {% if cmd.parameters %}
-                    <span class="gh-s19">>
+                    <span class="gh-s19">
                         Params: {% for p in cmd.parameters %}<code>{{ p.name }}{% if not p.required %}?{% endif %}</code>{% if not loop.last %}, {% endif %}{% endfor %}
                     </span>
                     {% endif %}
@@ -236,7 +236,7 @@
             </div>
             {% endfor %}
             {% if not cog.commands %}
-            <div class="gh-s20">>
+            <div class="gh-s20">
                 This module operates background telemetry tasks and listeners.
             </div>
             {% endif %}
@@ -249,25 +249,25 @@
 <!-- 3. ANNOUNCEMENTS TAB                       -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-announcements">
-    <div class="glass-card gh-s21">>
+    <div class="glass-card gh-s21">
         <div class="card-header">
             <h3>📢 Discord Live Announcement Composer</h3>
             <span class="role-badge admin">Verified Publisher</span>
         </div>
-        <p class="gh-s22">>
+        <p class="gh-s22">
             Compose, format with native Discord Markdown syntax, and broadcast announcements directly to server channels. Includes live visual preview, role mentions, rich embed customization, and interactive link buttons.
         </p>
 
-        <div class="grid-2 gh-s23">>
+        <div class="grid-2 gh-s23">
             <!-- Left: Composer Form -->
             <div>
                 <!-- Target Channel & Format -->
-                <div class="gh-s24">>
-                    <div class="gh-s25">>
-                        <label class="gh-s26">>
+                <div class="gh-s24">
+                    <div class="gh-s25">
+                        <label class="gh-s26">
                             🎯 Destination Channel *
                         </label>
-                        <select id="ann-channel-select" class="gh-s27">>
+                        <select id="ann-channel-select" class="gh-s27">
                             <option value="">-- Select Target Text Channel --</option>
                             {% for ch in text_channels %}
                             <option value="{{ ch.id }}">#{{ ch.name }}</option>
@@ -275,11 +275,11 @@
                         </select>
                     </div>
 
-                    <div class="gh-s28">>
-                        <label class="gh-s26">>
+                    <div class="gh-s28">
+                        <label class="gh-s26">
                             📋 Message Format
                         </label>
-                        <select id="ann-format-type" onchange="handleAnnouncementTypeChange()" class="gh-s27">>
+                        <select id="ann-format-type" onchange="handleAnnouncementTypeChange()" class="gh-s27">
                             <option value="embed" selected>Rich Embed (Recommended)</option>
                             <option value="text">Plain Text Message</option>
                         </select>
@@ -287,12 +287,12 @@
                 </div>
 
                 <!-- Mentions Target -->
-                <div class="gh-s24">>
-                    <div class="gh-s29">>
-                        <label class="gh-s26">>
+                <div class="gh-s24">
+                    <div class="gh-s29">
+                        <label class="gh-s26">
                             🔔 Mention / Ping Target
                         </label>
-                        <select id="ann-mention-type" onchange="handleMentionChange()" class="gh-s27">>
+                        <select id="ann-mention-type" onchange="handleMentionChange()" class="gh-s27">
                             <option value="none" selected>No Mention (Silent)</option>
                             <option value="everyone">@everyone (All Members)</option>
                             <option value="here">@here (Online Members)</option>
@@ -300,11 +300,11 @@
                         </select>
                     </div>
 
-                    <div id="ann-role-picker-container" class="gh-s30">>
-                        <label class="gh-s26">>
+                    <div id="ann-role-picker-container" class="gh-s30">
+                        <label class="gh-s26">
                             Select Role to Ping
                         </label>
-                        <select id="ann-mention-role-select" onchange="updateAnnouncementPreview()" class="gh-s27">>
+                        <select id="ann-mention-role-select" onchange="updateAnnouncementPreview()" class="gh-s27">
                             <option value="">-- Choose Role --</option>
                             {% for r in roles %}
                             {% if r.name != "@everyone" %}
@@ -316,35 +316,35 @@
                 </div>
 
                 <!-- ── Author Attribution Toggle & User ID ── -->
-                <div class="gh-s31">>
-                    <div class="gh-s32">>
-                        <label class="toggle-switch gh-s33" title="Show your User ID / profile name on the announcement">>
+                <div class="gh-s31">
+                    <div class="gh-s32">
+                        <label class="toggle-switch gh-s33" title="Show your User ID / profile name on the announcement">
                             <input type="checkbox" id="ann-show-author" onchange="updateAnnouncementPreview()">
                             <span class="toggle-slider"></span>
                         </label>
                         <div>
-                            <span class="gh-s34">>👤 Show Author (User ID)</span>
-                            <span class="gh-s35">>Displays your User ID on the announcement embed</span>
+                            <span class="gh-s34">👤 Show Author (User ID)</span>
+                            <span class="gh-s35">Displays your User ID on the announcement embed</span>
                         </div>
                     </div>
-                    <div class="gh-s36">>
+                    <div class="gh-s36">
                         {% if dashboard_author_avatar %}
-                        <img id="ann-author-avatar-img" src="{{ dashboard_author_avatar }}" alt="avatar" class="gh-s37">>
+                        <img id="ann-author-avatar-img" src="{{ dashboard_author_avatar }}" alt="avatar" class="gh-s37">
                         {% endif %}
-                        <div class="gh-s38">>
-                            <span class="gh-s39">>Author:</span>
+                        <div class="gh-s38">
+                            <span class="gh-s39">Author:</span>
                             <input type="text" id="ann-author-name-input" value="{{ dashboard_author_name }}" 
                                    placeholder="User ID / Name" 
                                    oninput="updateAnnouncementPreview()" class="gh-s40"
                                    onfocus="this.style.borderColor='var(--accent-purple)';"
-                                   onblur="this.style.borderColor='rgba(99,102,241,0.3)';">>
+                                   onblur="this.style.borderColor='rgba(99,102,241,0.3)';">
                         </div>
                     </div>
                 </div>
 
                 <!-- Hidden Jinja author vars for JS -->
-                <span id="_author_name" class="gh-s41">>{{ dashboard_author_name | e }}</span>
-                <span id="_author_avatar" class="gh-s41">>{{ dashboard_author_avatar | e }}</span>
+                <span id="_author_name" class="gh-s41">{{ dashboard_author_name | e }}</span>
+                <span id="_author_avatar" class="gh-s41">{{ dashboard_author_avatar | e }}</span>
 
                 <!-- ============================================== -->
                 <!-- PANEL 1: HEADING (TITLE) CUSTOMIZER           -->
@@ -356,13 +356,13 @@
                     </div>
 
                     <!-- Title Text Input -->
-                    <div class="gh-s42">>
+                    <div class="gh-s42">
                         <input type="text" id="ann-title" placeholder="e.g. Server Maintenance Notice • New Features Announcement" 
-                               oninput="updateAnnouncementPreview()" class="gh-s43">>
+                               oninput="updateAnnouncementPreview()" class="gh-s43">
                     </div>
 
                     <!-- Heading Text Styling Toolbar -->
-                    <div class="discord-toolbar gh-s42">>
+                    <div class="discord-toolbar gh-s42">
                         <button type="button" class="toolbar-btn" onclick="applyHeadingStyle('**')" title="Bold (**Title**)">
                             <strong>B</strong>
                         </button>
@@ -387,18 +387,18 @@
                     </div>
 
                     <!-- Heading Color Selection -->
-                    <div class="gh-s44">>
-                        <span class="gh-s45">>Heading Color:</span>
-                        <div class="color-swatches-row gh-s46">>
-                            <span class="color-swatch active gh-s47" onclick="selectHeadingColor('#ffffff', this)" title="White (Default)">></span>
-                            <span class="color-swatch gh-s48" onclick="selectHeadingColor('#fee75c', this)" title="Gold Yellow">></span>
-                            <span class="color-swatch gh-s49" onclick="selectHeadingColor('#ed4245', this)" title="Crimson Red">></span>
-                            <span class="color-swatch gh-s50" onclick="selectHeadingColor('#57f287', this)" title="Emerald Green">></span>
-                            <span class="color-swatch gh-s51" onclick="selectHeadingColor('#5865f2', this)" title="Discord Blurple">></span>
-                            <span class="color-swatch gh-s52" onclick="selectHeadingColor('#eb459e', this)" title="Fuchsia Pink">></span>
-                            <span class="color-swatch gh-s53" onclick="selectHeadingColor('#00e5ff', this)" title="Electric Cyan">></span>
+                    <div class="gh-s44">
+                        <span class="gh-s45">Heading Color:</span>
+                        <div class="color-swatches-row gh-s46">
+                            <span class="color-swatch active gh-s47" onclick="selectHeadingColor('#ffffff', this)" title="White (Default)"></span>
+                            <span class="color-swatch gh-s48" onclick="selectHeadingColor('#fee75c', this)" title="Gold Yellow"></span>
+                            <span class="color-swatch gh-s49" onclick="selectHeadingColor('#ed4245', this)" title="Crimson Red"></span>
+                            <span class="color-swatch gh-s50" onclick="selectHeadingColor('#57f287', this)" title="Emerald Green"></span>
+                            <span class="color-swatch gh-s51" onclick="selectHeadingColor('#5865f2', this)" title="Discord Blurple"></span>
+                            <span class="color-swatch gh-s52" onclick="selectHeadingColor('#eb459e', this)" title="Fuchsia Pink"></span>
+                            <span class="color-swatch gh-s53" onclick="selectHeadingColor('#00e5ff', this)" title="Electric Cyan"></span>
                             <input type="color" id="ann-heading-color-picker" value="#ffffff" 
-                                   onchange="selectHeadingColor(this.value, null)" class="gh-s54" title="Custom Heading Color">>
+                                   onchange="selectHeadingColor(this.value, null)" class="gh-s54" title="Custom Heading Color">
                             <input type="hidden" id="ann-heading-color" value="#ffffff">
                         </div>
                     </div>
@@ -408,12 +408,12 @@
                 <!-- PANEL 2: BODY (CONTENT) CUSTOMIZER            -->
                 <!-- ============================================== -->
                 <div class="composer-section-card">
-                    <div class="composer-section-header gh-s55">>
+                    <div class="composer-section-header gh-s55">
                         <span class="composer-section-title">✍️ Body (Content)</span>
-                        <div class="gh-s32">>
+                        <div class="gh-s32">
                             <label class="justify-toggle-label" title="Aligns announcement text evenly across both left and right margins for a clean, professional look">
-                                <input type="checkbox" id="ann-justify-toggle" onchange="updateAnnouncementPreview()" checked class="gh-s56">>
-                                <span class="gh-s57">>📐 Justify Text</span>
+                                <input type="checkbox" id="ann-justify-toggle" onchange="updateAnnouncementPreview()" checked class="gh-s56">
+                                <span class="gh-s57">📐 Justify Text</span>
                             </label>
                             <span class="composer-section-subtitle" id="ann-char-count">0 / 4000 chars</span>
                         </div>
@@ -445,54 +445,54 @@
 
                     <!-- ⭐ Dedicated Selected Text Color Palette Bar ⭐ -->
                     <div class="selected-text-color-bar">
-                        <div class="gh-s58">>
-                            <span class="gh-s59">>
+                        <div class="gh-s58">
+                            <span class="gh-s59">
                                 🎨 Selected Text Colorizer
-                                <span class="gh-s60">>(Highlight any text in body, then click a color below)</span>
+                                <span class="gh-s60">(Highlight any text in body, then click a color below)</span>
                             </span>
-                            <div class="gh-s61">>
-                                <button type="button" class="btn btn-secondary btn-sm gh-s62" onclick="colorAllBodyText()" title="Select all text in body to apply color">>
+                            <div class="gh-s61">
+                                <button type="button" class="btn btn-secondary btn-sm gh-s62" onclick="colorAllBodyText()" title="Select all text in body to apply color">
                                     🎨 Color All Text
                                 </button>
-                                <button type="button" class="btn btn-secondary btn-sm gh-s62" onclick="removeSelectedTextColor()">>
+                                <button type="button" class="btn btn-secondary btn-sm gh-s62" onclick="removeSelectedTextColor()">
                                     ✕ Clear Color
                                 </button>
                             </div>
                         </div>
-                        <div class="color-swatches-row gh-s63">>
-                            <button type="button" class="color-badge-btn gh-s64" onclick="applySelectedTextColor('red')" title="Red text">>
-                                <span class="dot gh-s49">></span> Red
+                        <div class="color-swatches-row gh-s63">
+                            <button type="button" class="color-badge-btn gh-s64" onclick="applySelectedTextColor('red')" title="Red text">
+                                <span class="dot gh-s49"></span> Red
                             </button>
-                            <button type="button" class="color-badge-btn gh-s65" onclick="applySelectedTextColor('green')" title="Green text">>
-                                <span class="dot gh-s50">></span> Green
+                            <button type="button" class="color-badge-btn gh-s65" onclick="applySelectedTextColor('green')" title="Green text">
+                                <span class="dot gh-s50"></span> Green
                             </button>
-                            <button type="button" class="color-badge-btn gh-s66" onclick="applySelectedTextColor('yellow')" title="Yellow text">>
-                                <span class="dot gh-s48">></span> Yellow
+                            <button type="button" class="color-badge-btn gh-s66" onclick="applySelectedTextColor('yellow')" title="Yellow text">
+                                <span class="dot gh-s48"></span> Yellow
                             </button>
-                            <button type="button" class="color-badge-btn gh-s67" onclick="applySelectedTextColor('blue')" title="Blue text">>
-                                <span class="dot gh-s51">></span> Blue
+                            <button type="button" class="color-badge-btn gh-s67" onclick="applySelectedTextColor('blue')" title="Blue text">
+                                <span class="dot gh-s51"></span> Blue
                             </button>
-                            <button type="button" class="color-badge-btn gh-s68" onclick="applySelectedTextColor('pink')" title="Pink text">>
-                                <span class="dot gh-s52">></span> Pink
+                            <button type="button" class="color-badge-btn gh-s68" onclick="applySelectedTextColor('pink')" title="Pink text">
+                                <span class="dot gh-s52"></span> Pink
                             </button>
-                            <button type="button" class="color-badge-btn gh-s69" onclick="applySelectedTextColor('cyan')" title="Cyan text">>
-                                <span class="dot gh-s53">></span> Cyan
+                            <button type="button" class="color-badge-btn gh-s69" onclick="applySelectedTextColor('cyan')" title="Cyan text">
+                                <span class="dot gh-s53"></span> Cyan
                             </button>
-                            <button type="button" class="color-badge-btn gh-s70" onclick="applySelectedTextColor('white')" title="White text">>
-                                <span class="dot gh-s47">></span> White
+                            <button type="button" class="color-badge-btn gh-s70" onclick="applySelectedTextColor('white')" title="White text">
+                                <span class="dot gh-s47"></span> White
                             </button>
-                            <button type="button" class="color-badge-btn gh-s71" onclick="applySelectedTextColor('gray')" title="Dark Gray text">>
-                                <span class="dot gh-s72">></span> Gray
+                            <button type="button" class="color-badge-btn gh-s71" onclick="applySelectedTextColor('gray')" title="Dark Gray text">
+                                <span class="dot gh-s72"></span> Gray
                             </button>
-                            <button type="button" class="color-badge-btn gh-s73" onclick="applySelectedTextColor('orange')" title="Orange text">>
-                                <span class="dot gh-s74">></span> Orange
+                            <button type="button" class="color-badge-btn gh-s73" onclick="applySelectedTextColor('orange')" title="Orange text">
+                                <span class="dot gh-s74"></span> Orange
                             </button>
-                            <button type="button" class="color-badge-btn gh-s75" onclick="applySelectedTextColor('purple')" title="Purple text">>
-                                <span class="dot gh-s76">></span> Purple
+                            <button type="button" class="color-badge-btn gh-s75" onclick="applySelectedTextColor('purple')" title="Purple text">
+                                <span class="dot gh-s76"></span> Purple
                             </button>
-                            <div class="gh-s77">>
-                                <input type="color" id="ann-body-custom-color" value="#00e5ff" onchange="applySelectedTextColor(this.value)" class="gh-s54" title="Pick any custom color">>
-                                <span class="gh-s78">>Custom</span>
+                            <div class="gh-s77">
+                                <input type="color" id="ann-body-custom-color" value="#00e5ff" onchange="applySelectedTextColor(this.value)" class="gh-s54" title="Pick any custom color">
+                                <span class="gh-s78">Custom</span>
                             </div>
                         </div>
                     </div>
@@ -513,13 +513,13 @@
                     </div>
 
                     <!-- Footer Text Input -->
-                    <div class="gh-s42">>
+                    <div class="gh-s42">
                         <textarea id="ann-footer-text" rows="2" placeholder="e.g. Official Server Broadcast • Moderation Team"
-                               oninput="updateAnnouncementPreview()" class="gh-s79">></textarea>
+                               oninput="updateAnnouncementPreview()" class="gh-s79"></textarea>
                     </div>
 
                     <!-- Footer Styling Toolbar -->
-                    <div class="discord-toolbar gh-s42">>
+                    <div class="discord-toolbar gh-s42">
                         <button type="button" class="toolbar-btn" onclick="applyFooterStyle('**')" title="Bold (**Footer**)">
                             <strong>B</strong>
                         </button>
@@ -535,19 +535,19 @@
                     </div>
 
                     <!-- Footer Color Row -->
-                    <div class="gh-s44">>
-                        <span class="gh-s45">>Footer Color:</span>
-                        <div class="color-swatches-row gh-s46">>
-                            <span class="color-swatch active gh-s72" onclick="selectFooterColor('#949ba4', this)" title="Slate Gray (Default)">></span>
-                            <span class="color-swatch gh-s47" onclick="selectFooterColor('#ffffff', this)" title="White">></span>
-                            <span class="color-swatch gh-s48" onclick="selectFooterColor('#fee75c', this)" title="Yellow">></span>
-                            <span class="color-swatch gh-s49" onclick="selectFooterColor('#ed4245', this)" title="Red">></span>
-                            <span class="color-swatch gh-s50" onclick="selectFooterColor('#57f287', this)" title="Green">></span>
-                            <span class="color-swatch gh-s51" onclick="selectFooterColor('#5865f2', this)" title="Blue">></span>
-                            <span class="color-swatch gh-s53" onclick="selectFooterColor('#00e5ff', this)" title="Cyan">></span>
-                            <span class="color-swatch gh-s52" onclick="selectFooterColor('#eb459e', this)" title="Pink">></span>
+                    <div class="gh-s44">
+                        <span class="gh-s45">Footer Color:</span>
+                        <div class="color-swatches-row gh-s46">
+                            <span class="color-swatch active gh-s72" onclick="selectFooterColor('#949ba4', this)" title="Slate Gray (Default)"></span>
+                            <span class="color-swatch gh-s47" onclick="selectFooterColor('#ffffff', this)" title="White"></span>
+                            <span class="color-swatch gh-s48" onclick="selectFooterColor('#fee75c', this)" title="Yellow"></span>
+                            <span class="color-swatch gh-s49" onclick="selectFooterColor('#ed4245', this)" title="Red"></span>
+                            <span class="color-swatch gh-s50" onclick="selectFooterColor('#57f287', this)" title="Green"></span>
+                            <span class="color-swatch gh-s51" onclick="selectFooterColor('#5865f2', this)" title="Blue"></span>
+                            <span class="color-swatch gh-s53" onclick="selectFooterColor('#00e5ff', this)" title="Cyan"></span>
+                            <span class="color-swatch gh-s52" onclick="selectFooterColor('#eb459e', this)" title="Pink"></span>
                             <input type="color" id="ann-footer-color-picker" value="#949ba4" 
-                                   onchange="selectFooterColor(this.value, null)" class="gh-s54" title="Custom Footer Color">>
+                                   onchange="selectFooterColor(this.value, null)" class="gh-s54" title="Custom Footer Color">
                             <input type="hidden" id="ann-footer-color" value="#949ba4">
                         </div>
                     </div>
@@ -563,32 +563,32 @@
                     </div>
 
                     <!-- Embed Accent Color Picker -->
-                    <div class="gh-s80">>
-                        <label class="gh-s26">>
+                    <div class="gh-s80">
+                        <label class="gh-s26">
                             Card Left Border Accent Color
                         </label>
-                        <div class="color-swatches-row gh-s81">>
-                            <span class="color-swatch active gh-s82" onclick="selectEmbedColor('#5865F2', this)" title="Discord Blurple">></span>
-                            <span class="color-swatch gh-s83" onclick="selectEmbedColor('#57F287', this)" title="Emerald Green">></span>
-                            <span class="color-swatch gh-s84" onclick="selectEmbedColor('#FEE75C', this)" title="Gold Yellow">></span>
-                            <span class="color-swatch gh-s85" onclick="selectEmbedColor('#ED4245', this)" title="Crimson Red">></span>
-                            <span class="color-swatch gh-s86" onclick="selectEmbedColor('#EB459E', this)" title="Fuchsia Pink">></span>
-                            <span class="color-swatch gh-s87" onclick="selectEmbedColor('#00E5FF', this)" title="Electric Cyan">></span>
-                            <span class="color-swatch gh-s88" onclick="selectEmbedColor('#2B2D31', this)" title="Dark Slate">></span>
+                        <div class="color-swatches-row gh-s81">
+                            <span class="color-swatch active gh-s82" onclick="selectEmbedColor('#5865F2', this)" title="Discord Blurple"></span>
+                            <span class="color-swatch gh-s83" onclick="selectEmbedColor('#57F287', this)" title="Emerald Green"></span>
+                            <span class="color-swatch gh-s84" onclick="selectEmbedColor('#FEE75C', this)" title="Gold Yellow"></span>
+                            <span class="color-swatch gh-s85" onclick="selectEmbedColor('#ED4245', this)" title="Crimson Red"></span>
+                            <span class="color-swatch gh-s86" onclick="selectEmbedColor('#EB459E', this)" title="Fuchsia Pink"></span>
+                            <span class="color-swatch gh-s87" onclick="selectEmbedColor('#00E5FF', this)" title="Electric Cyan"></span>
+                            <span class="color-swatch gh-s88" onclick="selectEmbedColor('#2B2D31', this)" title="Dark Slate"></span>
                             <input type="color" id="ann-embed-color-picker" value="#5865F2" 
-                                   onchange="selectEmbedColor(this.value, null)" class="gh-s89" title="Custom Color Picker">>
+                                   onchange="selectEmbedColor(this.value, null)" class="gh-s89" title="Custom Color Picker">
                             <input type="text" id="ann-embed-color" value="#5865F2" 
-                                   oninput="selectEmbedColor(this.value, null)" class="gh-s90">>
+                                   oninput="selectEmbedColor(this.value, null)" class="gh-s90">
                         </div>
                     </div>
 
                     <!-- Direct Media Upload Assets -->
-                    <div class="gh-s91">>
+                    <div class="gh-s91">
                         <!-- Primary: Announcement Embedded Banner Image Upload -->
-                        <div class="gh-s92">>
-                            <label class="gh-s93">>
+                        <div class="gh-s92">
+                            <label class="gh-s93">
                                 <span>🌄 Banner Image (Direct Upload)</span>
-                                <span class="gh-s94">>Embeds inside card</span>
+                                <span class="gh-s94">Embeds inside card</span>
                             </label>
 
                             <div id="banner-dropzone" class="upload-dropzone"
@@ -596,27 +596,27 @@
                                  ondragover="event.preventDefault(); this.classList.add('dragover');"
                                  ondragleave="this.classList.remove('dragover');"
                                  ondrop="event.preventDefault(); this.classList.remove('dragover'); handleBannerDrop(event);">
-                                <input type="file" id="ann-banner-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleBannerFileSelected(this.files)">>
+                                <input type="file" id="ann-banner-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleBannerFileSelected(this.files)">
 
                                 <!-- Empty State -->
-                                <div id="banner-empty-state" class="gh-s96">>
-                                    <div class="gh-s97">>📁</div>
-                                    <div class="gh-s34">>
+                                <div id="banner-empty-state" class="gh-s96">
+                                    <div class="gh-s97">📁</div>
+                                    <div class="gh-s34">
                                         Click to choose image or drag &amp; drop
                                     </div>
-                                    <div class="gh-s98">>
+                                    <div class="gh-s98">
                                         PNG, JPG, GIF, WebP (Max 8MB)
                                     </div>
                                 </div>
 
                                 <!-- Selected State -->
-                                <div id="banner-selected-state" class="upload-preview-card gh-s95">>
+                                <div id="banner-selected-state" class="upload-preview-card gh-s95">
                                     <img id="banner-thumb-prev" class="upload-preview-thumb" src="" alt="Banner Preview">
-                                    <div class="gh-s99">>
-                                        <div id="banner-filename" class="gh-s100">></div>
-                                        <div id="banner-filesize" class="gh-s98">></div>
+                                    <div class="gh-s99">
+                                        <div id="banner-filename" class="gh-s100"></div>
+                                        <div id="banner-filesize" class="gh-s98"></div>
                                     </div>
-                                    <button type="button" class="btn btn-danger btn-sm gh-s101" onclick="event.stopPropagation(); removeUploadedBanner();">>
+                                    <button type="button" class="btn btn-danger btn-sm gh-s101" onclick="event.stopPropagation(); removeUploadedBanner();">
                                         ✕ Remove
                                     </button>
                                 </div>
@@ -624,10 +624,10 @@
                         </div>
 
                         <!-- Secondary: Thumbnail Icon Upload (Optional) -->
-                        <div class="gh-s25">>
-                            <label class="gh-s93">>
+                        <div class="gh-s25">
+                            <label class="gh-s93">
                                 <span>🖼️ Thumbnail Icon (Upload)</span>
-                                <span class="gh-s102">>Top-right (Optional)</span>
+                                <span class="gh-s102">Top-right (Optional)</span>
                             </label>
 
                             <div id="thumb-dropzone" class="upload-dropzone"
@@ -635,26 +635,26 @@
                                  ondragover="event.preventDefault(); this.classList.add('dragover');"
                                  ondragleave="this.classList.remove('dragover');"
                                  ondrop="event.preventDefault(); this.classList.remove('dragover'); handleThumbDrop(event);">
-                                <input type="file" id="ann-thumb-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleThumbFileSelected(this.files)">>
+                                <input type="file" id="ann-thumb-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleThumbFileSelected(this.files)">
 
                                 <!-- Empty State -->
-                                <div id="thumb-empty-state" class="gh-s96">>
-                                    <div class="gh-s97">>🖼️</div>
-                                    <div class="gh-s34">>
+                                <div id="thumb-empty-state" class="gh-s96">
+                                    <div class="gh-s97">🖼️</div>
+                                    <div class="gh-s34">
                                         Upload Thumbnail
                                     </div>
-                                    <div class="gh-s98">>
+                                    <div class="gh-s98">
                                         Square icon (Max 4MB)
                                     </div>
                                 </div>
 
                                 <!-- Selected State -->
-                                <div id="thumb-selected-state" class="upload-preview-card gh-s95">>
+                                <div id="thumb-selected-state" class="upload-preview-card gh-s95">
                                     <img id="thumb-thumb-prev" class="upload-preview-thumb" src="" alt="Thumb Preview">
-                                    <div class="gh-s99">>
-                                        <div id="thumb-filename" class="gh-s100">></div>
+                                    <div class="gh-s99">
+                                        <div id="thumb-filename" class="gh-s100"></div>
                                     </div>
-                                    <button type="button" class="btn btn-danger btn-sm gh-s101" onclick="event.stopPropagation(); removeUploadedThumb();">>
+                                    <button type="button" class="btn btn-danger btn-sm gh-s101" onclick="event.stopPropagation(); removeUploadedThumb();">
                                         ✕
                                     </button>
                                 </div>
@@ -663,59 +663,59 @@
                     </div>
 
                     <!-- Multiple Extra Attachments (Images + Documents) -->
-                    <div class="gh-s103">>
-                        <label class="gh-s93">>
+                    <div class="gh-s103">
+                        <label class="gh-s93">
                             <span>📎 Extra Attachments (Multiple Files)</span>
-                            <span class="gh-s102">>Images, PDFs, Docs, etc. — Max 10 files · 25MB each</span>
+                            <span class="gh-s102">Images, PDFs, Docs, etc. — Max 10 files · 25MB each</span>
                         </label>
 
                         <div id="extra-attach-dropzone" class="upload-dropzone gh-s104"
                              onclick="document.getElementById('ann-extra-files').click()"
                              ondragover="event.preventDefault(); this.classList.add('dragover');"
                              ondragleave="this.classList.remove('dragover');"
-                             ondrop="event.preventDefault(); this.classList.remove('dragover'); handleExtraFilesDrop(event);">>
+                             ondrop="event.preventDefault(); this.classList.remove('dragover'); handleExtraFilesDrop(event);">
                             <input type="file" id="ann-extra-files" multiple
-                                   accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.mp4,.mp3,.wav" class="gh-s95" onchange="handleExtraFilesSelected(this.files)">>
-                            <div id="extra-attach-hint" class="gh-s105">>
-                                <span class="gh-s106">>📎</span>
-                                <span class="gh-s107">>Click to add files or drag &amp; drop — images, PDFs, docs, archives…</span>
+                                   accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.mp4,.mp3,.wav" class="gh-s95" onchange="handleExtraFilesSelected(this.files)">
+                            <div id="extra-attach-hint" class="gh-s105">
+                                <span class="gh-s106">📎</span>
+                                <span class="gh-s107">Click to add files or drag &amp; drop — images, PDFs, docs, archives…</span>
                             </div>
                         </div>
 
                         <!-- Attached files list -->
-                        <div id="extra-attach-list" class="gh-s108">></div>
+                        <div id="extra-attach-list" class="gh-s108"></div>
                     </div>
                 </div>
 
                 <!-- Interactive Link Buttons (Optional) -->
-                <div class="gh-s109">>
-                    <div class="gh-s110">>
-                        <label class="gh-s111">>
+                <div class="gh-s109">
+                    <div class="gh-s110">
+                        <label class="gh-s111">
                             🔗 Interactive Link Buttons (Max 5)
                         </label>
-                        <button type="button" class="btn btn-secondary btn-sm gh-s112" onclick="addAnnouncementButtonRow()">>
+                        <button type="button" class="btn btn-secondary btn-sm gh-s112" onclick="addAnnouncementButtonRow()">
                             + Add Button
                         </button>
                     </div>
-                    <p class="gh-s113">>
+                    <p class="gh-s113">
                         Add clickable action buttons that open web links directly under the message in Discord.
                     </p>
                     <div id="ann-buttons-container"></div>
                 </div>
 
                 <!-- Broadcast Action Button -->
-                <button type="button" class="btn btn-primary gh-s114" onclick="sendDiscordAnnouncement()" id="btn-broadcast-announcement">>
+                <button type="button" class="btn btn-primary gh-s114" onclick="sendDiscordAnnouncement()" id="btn-broadcast-announcement">
                     🚀 Broadcast Announcement to Discord
                 </button>
             </div>
 
             <!-- Right: Real-time Discord Preview -->
             <div>
-                <div class="gh-s110">>
-                    <span class="gh-s115">>
+                <div class="gh-s110">
+                    <span class="gh-s115">
                         👁️ Live Discord Preview (WYSIWYG)
                     </span>
-                    <span class="gh-s116">>Real-time Discord Chat Simulation</span>
+                    <span class="gh-s116">Real-time Discord Chat Simulation</span>
                 </div>
 
                 <!-- Discord Chat Message Wrapper -->
@@ -725,7 +725,7 @@
                             {% if bot and bot.user and bot.user.display_avatar %}
                             <img src="{{ bot.user.display_avatar.url }}" alt="{{ bot.user.name }}">
                             {% else %}
-                            <div class="gh-s117">>B</div>
+                            <div class="gh-s117">B</div>
                             {% endif %}
                         </div>
                         <div>
@@ -738,18 +738,18 @@
                     </div>
 
                     <!-- Mentions Preview Pill -->
-                    <div id="preview-mention-pill" class="gh-s95">></div>
+                    <div id="preview-mention-pill" class="gh-s95"></div>
 
                     <!-- Plain Text Preview -->
-                    <div id="preview-plain-text" class="gh-s118">></div>
-                    <img id="preview-plain-image" class="discord-embed-banner gh-s95" src="" alt="Attachment Image">>
+                    <div id="preview-plain-text" class="gh-s118"></div>
+                    <img id="preview-plain-image" class="discord-embed-banner gh-s95" src="" alt="Attachment Image">
 
                     <!-- Rich Embed Card Preview -->
                     <div class="discord-embed-card" id="preview-embed-card">
                         <!-- Embed Author Row (shown when show_author is on) -->
-                        <div id="preview-embed-author" class="gh-s119">>
-                            <img id="preview-embed-author-icon" src="" alt="" class="gh-s120">>
-                            <span id="preview-embed-author-name" class="gh-s121">></span>
+                        <div id="preview-embed-author" class="gh-s119">
+                            <img id="preview-embed-author-icon" src="" alt="" class="gh-s120">
+                            <span id="preview-embed-author-name" class="gh-s121"></span>
                         </div>
 
                         <div class="discord-embed-grid">
@@ -757,19 +757,19 @@
                                 <div class="discord-embed-title" id="preview-embed-title">Announcement Title Preview</div>
                                 <div class="discord-embed-desc" id="preview-embed-desc">Your announcement content will be rendered here with live Discord formatting.</div>
                             </div>
-                            <img id="preview-embed-thumb" class="discord-embed-thumb gh-s95" src="" alt="Thumbnail">>
+                            <img id="preview-embed-thumb" class="discord-embed-thumb gh-s95" src="" alt="Thumbnail">
                         </div>
 
-                        <img id="preview-embed-banner" class="discord-embed-banner gh-s95" src="" alt="Banner">>
+                        <img id="preview-embed-banner" class="discord-embed-banner gh-s95" src="" alt="Banner">
 
-                        <div class="discord-embed-footer gh-s95" id="preview-embed-footer">>
-                            <img id="preview-embed-footer-icon" class="gh-s95" src="" alt="Icon">>
+                        <div class="discord-embed-footer gh-s95" id="preview-embed-footer">
+                            <img id="preview-embed-footer-icon" class="gh-s95" src="" alt="Icon">
                             <span id="preview-embed-footer-text">Footer Preview</span>
                         </div>
                     </div>
 
                     <!-- Link Buttons Preview -->
-                    <div class="discord-btn-row gh-s95" id="preview-buttons-row">></div>
+                    <div class="discord-btn-row gh-s95" id="preview-buttons-row"></div>
                 </div>
             </div>
         </div>
@@ -780,24 +780,24 @@
 <!-- 4. SERVER AUDIT LOGS TAB                   -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-server-logs">
-    <div class="glass-card gh-s122">>
+    <div class="glass-card gh-s122">
         <div class="card-header">
             <h3>🛡️ Discord Server Audit History</h3>
             <button class="btn btn-secondary btn-sm" onclick="loadServerLogs(0)" id="btn-refresh-server-logs">
                 ⟳ Refresh Logs
             </button>
         </div>
-        <p class="gh-s123">>
+        <p class="gh-s123">
             Real-time audit log stream recorded by the Server Logger cog in <code>data/logs.db</code>.
         </p>
 
         <!-- Filters Row -->
-        <div class="gh-s124">>
-            <div class="gh-s125">>
+        <div class="gh-s124">
+            <div class="gh-s125">
                 <input type="text" id="log-search-input" placeholder="Search by details, action, user ID or actor ID..." 
                        onkeyup="if(event.key === 'Enter') loadServerLogs(0)">
             </div>
-            <div class="gh-s126">>
+            <div class="gh-s126">
                 <select id="log-action-filter" onchange="loadServerLogs(0)">
                     <option value="all">-- All Action Types --</option>
                     {% for action in action_types %}
@@ -818,27 +818,27 @@
             <table class="data-table" id="server-logs-table">
                 <thead>
                     <tr>
-                        <th class="gh-s127">>ID</th>
-                        <th class="gh-s128">>Action Type</th>
-                        <th class="gh-s128">>Actor</th>
-                        <th class="gh-s128">>Target User</th>
+                        <th class="gh-s127">ID</th>
+                        <th class="gh-s128">Action Type</th>
+                        <th class="gh-s128">Actor</th>
+                        <th class="gh-s128">Target User</th>
                         <th>Details</th>
-                        <th class="gh-s129">>Timestamp</th>
+                        <th class="gh-s129">Timestamp</th>
                     </tr>
                 </thead>
                 <tbody id="server-logs-tbody">
                     <!-- Populated via AJAX -->
                     <tr>
-                        <td colspan="6" class="gh-s130">>Loading server audit history...</td>
+                        <td colspan="6" class="gh-s130">Loading server audit history...</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
         <!-- Pagination Controls -->
-        <div class="gh-s131">>
-            <span class="gh-s132" id="server-logs-count-info">>Showing records...</span>
-            <div class="gh-s133">>
+        <div class="gh-s131">
+            <span class="gh-s132" id="server-logs-count-info">Showing records...</span>
+            <div class="gh-s133">
                 <button class="btn btn-secondary btn-sm" id="btn-prev-server-logs" onclick="prevServerLogsPage()" disabled>Previous</button>
                 <button class="btn btn-secondary btn-sm" id="btn-next-server-logs" onclick="nextServerLogsPage()">Next</button>
             </div>
@@ -857,11 +857,11 @@
                 <h3>⌨️ Bot Command Prefix</h3>
                 <span class="role-badge staff">Guild Scope</span>
             </div>
-            <p class="gh-s134">>
+            <p class="gh-s134">
                 Customize the prefix used for text commands (e.g. <code>!</code>, <code>?</code>, <code>.</code>). Synced with Discord <code>/settings prefix</code>.
             </p>
-            <div class="gh-s135">>
-                <input type="text" id="setting-prefix-input" value="{{ prefix }}" placeholder="e.g. !" class="gh-s136">>
+            <div class="gh-s135">
+                <input type="text" id="setting-prefix-input" value="{{ prefix }}" placeholder="e.g. !" class="gh-s136">
                 <button class="btn btn-primary" onclick="saveGuildPrefix()" id="btn-save-prefix">Save Prefix</button>
             </div>
         </div>
@@ -910,10 +910,10 @@
             <div class="card-header">
                 <h3>📋 Audit Log Destination Channel</h3>
             </div>
-            <p class="gh-s137">>
+            <p class="gh-s137">
                 Select which Discord text channel receives live audit logging embeds.
             </p>
-            <div class="gh-s138">>
+            <div class="gh-s138">
                 <select id="log-channel-select">
                     <option value="">-- No Channel (Disabled) --</option>
                     {% for ch in text_channels %}
@@ -925,8 +925,8 @@
                 <button class="btn btn-primary" onclick="saveLogChannel()" id="btn-save-log-channel">Save</button>
             </div>
 
-            <h4 class="gh-s139">>User Filter Exclusion</h4>
-            <p class="gh-s140">>
+            <h4 class="gh-s139">User Filter Exclusion</h4>
+            <p class="gh-s140">
                 Restrict logging to specific users (or exclude them). If empty, all user activity is logged.
             </p>
             <div class="chip-container" id="filter-user-chips">
@@ -937,11 +937,11 @@
                 </span>
                 {% endfor %}
                 {% if not filtered_users %}
-                <span class="gh-s141">>No active user filters (Logging all).</span>
+                <span class="gh-s141">No active user filters (Logging all).</span>
                 {% endif %}
             </div>
-            <div class="gh-s142">>
-                <select id="filter-user-select" class="gh-s143">>
+            <div class="gh-s142">
+                <select id="filter-user-select" class="gh-s143">
                     <option value="">-- Select Member to Filter --</option>
                     {% for m in members %}
                     <option value="{{ m.id }}">{{ m.name }} (#{{ m.id }})</option>
@@ -958,7 +958,7 @@
                 <h3>📢 Announcement Allowed Roles</h3>
                 <span class="role-badge admin">RBAC</span>
             </div>
-            <p class="gh-s137">>
+            <p class="gh-s137">
                 Roles permitted to launch the announcement modal via <code>/announcement</code>. (Administrators always retain permission).
             </p>
             <div class="chip-container" id="announcement-role-chips">
@@ -969,11 +969,11 @@
                 </span>
                 {% endfor %}
                 {% if not announcement_roles %}
-                <span class="gh-s141">>Administrators only (Default).</span>
+                <span class="gh-s141">Administrators only (Default).</span>
                 {% endif %}
             </div>
-            <div class="gh-s142">>
-                <select id="announcement-role-select" class="gh-s143">>
+            <div class="gh-s142">
+                <select id="announcement-role-select" class="gh-s143">
                     <option value="">-- Select Allowed Role --</option>
                     {% for r in roles %}
                     {% if r.name != "@everyone" %}
@@ -985,45 +985,45 @@
             </div>
 
             <!-- LOA Timezone Setting -->
-            <div class="gh-s144">>
-                <h4 class="gh-s139">>🌴 LOA System Timezone</h4>
-                <div class="gh-s135">>
-                    <input type="text" id="loa-tz-input" value="{{ loa_timezone }}" placeholder="e.g. UTC, Asia/Dhaka, America/New_York" class="gh-s143">>
+            <div class="gh-s144">
+                <h4 class="gh-s139">🌴 LOA System Timezone</h4>
+                <div class="gh-s135">
+                    <input type="text" id="loa-tz-input" value="{{ loa_timezone }}" placeholder="e.g. UTC, Asia/Dhaka, America/New_York" class="gh-s143">
                     <button class="btn btn-primary btn-sm" onclick="saveLoaTimezone()" id="btn-save-loa-tz">Save Timezone</button>
                 </div>
             </div>
         </div>
 
         <!-- Cog Permissions & Role-Based Access Control (RBAC) -->
-        <div class="glass-card gh-s145">>
+        <div class="glass-card gh-s145">
             <div class="card-header">
                 <h3>🛡️ Bot Cog Permissions & Role Access Control (RBAC)</h3>
                 <span class="role-badge admin">Operator Control</span>
             </div>
-            <p class="gh-s22">>
+            <p class="gh-s22">
                 Since all dashboard users have administrator authority, you can customize access permissions for each individual bot cog below. Set access level to <strong>Administrators Only</strong>, <strong>Specific Allowed Roles</strong>, or <strong>Everyone</strong>.
             </p>
 
-            <div class="grid-3 gh-s146">>
+            <div class="grid-3 gh-s146">
                 <!-- 1. Announcement Cog -->
                 <div class="cog-perm-card" id="perm-card-announcement">
                     <div class="cog-perm-header">
-                        <strong class="gh-s147">>📢 Announcement Cog</strong>
+                        <strong class="gh-s147">📢 Announcement Cog</strong>
                         <span class="role-badge staff">Messaging</span>
                     </div>
-                    <p class="gh-s148">>
+                    <p class="gh-s148">
                         Controls access to <code>/announcement</code> and modal broadcast features.
                     </p>
-                    <label class="gh-s149">>Access Level</label>
-                    <select id="perm-level-announcement" onchange="handleCogLevelChange('announcement')" class="gh-s150">>
+                    <label class="gh-s149">Access Level</label>
+                    <select id="perm-level-announcement" onchange="handleCogLevelChange('announcement')" class="gh-s150">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('announcement', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('announcement', {}).get('access_level') == 'roles_only' else "" }}>👥 Allowed Roles (+ Admins)</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('announcement', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone (Public)</option>
                     </select>
 
                     <div id="perm-roles-wrap-announcement" class="perm-roles-wrap {{ 'd-none' if cog_permissions.get('announcement', {}).get('access_level') != 'roles_only' else '' }}">
-                        <label class="gh-s149">>Permitted Server Roles</label>
-                        <div class="chip-container gh-s151" id="perm-chips-announcement">>
+                        <label class="gh-s149">Permitted Server Roles</label>
+                        <div class="chip-container gh-s151" id="perm-chips-announcement">
                             {% for rid in cog_permissions.get('announcement', {}).get('allowed_roles', []) %}
                             <span class="user-chip" id="perm-chip-announcement-{{ rid }}">
                                 Role #{{ rid }}
@@ -1031,11 +1031,11 @@
                             </span>
                             {% endfor %}
                             {% if not cog_permissions.get('announcement', {}).get('allowed_roles') %}
-                            <span class="empty-role-hint gh-s152">>None added (Admins only)</span>
+                            <span class="empty-role-hint gh-s152">None added (Admins only)</span>
                             {% endif %}
                         </div>
-                        <div class="gh-s153">>
-                            <select id="perm-select-announcement" class="gh-s154">>
+                        <div class="gh-s153">
+                            <select id="perm-select-announcement" class="gh-s154">
                                 <option value="">-- Add Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1043,7 +1043,7 @@
                         </div>
                     </div>
 
-                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('announcement')">>
+                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('announcement')">
                         Save Announcement Perms
                     </button>
                 </div>
@@ -1051,22 +1051,22 @@
                 <!-- 2. Music Player Cog -->
                 <div class="cog-perm-card" id="perm-card-music">
                     <div class="cog-perm-header">
-                        <strong class="gh-s156">>🎵 Music Player Cog</strong>
+                        <strong class="gh-s156">🎵 Music Player Cog</strong>
                         <span class="role-badge staff">Voice Engine</span>
                     </div>
-                    <p class="gh-s148">>
+                    <p class="gh-s148">
                         Controls access to <code>/play</code>, skip, stop, and queue playback controls.
                     </p>
-                    <label class="gh-s149">>Access Level</label>
-                    <select id="perm-level-music" onchange="handleCogLevelChange('music')" class="gh-s150">>
+                    <label class="gh-s149">Access Level</label>
+                    <select id="perm-level-music" onchange="handleCogLevelChange('music')" class="gh-s150">
                         <option value="everyone" {{ "selected" if cog_permissions.get('music', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone (All Voice Members)</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('music', {}).get('access_level') == 'roles_only' else "" }}>👥 DJ / Permitted Roles (+ Admins)</option>
                         <option value="admin_only" {{ "selected" if cog_permissions.get('music', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                     </select>
 
                     <div id="perm-roles-wrap-music" class="perm-roles-wrap {{ 'd-none' if cog_permissions.get('music', {}).get('access_level') != 'roles_only' else '' }}">
-                        <label class="gh-s149">>Permitted DJ Roles</label>
-                        <div class="chip-container gh-s151" id="perm-chips-music">>
+                        <label class="gh-s149">Permitted DJ Roles</label>
+                        <div class="chip-container gh-s151" id="perm-chips-music">
                             {% for rid in cog_permissions.get('music', {}).get('allowed_roles', []) %}
                             <span class="user-chip" id="perm-chip-music-{{ rid }}">
                                 Role #{{ rid }}
@@ -1074,11 +1074,11 @@
                             </span>
                             {% endfor %}
                             {% if not cog_permissions.get('music', {}).get('allowed_roles') %}
-                            <span class="empty-role-hint gh-s152">>None added (Admins only)</span>
+                            <span class="empty-role-hint gh-s152">None added (Admins only)</span>
                             {% endif %}
                         </div>
-                        <div class="gh-s153">>
-                            <select id="perm-select-music" class="gh-s154">>
+                        <div class="gh-s153">
+                            <select id="perm-select-music" class="gh-s154">
                                 <option value="">-- Add DJ Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1086,7 +1086,7 @@
                         </div>
                     </div>
 
-                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('music')">>
+                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('music')">
                         Save Music Perms
                     </button>
                 </div>
@@ -1094,22 +1094,22 @@
                 <!-- 3. Leave of Absence (LOA) Cog -->
                 <div class="cog-perm-card" id="perm-card-loa">
                     <div class="cog-perm-header">
-                        <strong class="gh-s157">>🌴 Leave of Absence (LOA)</strong>
+                        <strong class="gh-s157">🌴 Leave of Absence (LOA)</strong>
                         <span class="role-badge staff">Staff Mgmt</span>
                     </div>
-                    <p class="gh-s148">>
+                    <p class="gh-s148">
                         Controls access to <code>/loa_report</code>, checker reviews, and management.
                     </p>
-                    <label class="gh-s149">>Access Level</label>
-                    <select id="perm-level-loa" onchange="handleCogLevelChange('loa')" class="gh-s150">>
+                    <label class="gh-s149">Access Level</label>
+                    <select id="perm-level-loa" onchange="handleCogLevelChange('loa')" class="gh-s150">
                         <option value="roles_only" {{ "selected" if cog_permissions.get('loa', {}).get('access_level') == 'roles_only' else "" }}>👥 Checkers & Staff Roles (+ Admins)</option>
                         <option value="admin_only" {{ "selected" if cog_permissions.get('loa', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('loa', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone</option>
                     </select>
 
                     <div id="perm-roles-wrap-loa" class="perm-roles-wrap {{ 'd-none' if cog_permissions.get('loa', {}).get('access_level') != 'roles_only' else '' }}">
-                        <label class="gh-s149">>Permitted Staff Roles</label>
-                        <div class="chip-container gh-s151" id="perm-chips-loa">>
+                        <label class="gh-s149">Permitted Staff Roles</label>
+                        <div class="chip-container gh-s151" id="perm-chips-loa">
                             {% for rid in cog_permissions.get('loa', {}).get('allowed_roles', []) %}
                             <span class="user-chip" id="perm-chip-loa-{{ rid }}">
                                 Role #{{ rid }}
@@ -1117,11 +1117,11 @@
                             </span>
                             {% endfor %}
                             {% if not cog_permissions.get('loa', {}).get('allowed_roles') %}
-                            <span class="empty-role-hint gh-s152">>None added (Admins only)</span>
+                            <span class="empty-role-hint gh-s152">None added (Admins only)</span>
                             {% endif %}
                         </div>
-                        <div class="gh-s153">>
-                            <select id="perm-select-loa" class="gh-s154">>
+                        <div class="gh-s153">
+                            <select id="perm-select-loa" class="gh-s154">
                                 <option value="">-- Add Checker Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1129,7 +1129,7 @@
                         </div>
                     </div>
 
-                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('loa')">>
+                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('loa')">
                         Save LOA Perms
                     </button>
                 </div>
@@ -1137,22 +1137,22 @@
                 <!-- 4. ARC Telemetry Tracker Cog -->
                 <div class="cog-perm-card" id="perm-card-labeler_tracker">
                     <div class="cog-perm-header">
-                        <strong class="gh-s158">>📊 ARC Tracker Cog</strong>
+                        <strong class="gh-s158">📊 ARC Tracker Cog</strong>
                         <span class="role-badge staff">Operations</span>
                     </div>
-                    <p class="gh-s148">>
+                    <p class="gh-s148">
                         Controls access to <code>/arc_setup</code>, <code>/arc</code>, and live scraping triggers.
                     </p>
-                    <label class="gh-s149">>Access Level</label>
-                    <select id="perm-level-labeler_tracker" onchange="handleCogLevelChange('labeler_tracker')" class="gh-s150">>
+                    <label class="gh-s149">Access Level</label>
+                    <select id="perm-level-labeler_tracker" onchange="handleCogLevelChange('labeler_tracker')" class="gh-s150">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('labeler_tracker', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('labeler_tracker', {}).get('access_level') == 'roles_only' else "" }}>👥 ARC Leads & Staff (+ Admins)</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('labeler_tracker', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone</option>
                     </select>
 
                     <div id="perm-roles-wrap-labeler_tracker" class="perm-roles-wrap {{ 'd-none' if cog_permissions.get('labeler_tracker', {}).get('access_level') != 'roles_only' else '' }}">
-                        <label class="gh-s149">>Permitted ARC Roles</label>
-                        <div class="chip-container gh-s151" id="perm-chips-labeler_tracker">>
+                        <label class="gh-s149">Permitted ARC Roles</label>
+                        <div class="chip-container gh-s151" id="perm-chips-labeler_tracker">
                             {% for rid in cog_permissions.get('labeler_tracker', {}).get('allowed_roles', []) %}
                             <span class="user-chip" id="perm-chip-labeler_tracker-{{ rid }}">
                                 Role #{{ rid }}
@@ -1160,11 +1160,11 @@
                             </span>
                             {% endfor %}
                             {% if not cog_permissions.get('labeler_tracker', {}).get('allowed_roles') %}
-                            <span class="empty-role-hint gh-s152">>None added (Admins only)</span>
+                            <span class="empty-role-hint gh-s152">None added (Admins only)</span>
                             {% endif %}
                         </div>
-                        <div class="gh-s153">>
-                            <select id="perm-select-labeler_tracker" class="gh-s154">>
+                        <div class="gh-s153">
+                            <select id="perm-select-labeler_tracker" class="gh-s154">
                                 <option value="">-- Add ARC Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1172,7 +1172,7 @@
                         </div>
                     </div>
 
-                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('labeler_tracker')">>
+                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('labeler_tracker')">
                         Save ARC Perms
                     </button>
                 </div>
@@ -1180,22 +1180,22 @@
                 <!-- 5. Server Logger Cog -->
                 <div class="cog-perm-card" id="perm-card-logger">
                     <div class="cog-perm-header">
-                        <strong class="gh-s159">>🛡️ Server Audit Logger</strong>
+                        <strong class="gh-s159">🛡️ Server Audit Logger</strong>
                         <span class="role-badge staff">Security</span>
                     </div>
-                    <p class="gh-s148">>
+                    <p class="gh-s148">
                         Controls access to <code>/log history</code>, <code>/log search</code>, and log exports.
                     </p>
-                    <label class="gh-s149">>Access Level</label>
-                    <select id="perm-level-logger" onchange="handleCogLevelChange('logger')" class="gh-s150">>
+                    <label class="gh-s149">Access Level</label>
+                    <select id="perm-level-logger" onchange="handleCogLevelChange('logger')" class="gh-s150">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('logger', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('logger', {}).get('access_level') == 'roles_only' else "" }}>👥 Moderation Staff (+ Admins)</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('logger', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone</option>
                     </select>
 
                     <div id="perm-roles-wrap-logger" class="perm-roles-wrap {{ 'd-none' if cog_permissions.get('logger', {}).get('access_level') != 'roles_only' else '' }}">
-                        <label class="gh-s149">>Permitted Staff Roles</label>
-                        <div class="chip-container gh-s151" id="perm-chips-logger">>
+                        <label class="gh-s149">Permitted Staff Roles</label>
+                        <div class="chip-container gh-s151" id="perm-chips-logger">
                             {% for rid in cog_permissions.get('logger', {}).get('allowed_roles', []) %}
                             <span class="user-chip" id="perm-chip-logger-{{ rid }}">
                                 Role #{{ rid }}
@@ -1203,11 +1203,11 @@
                             </span>
                             {% endfor %}
                             {% if not cog_permissions.get('logger', {}).get('allowed_roles') %}
-                            <span class="empty-role-hint gh-s152">>None added (Admins only)</span>
+                            <span class="empty-role-hint gh-s152">None added (Admins only)</span>
                             {% endif %}
                         </div>
-                        <div class="gh-s153">>
-                            <select id="perm-select-logger" class="gh-s154">>
+                        <div class="gh-s153">
+                            <select id="perm-select-logger" class="gh-s154">
                                 <option value="">-- Add Mod Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1215,7 +1215,7 @@
                         </div>
                     </div>
 
-                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('logger')">>
+                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('logger')">
                         Save Logger Perms
                     </button>
                 </div>
@@ -1223,21 +1223,21 @@
                 <!-- 6. Settings Cog -->
                 <div class="cog-perm-card" id="perm-card-settings">
                     <div class="cog-perm-header">
-                        <strong class="gh-s160">>⚙️ Server Settings Cog</strong>
+                        <strong class="gh-s160">⚙️ Server Settings Cog</strong>
                         <span class="role-badge admin">Core Admin</span>
                     </div>
-                    <p class="gh-s148">>
+                    <p class="gh-s148">
                         Controls access to prefix commands <code>!settings</code>, <code>!prefix</code>, and module toggles.
                     </p>
-                    <label class="gh-s149">>Access Level</label>
-                    <select id="perm-level-settings" onchange="handleCogLevelChange('settings')" class="gh-s150">>
+                    <label class="gh-s149">Access Level</label>
+                    <select id="perm-level-settings" onchange="handleCogLevelChange('settings')" class="gh-s150">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('settings', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('settings', {}).get('access_level') == 'roles_only' else "" }}>👥 Elevated Managers (+ Admins)</option>
                     </select>
 
                     <div id="perm-roles-wrap-settings" class="perm-roles-wrap {{ 'd-none' if cog_permissions.get('settings', {}).get('access_level') != 'roles_only' else '' }}">
-                        <label class="gh-s149">>Permitted Manager Roles</label>
-                        <div class="chip-container gh-s151" id="perm-chips-settings">>
+                        <label class="gh-s149">Permitted Manager Roles</label>
+                        <div class="chip-container gh-s151" id="perm-chips-settings">
                             {% for rid in cog_permissions.get('settings', {}).get('allowed_roles', []) %}
                             <span class="user-chip" id="perm-chip-settings-{{ rid }}">
                                 Role #{{ rid }}
@@ -1245,11 +1245,11 @@
                             </span>
                             {% endfor %}
                             {% if not cog_permissions.get('settings', {}).get('allowed_roles') %}
-                            <span class="empty-role-hint gh-s152">>None added (Admins only)</span>
+                            <span class="empty-role-hint gh-s152">None added (Admins only)</span>
                             {% endif %}
                         </div>
-                        <div class="gh-s153">>
-                            <select id="perm-select-settings" class="gh-s154">>
+                        <div class="gh-s153">
+                            <select id="perm-select-settings" class="gh-s154">
                                 <option value="">-- Add Manager Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1257,7 +1257,7 @@
                         </div>
                     </div>
 
-                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('settings')">>
+                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('settings')">
                         Save Settings Perms
                     </button>
                 </div>
@@ -1277,7 +1277,7 @@
                 ⟳ Refresh Access Logs
             </button>
         </div>
-        <p class="gh-s123">>
+        <p class="gh-s123">
             Audit log tracking operator authorizations, IP addresses, physical/ARP MAC network identifiers, and permission modifications.
         </p>
 
@@ -1285,11 +1285,11 @@
             <table class="data-table" id="security-logs-table">
                 <thead>
                     <tr>
-                        <th class="gh-s129">>Timestamp</th>
-                        <th class="gh-s161">>User ID</th>
-                        <th class="gh-s128">>Action</th>
-                        <th class="gh-s128">>IP Address</th>
-                        <th class="gh-s162">>Hardware / MAC</th>
+                        <th class="gh-s129">Timestamp</th>
+                        <th class="gh-s161">User ID</th>
+                        <th class="gh-s128">Action</th>
+                        <th class="gh-s128">IP Address</th>
+                        <th class="gh-s162">Hardware / MAC</th>
                         <th>Device & Browser</th>
                         <th>Details</th>
                     </tr>
@@ -1297,7 +1297,7 @@
                 <tbody id="security-logs-tbody">
                     <!-- Populated via AJAX -->
                     <tr>
-                        <td colspan="7" class="gh-s130">>Loading security logs...</td>
+                        <td colspan="7" class="gh-s130">Loading security logs...</td>
                     </tr>
                 </tbody>
             </table>
@@ -1320,11 +1320,11 @@
             {% endif %}
         </div>
         <div class="player-details">
-            <div class="gh-s163">>
+            <div class="gh-s163">
                 <div>
-                    <h3 id="np-music-title" class="gh-s164">>
+                    <h3 id="np-music-title" class="gh-s164">
                         {% if music_state.current and music_state.current.webpage_url %}
-                        <a href="{{ music_state.current.webpage_url }}" target="_blank" class="gh-s165" id="np-music-link">>
+                        <a href="{{ music_state.current.webpage_url }}" target="_blank" class="gh-s165" id="np-music-link">
                             {{ music_state.current.title }}
                         </a>
                         {% elif music_state.current %}
@@ -1336,10 +1336,10 @@
                             {{ music_state.current.source_type.title() if music_state.current else 'Idle' }}
                         </span>
                     </h3>
-                    <p class="gh-s166" id="np-music-requester">>
+                    <p class="gh-s166" id="np-music-requester">
                         {{ "Requested by " + music_state.current.requester if music_state.current else "Idle Voice State" }}
                         {% if music_state.voice_channel %}
-                        • <span class="gh-s167" id="np-music-vc">>🔊 {{ music_state.voice_channel }}</span> (<span id="np-music-listeners">{{ music_state.listeners_count }}</span> listener{{ 's' if music_state.listeners_count != 1 else '' }})
+                        • <span class="gh-s167" id="np-music-vc">🔊 {{ music_state.voice_channel }}</span> (<span id="np-music-listeners">{{ music_state.listeners_count }}</span> listener{{ 's' if music_state.listeners_count != 1 else '' }})
                         {% endif %}
                     </p>
                 </div>
@@ -1367,7 +1367,7 @@
                 <button class="btn-circle" onclick="handleMusicAction('skip')" title="Skip to Next Track" id="btn-music-skip">
                     ⏭
                 </button>
-                <button class="btn-circle gh-s168" onclick="handleMusicAction('stop')" title="Stop and Clear Queue" id="btn-music-stop">>
+                <button class="btn-circle gh-s168" onclick="handleMusicAction('stop')" title="Stop and Clear Queue" id="btn-music-stop">
                     ⏹
                 </button>
                 <button class="btn-circle {{ 'active' if music_state.is_shuffled else '' }}" onclick="handleMusicAction('shuffle')" title="Toggle Shuffle Mode" id="btn-music-shuffle">
@@ -1385,12 +1385,12 @@
             </div>
 
             <!-- Quick Play Bar -->
-            <div class="gh-s122">>
-                <label class="gh-s169">>
+            <div class="gh-s122">
+                <label class="gh-s169">
                     ▶️ Play Audio Stream (YouTube, Spotify, SoundCloud)
                 </label>
-                <div class="gh-s133">>
-                    <input type="text" id="music-dashboard-query" placeholder="Paste link or type song title..." class="gh-s170" onkeydown="if(event.key === 'Enter') handleMusicPlayFromDashboard()">>
+                <div class="gh-s133">
+                    <input type="text" id="music-dashboard-query" placeholder="Paste link or type song title..." class="gh-s170" onkeydown="if(event.key === 'Enter') handleMusicPlayFromDashboard()">
                     <button type="button" class="btn btn-primary" onclick="handleMusicPlayFromDashboard()">
                         Queue
                     </button>
@@ -1398,22 +1398,22 @@
             </div>
 
             <!-- Volume Slider -->
-            <div class="gh-s122">>
-                <label class="gh-s171">>
+            <div class="gh-s122">
+                <label class="gh-s171">
                     <span>Volume Level</span>
                     <span id="vol-display">{{ music_state.volume }}%</span>
                 </label>
                 <input type="range" min="0" max="200" value="{{ music_state.volume }}" id="music-volume-slider" class="gh-s172"
                        oninput="document.getElementById('vol-display').textContent = this.value + '%'"
-                       onchange="handleVolumeChange(this.value)">>
+                       onchange="handleVolumeChange(this.value)">
             </div>
 
             <!-- Looping Mode -->
             <div>
-                <label class="gh-s169">>
+                <label class="gh-s169">
                     🔁 Looping Mode
                 </label>
-                <select id="music-loop-select" onchange="handleLoopChange(this.value)" class="gh-s27">>
+                <select id="music-loop-select" onchange="handleLoopChange(this.value)" class="gh-s27">
                     <option value="off" {{ "selected" if music_state.loop_mode == 'off' else "" }}>Disabled (Off)</option>
                     <option value="single" {{ "selected" if music_state.loop_mode == 'single' else "" }}>Repeat Track (Single)</option>
                     <option value="queue" {{ "selected" if music_state.loop_mode == 'queue' else "" }}>Repeat Entire Queue</option>
@@ -1423,28 +1423,28 @@
 
         <!-- Audio Queue with Remove & Clear -->
         <div class="glass-card">
-            <div class="card-header gh-s173">>
+            <div class="card-header gh-s173">
                 <h3 id="music-queue-header">📜 Audio Queue (<span id="music-queue-count">{{ music_state.queue_length }}</span> Songs)</h3>
                 <button type="button" class="btn btn-secondary btn-sm btn-clear-queue {{ 'd-none' if not music_state.queue else '' }}" onclick="handleClearQueue()" id="btn-clear-queue">
                     Clear Queue
                 </button>
             </div>
-            <div id="music-queue-list" class="gh-s174">>
+            <div id="music-queue-list" class="gh-s174">
                 {% if music_state.queue %}
                 {% for item in music_state.queue %}
-                <div class="setting-item gh-s175" id="queue-item-{{ item.position }}">>
-                    <div class="gh-s176">>
-                        <span class="gh-s177">>{{ item.position }}.</span>
-                        <div class="gh-s178">>
-                            <div class="gh-s179">>
+                <div class="setting-item gh-s175" id="queue-item-{{ item.position }}">
+                    <div class="gh-s176">
+                        <span class="gh-s177">{{ item.position }}.</span>
+                        <div class="gh-s178">
+                            <div class="gh-s179">
                                 {% if item.webpage_url %}
-                                <a href="{{ item.webpage_url }}" target="_blank" class="gh-s180">>{{ item.title }}</a>
+                                <a href="{{ item.webpage_url }}" target="_blank" class="gh-s180">{{ item.title }}</a>
                                 {% else %}
                                 {{ item.title }}
                                 {% endif %}
                                 <span class="source-badge-tag source-{{ item.source_type }}">{{ item.source_type.title() }}</span>
                             </div>
-                            <div class="gh-s98">>
+                            <div class="gh-s98">
                                 {{ item.duration_formatted }} • Req: {{ item.requester }}
                             </div>
                         </div>
@@ -1455,7 +1455,7 @@
                 </div>
                 {% endfor %}
                 {% else %}
-                <div class="gh-s181" id="music-queue-empty">>
+                <div class="gh-s181" id="music-queue-empty">
                     Queue is currently empty. Use the Quick Play bar above or <code>/play</code> in Discord.
                 </div>
                 {% endif %}
@@ -1466,11 +1466,11 @@
     <!-- ========================================== -->
     <!-- Server Playlists Management Section       -->
     <!-- ========================================== -->
-    <div class="glass-card gh-s182">>
-        <div class="card-header gh-s183">>
+    <div class="glass-card gh-s182">
+        <div class="card-header gh-s183">
             <div>
-                <h3 class="gh-s33">>📚 Server Playlists (<span id="music-playlists-count">{{ server_playlists|length if server_playlists else 0 }}</span>)</h3>
-                <p class="gh-s184">>
+                <h3 class="gh-s33">📚 Server Playlists (<span id="music-playlists-count">{{ server_playlists|length if server_playlists else 0 }}</span>)</h3>
+                <p class="gh-s184">
                     Persistent server playlists saved in SQLite. Stream any playlist directly to your voice channel or add and remove tracks.
                 </p>
             </div>
@@ -1479,26 +1479,26 @@
             </button>
         </div>
 
-        <div id="playlists-list-container" class="gh-s185">>
+        <div id="playlists-list-container" class="gh-s185">
             {% if server_playlists %}
             {% for pl in server_playlists %}
-            <div class="playlist-card gh-s186" id="playlist-card-{{ loop.index }}">>
-                <div class="gh-s187">>
+            <div class="playlist-card gh-s186" id="playlist-card-{{ loop.index }}">
+                <div class="gh-s187">
                     <div>
-                        <div class="gh-s36">>
-                            <span class="gh-s188">>🎵</span>
-                            <span class="gh-s189">>{{ pl.name }}</span>
-                            <span class="source-badge-tag gh-s190">>
+                        <div class="gh-s36">
+                            <span class="gh-s188">🎵</span>
+                            <span class="gh-s189">{{ pl.name }}</span>
+                            <span class="source-badge-tag gh-s190">
                                 {{ pl.track_count if pl.track_count is defined else (pl.tracks|length if pl.tracks else 0) }} Tracks
                             </span>
                         </div>
-                        <div class="gh-s191">>
+                        <div class="gh-s191">
                             Created by <strong>{{ pl.created_by_name or 'Admin' }}</strong>
                         </div>
                     </div>
 
                     <!-- Playlist Action Buttons -->
-                    <div class="gh-s192">>
+                    <div class="gh-s192">
                         <button type="button" class="btn btn-sm btn-primary" onclick="handlePlayPlaylist({{ pl.name|tojson }})" title="Stream this playlist to voice channel">
                             ▶️ Play in Voice
                         </button>
@@ -1508,24 +1508,24 @@
                         <button type="button" class="btn btn-sm btn-secondary" onclick="togglePlaylistTracksView('pl-tracks-{{ loop.index }}')" title="Expand / collapse track list">
                             👁️ View Tracks
                         </button>
-                        <button type="button" class="btn btn-sm btn-secondary gh-s193" onclick="handleDeletePlaylist({{ pl.name|tojson }})" title="Delete playlist">>
+                        <button type="button" class="btn btn-sm btn-secondary gh-s193" onclick="handleDeletePlaylist({{ pl.name|tojson }})" title="Delete playlist">
                             🗑️ Delete
                         </button>
                     </div>
                 </div>
 
                 <!-- Accordion Tracks List -->
-                <div id="pl-tracks-{{ loop.index }}" class="gh-s194">>
+                <div id="pl-tracks-{{ loop.index }}" class="gh-s194">
                     {% if pl.tracks %}
-                    <div class="gh-s195">>
+                    <div class="gh-s195">
                         {% for track in pl.tracks %}
-                        <div class="gh-s196">>
-                            <div class="gh-s197">>
-                                <span class="gh-s198">>#{{ track.position or loop.index }}</span>
-                                <div class="gh-s199">>
-                                    <div class="gh-s200">>
+                        <div class="gh-s196">
+                            <div class="gh-s197">
+                                <span class="gh-s198">#{{ track.position or loop.index }}</span>
+                                <div class="gh-s199">
+                                    <div class="gh-s200">
                                         {% if track.url and track.url.startswith('http') %}
-                                        <a href="{{ track.url }}" target="_blank" class="gh-s201">>{{ track.title }}</a>
+                                        <a href="{{ track.url }}" target="_blank" class="gh-s201">{{ track.title }}</a>
                                         {% else %}
                                         {{ track.title }}
                                         {% endif %}
@@ -1540,7 +1540,7 @@
                         {% endfor %}
                     </div>
                     {% else %}
-                    <div class="gh-s202">>
+                    <div class="gh-s202">
                         This playlist has no songs yet. Click <strong>➕ Add Song</strong> above to add some!
                     </div>
                     {% endif %}
@@ -1548,17 +1548,17 @@
             </div>
             {% endfor %}
             {% else %}
-            <div id="playlists-empty-msg" class="gh-s203">>
+            <div id="playlists-empty-msg" class="gh-s203">
                 No server playlists created yet. Click <strong>➕ New Playlist</strong> above or type <code>/playlist create &lt;name&gt;</code> in Discord!
             </div>
             {% endif %}
         </div>
     </div>
     {% else %}
-    <div class="glass-card gh-s204">>
-        <div class="gh-s205">>🎵</div>
+    <div class="glass-card gh-s204">
+        <div class="gh-s205">🎵</div>
         <h3>Music Module Inactive</h3>
-        <p class="gh-s206">>
+        <p class="gh-s206">
             The Music cog is not currently enabled for this guild. You can enable it in the Cogs or Settings tab.
         </p>
     </div>
@@ -1569,32 +1569,32 @@
 <!-- 8. ROLE MANAGER TAB                        -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-roles">
-    <div class="gh-s9">>
+    <div class="gh-s9">
         <div>
-            <h3 class="gh-s10">>Server Roles & Member Manager</h3>
-            <p class="gh-s11">>
+            <h3 class="gh-s10">Server Roles & Member Manager</h3>
+            <p class="gh-s11">
                 Inspect role hierarchies, assign or remove roles from members, and manage the self-service role whitelist.
             </p>
         </div>
-        <div class="gh-s135">>
+        <div class="gh-s135">
             <button class="btn btn-sm btn-secondary" onclick="loadRolesCatalog(); loadMembersList(0);">
                 🔄 Refresh Roles & Members
             </button>
         </div>
     </div>
 
-    <div class="gh-s207">>
+    <div class="gh-s207">
         <!-- Left: Roles Catalog & Allowlist -->
         <div>
             <div class="glass-card">
                 <div class="card-header">
                     <h4>🛡️ Server Role Hierarchy</h4>
-                    <span class="gh-s116">>Sorted by Position</span>
+                    <span class="gh-s116">Sorted by Position</span>
                 </div>
-                <p class="gh-s208">>
+                <p class="gh-s208">
                     Roles outranked by the bot can be managed. Roles marked with ⭐ are allowed on self-service panels.
                 </p>
-                <div class="table-container gh-s209">>
+                <div class="table-container gh-s209">
                     <table class="data-table" id="roles-catalog-table">
                         <thead>
                             <tr>
@@ -1605,7 +1605,7 @@
                             </tr>
                         </thead>
                         <tbody id="roles-catalog-tbody">
-                            <tr><td colspan="4" class="gh-s210">>Loading server roles...</td></tr>
+                            <tr><td colspan="4" class="gh-s210">Loading server roles...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1617,19 +1617,19 @@
             <div class="glass-card">
                 <div class="card-header">
                     <h4>👤 Member Role Inspector</h4>
-                    <span class="gh-s116" id="members-count-badge">>Search Members</span>
+                    <span class="gh-s116" id="members-count-badge">Search Members</span>
                 </div>
 
                 <!-- Member Search Filters -->
-                <div class="gh-s211">>
-                    <input type="text" class="form-input gh-s170" id="member-search-input" placeholder="Search by username, display name, or user ID..." oninput="debounceMemberSearch()">>
-                    <select class="form-select gh-s28" id="member-role-filter" onchange="loadMembersList(0)">>
+                <div class="gh-s211">
+                    <input type="text" class="form-input gh-s170" id="member-search-input" placeholder="Search by username, display name, or user ID..." oninput="debounceMemberSearch()">
+                    <select class="form-select gh-s28" id="member-role-filter" onchange="loadMembersList(0)">
                         <option value="">All Roles</option>
                     </select>
                 </div>
 
                 <!-- Member Selection List -->
-                <div class="table-container gh-s212">>
+                <div class="table-container gh-s212">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -1640,56 +1640,56 @@
                             </tr>
                         </thead>
                         <tbody id="members-list-tbody">
-                            <tr><td colspan="4" class="gh-s210">>Loading members...</td></tr>
+                            <tr><td colspan="4" class="gh-s210">Loading members...</td></tr>
                         </tbody>
                     </table>
                 </div>
 
                 <!-- Active Member Inspector Card -->
-                <div id="member-inspector-card" class="gh-s213">>
-                    <div class="gh-s214">>
-                        <div class="gh-s215">>
-                            <img id="insp-avatar" src="" class="gh-s216">>
+                <div id="member-inspector-card" class="gh-s213">
+                    <div class="gh-s214">
+                        <div class="gh-s215">
+                            <img id="insp-avatar" src="" class="gh-s216">
                             <div>
-                                <h4 id="insp-name" class="gh-s189">>User</h4>
-                                <span id="insp-id" class="gh-s217">>ID</span>
+                                <h4 id="insp-name" class="gh-s189">User</h4>
+                                <span id="insp-id" class="gh-s217">ID</span>
                             </div>
                         </div>
-                        <span id="insp-protection" class="role-badge gh-s218">>Standard Member</span>
+                        <span id="insp-protection" class="role-badge gh-s218">Standard Member</span>
                     </div>
 
                     <!-- Current Roles -->
-                    <div class="gh-s80">>
-                        <label class="form-label gh-s219">>Current Roles:</label>
-                        <div id="insp-current-roles" class="gh-s220">></div>
+                    <div class="gh-s80">
+                        <label class="form-label gh-s219">Current Roles:</label>
+                        <div id="insp-current-roles" class="gh-s220"></div>
                     </div>
 
                     <!-- Role Modification Form -->
-                    <div class="gh-s221">>
+                    <div class="gh-s221">
                         <div>
-                            <label class="form-label gh-s219">>Assign Manageable Role:</label>
+                            <label class="form-label gh-s219">Assign Manageable Role:</label>
                             <select class="form-select" id="insp-assign-role-select">
                                 <option value="">Select Role to Add...</option>
                             </select>
-                            <button type="button" class="btn btn-sm btn-primary gh-s222" onclick="submitRoleChange('assign')">>
+                            <button type="button" class="btn btn-sm btn-primary gh-s222" onclick="submitRoleChange('assign')">
                                 ➕ Assign Role
                             </button>
                         </div>
                         <div>
-                            <label class="form-label gh-s219">>Remove Existing Role:</label>
+                            <label class="form-label gh-s219">Remove Existing Role:</label>
                             <select class="form-select" id="insp-remove-role-select">
                                 <option value="">Select Role to Remove...</option>
                             </select>
-                            <button type="button" class="btn btn-sm btn-danger gh-s222" onclick="submitRoleChange('remove')">>
+                            <button type="button" class="btn btn-sm btn-danger gh-s222" onclick="submitRoleChange('remove')">
                                 ➖ Remove Role
                             </button>
                         </div>
                     </div>
 
                     <!-- Reason & DM Checkbox -->
-                    <div class="gh-s223">>
-                        <input type="text" class="form-input gh-s224" id="insp-reason-input" placeholder="Reason for audit log (optional)...">>
-                        <label class="gh-s225">>
+                    <div class="gh-s223">
+                        <input type="text" class="form-input gh-s224" id="insp-reason-input" placeholder="Reason for audit log (optional)...">
+                        <label class="gh-s225">
                             <input type="checkbox" id="insp-notify-dm" checked>
                             Notify via DM
                         </label>
@@ -1704,14 +1704,14 @@
 <!-- 9. ROLE PANEL BUILDER TAB                  -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-role-panels">
-    <div class="gh-s9">>
+    <div class="gh-s9">
         <div>
-            <h3 class="gh-s10">>Self-Service Role Panel Builder</h3>
-            <p class="gh-s11">>
+            <h3 class="gh-s10">Self-Service Role Panel Builder</h3>
+            <p class="gh-s11">
                 Design embed panels with persistent interactive buttons and reaction roles that survive bot restarts.
             </p>
         </div>
-        <div class="gh-s135">>
+        <div class="gh-s135">
             <button class="btn btn-sm btn-primary" onclick="resetPanelBuilderForm()">
                 ➕ New Role Panel
             </button>
@@ -1721,34 +1721,34 @@
         </div>
     </div>
 
-    <div class="gh-s226">>
+    <div class="gh-s226">
         <!-- Left: Panel Builder Form -->
         <div class="glass-card">
             <div class="card-header">
                 <h4 id="panel-form-title">🎨 Configure Role Panel</h4>
-                <span class="role-badge gh-s219" id="panel-status-pill">>Draft</span>
+                <span class="role-badge gh-s219" id="panel-status-pill">Draft</span>
             </div>
 
             <input type="hidden" id="panel-builder-id" value="">
 
             <div class="form-group">
-                <label class="form-label">Destination Discord Channel <span class="gh-s227">>*</span></label>
+                <label class="form-label">Destination Discord Channel <span class="gh-s227">*</span></label>
                 <select class="form-select" id="panel-channel-select" onchange="onPanelChannelSelectChange(this.value)">
                     {% for ch in text_channels %}
                     <option value="{{ ch.id }}">{{ ch.label if ch.label else '#' ~ ch.name }}</option>
                     {% endfor %}
                     <option value="custom">➕ Enter Custom / Private Channel ID...</option>
                 </select>
-                <div id="panel-custom-channel-container" class="gh-s228">>
+                <div id="panel-custom-channel-container" class="gh-s228">
                     <input type="text" class="form-input" id="panel-custom-channel-input" placeholder="Paste Channel ID (e.g. 123456789012345678)">
                 </div>
-                <small class="gh-s229">>
+                <small class="gh-s229">
                     🔒 <em>Private Channels:</em> Make sure the bot (or the bot's role) has been added to the private channel with <strong>View Channel</strong>, <strong>Send Messages</strong>, and <strong>Embed Links</strong> permissions.
                 </small>
             </div>
 
             <div class="form-group">
-                <label class="form-label">Embed Panel Title <span class="gh-s227">>*</span></label>
+                <label class="form-label">Embed Panel Title <span class="gh-s227">*</span></label>
                 <input type="text" class="form-input" id="panel-title-input" placeholder="e.g. Choose Your Community Roles" oninput="updatePanelLivePreview()">
             </div>
 
@@ -1757,12 +1757,12 @@
                 <textarea class="form-textarea" id="panel-desc-input" rows="3" placeholder="Click the buttons below to assign or remove roles..." oninput="updatePanelLivePreview()"></textarea>
             </div>
 
-            <div class="gh-s230">>
+            <div class="gh-s230">
                 <div class="form-group">
                     <label class="form-label">Embed Accent Color</label>
-                    <div class="gh-s231">>
-                        <input type="color" id="panel-color-picker" value="#5865F2" class="gh-s232" onchange="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();">>
-                        <input type="text" class="form-input gh-s233" id="panel-color-hex" value="#5865F2" oninput="document.getElementById('panel-color-picker').value = this.value; updatePanelLivePreview();">>
+                    <div class="gh-s231">
+                        <input type="color" id="panel-color-picker" value="#5865F2" class="gh-s232" onchange="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();">
+                        <input type="text" class="form-input gh-s233" id="panel-color-hex" value="#5865F2" oninput="document.getElementById('panel-color-picker').value = this.value; updatePanelLivePreview();">
                     </div>
                 </div>
                 <div class="form-group">
@@ -1777,20 +1777,20 @@
             </div>
 
             <!-- Interactive Buttons & Reactions Config -->
-            <div class="gh-s234">>
-                <div class="gh-s235">>
-                    <label class="form-label gh-s236">>Interactive Buttons & Reactions</label>
+            <div class="gh-s234">
+                <div class="gh-s235">
+                    <label class="form-label gh-s236">Interactive Buttons & Reactions</label>
                     <button type="button" class="btn btn-sm btn-secondary" onclick="addPanelItemRow()">
                         ➕ Add Role Button
                     </button>
                 </div>
-                <div id="panel-items-container" class="gh-s237">>
+                <div id="panel-items-container" class="gh-s237">
                     <!-- Dynamic Rows Rendered Here -->
                 </div>
             </div>
 
             <!-- Form Actions -->
-            <div class="gh-s238">>
+            <div class="gh-s238">
                 <button type="button" class="btn btn-secondary" onclick="savePanelDraft()">
                     💾 Save Draft
                 </button>
@@ -1803,10 +1803,10 @@
         <!-- Right: Live Preview & Existing Panels -->
         <div>
             <!-- Discord Embed Preview -->
-            <div class="glass-card gh-s21">>
+            <div class="glass-card gh-s21">
                 <div class="card-header">
                     <h4>👁️ Live Discord Preview</h4>
-                    <span class="gh-s116">>Real-Time Component Mirror</span>
+                    <span class="gh-s116">Real-Time Component Mirror</span>
                 </div>
 
                 <div class="discord-chat-container">
@@ -1815,7 +1815,7 @@
                             {% if bot and bot.user and bot.user.display_avatar %}
                             <img src="{{ bot.user.display_avatar.url }}" alt="{{ bot.user.name }}">
                             {% else %}
-                            <div class="gh-s117">>🤖</div>
+                            <div class="gh-s117">🤖</div>
                             {% endif %}
                         </div>
                         <div>
@@ -1828,15 +1828,15 @@
                     </div>
 
                     <!-- Live Embed Preview -->
-                    <div class="discord-embed-card gh-s239" id="panel-preview-card">>
-                        <div class="gh-s240">>
-                            <div class="gh-s170">>
+                    <div class="discord-embed-card gh-s239" id="panel-preview-card">
+                        <div class="gh-s240">
+                            <div class="gh-s170">
                                 <div class="discord-embed-title" id="panel-preview-title">Choose Your Community Roles</div>
                                 <div class="discord-embed-desc" id="panel-preview-desc">Click the buttons below to assign or remove roles from your profile!</div>
                             </div>
-                            <img id="panel-preview-thumb" src="" class="gh-s241">>
+                            <img id="panel-preview-thumb" src="" class="gh-s241">
                         </div>
-                        <img id="panel-preview-image" src="" class="gh-s242">>
+                        <img id="panel-preview-image" src="" class="gh-s242">
                         <div class="discord-btn-row" id="panel-preview-buttons">
                             <!-- Live Preview Buttons Rendered Here -->
                         </div>
@@ -1848,10 +1848,10 @@
             <div class="glass-card">
                 <div class="card-header">
                     <h4>📋 Server Role Panels</h4>
-                    <span class="gh-s116" id="panel-count-label">>0 Panels</span>
+                    <span class="gh-s116" id="panel-count-label">0 Panels</span>
                 </div>
-                <div id="existing-panels-container" class="gh-s243">>
-                    <div class="gh-s244">>Loading panels...</div>
+                <div id="existing-panels-container" class="gh-s243">
+                    <div class="gh-s244">Loading panels...</div>
                 </div>
             </div>
         </div>
@@ -1862,48 +1862,48 @@
 <!-- 10. MODERATION CENTER TAB                  -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-moderation">
-    <div class="gh-s9">>
+    <div class="gh-s9">
         <div>
-            <h3 class="gh-s10">>Server Moderation Center</h3>
-            <p class="gh-s11">>
+            <h3 class="gh-s10">Server Moderation Center</h3>
+            <p class="gh-s11">
                 Execute timeouts, kicks, permanent bans, durable temporary bans, and unbans with hierarchy protection.
             </p>
         </div>
         <div>
-            <span class="role-badge {{ 'admin' if not is_emergency_locked else 'leave' }} gh-s245">>
+            <span class="role-badge {{ 'admin' if not is_emergency_locked else 'leave' }} gh-s245">
                 {{ '🟢 Moderation Engine Active' if not is_emergency_locked else '🚨 Emergency Circuit Breaker Locked' }}
             </span>
         </div>
     </div>
 
-    <div class="gh-s246">>
+    <div class="gh-s246">
         <!-- Left: Moderation Action Form -->
         <div class="glass-card">
             <div class="card-header">
                 <h4>⚡ Execute Moderation Action</h4>
-                <span class="gh-s116">>Server-Validated</span>
+                <span class="gh-s116">Server-Validated</span>
             </div>
 
             <!-- Target Selection -->
             <div class="form-group">
-                <label class="form-label">Target Member or User ID <span class="gh-s227">>*</span></label>
-                <div class="gh-s133">>
-                    <input type="text" class="form-input gh-s170" id="mod-target-input" placeholder="Enter username or 18-digit Discord ID..." oninput="debounceTargetResolve()">>
+                <label class="form-label">Target Member or User ID <span class="gh-s227">*</span></label>
+                <div class="gh-s133">
+                    <input type="text" class="form-input gh-s170" id="mod-target-input" placeholder="Enter username or 18-digit Discord ID..." oninput="debounceTargetResolve()">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="resolveTargetMember()">
                         🔍 Inspect
                     </button>
                 </div>
-                <div id="target-resolved-card" class="gh-s247">>
-                    <img id="target-res-avatar" src="" class="gh-s248">>
+                <div id="target-resolved-card" class="gh-s247">
+                    <img id="target-res-avatar" src="" class="gh-s248">
                     <div>
-                        <div id="target-res-name" class="gh-s249">>User</div>
-                        <div id="target-res-info" class="gh-s116">>ID</div>
+                        <div id="target-res-name" class="gh-s249">User</div>
+                        <div id="target-res-info" class="gh-s116">ID</div>
                     </div>
                 </div>
             </div>
 
             <!-- Action Sub-tabs -->
-            <div class="tab-bar gh-s250">>
+            <div class="tab-bar gh-s250">
                 <button type="button" class="tab-btn active" onclick="switchModAction('timeout', this)" id="btn-mod-tab-timeout">
                     ⏱️ Timeout
                 </button>
@@ -1923,12 +1923,12 @@
                 <!-- Duration Group (for timeout & tempban) -->
                 <div class="form-group" id="mod-duration-group">
                     <label class="form-label">Action Duration</label>
-                    <div class="gh-s251" id="duration-presets-container">>
+                    <div class="gh-s251" id="duration-presets-container">
                         <!-- Preset Pills -->
                     </div>
-                    <div class="gh-s231">>
-                        <input type="number" class="form-input gh-s170" id="mod-custom-duration-num" placeholder="Duration amount..." min="1">>
-                        <select class="form-select gh-s161" id="mod-custom-duration-unit">>
+                    <div class="gh-s231">
+                        <input type="number" class="form-input gh-s170" id="mod-custom-duration-num" placeholder="Duration amount..." min="1">
+                        <select class="form-select gh-s161" id="mod-custom-duration-unit">
                             <option value="60">Minutes</option>
                             <option value="3600">Hours</option>
                             <option value="86400">Days</option>
@@ -1937,7 +1937,7 @@
                 </div>
 
                 <!-- Message History Deletion (for ban & tempban) -->
-                <div class="form-group gh-s95" id="mod-msg-delete-group">>
+                <div class="form-group gh-s95" id="mod-msg-delete-group">
                     <label class="form-label">Delete Message History</label>
                     <select class="form-select" id="mod-delete-days-select">
                         <option value="0">Don't delete any messages</option>
@@ -1954,18 +1954,18 @@
 
                 <!-- DM Notification -->
                 <div class="form-group">
-                    <label class="gh-s252">>
+                    <label class="gh-s252">
                         <input type="checkbox" id="mod-notify-dm-toggle" checked onchange="toggleCustomDmField()">
                         Send DM notice to target user before executing
                     </label>
-                    <div id="mod-custom-dm-container" class="gh-s253">>
+                    <div id="mod-custom-dm-container" class="gh-s253">
                         <textarea class="form-textarea" id="mod-custom-dm-input" rows="2" placeholder="Custom DM message (leave blank to use configured message template)..."></textarea>
                     </div>
                 </div>
 
                 <!-- Submit Button -->
-                <div class="gh-s182">>
-                    <button type="button" class="btn btn-primary gh-s254" id="btn-submit-mod-action" onclick="promptConfirmModAction()">>
+                <div class="gh-s182">
+                    <button type="button" class="btn btn-primary gh-s254" id="btn-submit-mod-action" onclick="promptConfirmModAction()">
                         Execute Action
                     </button>
                 </div>
@@ -1981,10 +1981,10 @@
                         🔄 Refresh Bans
                     </button>
                 </div>
-                <div class="gh-s80">>
+                <div class="gh-s80">
                     <input type="text" class="form-input" id="ban-search-input" placeholder="Search banned users by name or ID..." oninput="filterBanList()">
                 </div>
-                <div class="table-container gh-s255">>
+                <div class="table-container gh-s255">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -1994,7 +1994,7 @@
                             </tr>
                         </thead>
                         <tbody id="ban-list-tbody">
-                            <tr><td colspan="3" class="gh-s210">>Loading banned users...</td></tr>
+                            <tr><td colspan="3" class="gh-s210">Loading banned users...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -2007,64 +2007,64 @@
 <!-- 11. BULK MODERATION TAB                    -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-bulk-mod">
-    <div class="gh-s9">>
+    <div class="gh-s9">
         <div>
-            <h3 class="gh-s10">>Bulk Moderation & Filter Engine</h3>
-            <p class="gh-s11">>
+            <h3 class="gh-s10">Bulk Moderation & Filter Engine</h3>
+            <p class="gh-s11">
                 Safely filter, preview, and apply bulk role changes or moderation actions with bounded rate limiting and emergency cancellation.
             </p>
         </div>
         <div>
-            <span class="role-badge staff gh-s245">>
+            <span class="role-badge staff gh-s245">
                 Bounded Max: 250 Targets
             </span>
         </div>
     </div>
 
     <!-- Active Job Live Progress (If running) -->
-    <div id="bulk-active-job-banner" class="gh-s256">>
-        <div class="gh-s235">>
+    <div id="bulk-active-job-banner" class="gh-s256">
+        <div class="gh-s235">
             <div>
-                <h4 class="gh-s257" id="bulk-job-title">>Executing Bulk Operation...</h4>
-                <div class="gh-s140" id="bulk-job-meta">>Job ID: —</div>
+                <h4 class="gh-s257" id="bulk-job-title">Executing Bulk Operation...</h4>
+                <div class="gh-s140" id="bulk-job-meta">Job ID: —</div>
             </div>
             <button class="btn btn-sm btn-danger" onclick="cancelActiveBulkJob()" id="btn-cancel-bulk-job">
                 🛑 Cancel Job
             </button>
         </div>
 
-        <div class="gh-s258">>
-            <div id="bulk-job-progress-bar" class="gh-s259">></div>
+        <div class="gh-s258">
+            <div id="bulk-job-progress-bar" class="gh-s259"></div>
         </div>
 
-        <div class="gh-s260">>
+        <div class="gh-s260">
             <span id="bulk-job-counters">Processed 0 / 0</span>
-            <span id="bulk-job-stats" class="gh-s261">>Success: 0 | Failed: 0 | Skipped: 0</span>
+            <span id="bulk-job-stats" class="gh-s261">Success: 0 | Failed: 0 | Skipped: 0</span>
         </div>
     </div>
 
-    <div class="gh-s246">>
+    <div class="gh-s246">
         <!-- Left: Filter Builder -->
         <div class="glass-card">
             <div class="card-header">
                 <h4>🎯 Target Filter Builder</h4>
-                <span class="gh-s116">>Live Snapshot</span>
+                <span class="gh-s116">Live Snapshot</span>
             </div>
 
             <!-- Role Inclusions / Exclusions -->
             <div class="form-group">
                 <label class="form-label">Members Who Possess Role(s):</label>
-                <select class="form-select gh-s262" id="bulk-filter-has-roles" multiple onchange="toggleBulkActionOptions()">>
+                <select class="form-select gh-s262" id="bulk-filter-has-roles" multiple onchange="toggleBulkActionOptions()">
                     {% for r in roles %}
                     <option value="{{ r.id }}">@{{ r.name }}</option>
                     {% endfor %}
                 </select>
-                <span class="gh-s116">>Hold Ctrl/Cmd to select multiple roles</span>
+                <span class="gh-s116">Hold Ctrl/Cmd to select multiple roles</span>
             </div>
 
             <div class="form-group">
                 <label class="form-label">Members Who Lack Role(s):</label>
-                <select class="form-select gh-s262" id="bulk-filter-lacks-roles" multiple>>
+                <select class="form-select gh-s262" id="bulk-filter-lacks-roles" multiple>
                     {% for r in roles %}
                     <option value="{{ r.id }}">@{{ r.name }}</option>
                     {% endfor %}
@@ -2072,7 +2072,7 @@
             </div>
 
             <!-- Join Date Filters -->
-            <div class="gh-s230">>
+            <div class="gh-s230">
                 <div class="form-group">
                     <label class="form-label">Joined Before:</label>
                     <input type="datetime-local" class="form-input" id="bulk-filter-joined-before">
@@ -2084,7 +2084,7 @@
             </div>
 
             <!-- Account Age & Bot status -->
-            <div class="gh-s230">>
+            <div class="gh-s230">
                 <div class="form-group">
                     <label class="form-label">Discord Account Created Before:</label>
                     <input type="datetime-local" class="form-input" id="bulk-filter-account-before">
@@ -2106,8 +2106,8 @@
             </div>
 
             <!-- Preview Button -->
-            <div class="gh-s263">>
-                <button type="button" class="btn btn-primary gh-s27" onclick="runBulkPreview()">>
+            <div class="gh-s263">
+                <button type="button" class="btn btn-primary gh-s27" onclick="runBulkPreview()">
                     🔍 Calculate & Preview Matching Targets
                 </button>
             </div>
@@ -2121,12 +2121,12 @@
                     <span id="bulk-preview-count-pill" class="role-badge admin">0 Matches</span>
                 </div>
 
-                <div id="bulk-preview-summary" class="gh-s264">>
+                <div id="bulk-preview-summary" class="gh-s264">
                     Click "Calculate & Preview Matching Targets" on the left to inspect matches.
                 </div>
 
                 <!-- Preview Sample Members -->
-                <div class="table-container gh-s265">>
+                <div class="table-container gh-s265">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -2136,14 +2136,14 @@
                             </tr>
                         </thead>
                         <tbody id="bulk-preview-tbody">
-                            <tr><td colspan="3" class="gh-s266">>No preview calculated yet.</td></tr>
+                            <tr><td colspan="3" class="gh-s266">No preview calculated yet.</td></tr>
                         </tbody>
                     </table>
                 </div>
 
                 <!-- Action Execution Selector -->
-                <div class="gh-s267">>
-                    <h5 class="gh-s268">>Configure Bulk Action</h5>
+                <div class="gh-s267">
+                    <h5 class="gh-s268">Configure Bulk Action</h5>
 
                     <div class="form-group">
                         <label class="form-label">Action to Apply</label>
@@ -2164,10 +2164,10 @@
                             <option value="{{ r.id }}">@{{ r.name }}</option>
                             {% endfor %}
                         </select>
-                        <div id="bulk-role-sync-hint" class="gh-s269">></div>
+                        <div id="bulk-role-sync-hint" class="gh-s269"></div>
                     </div>
 
-                    <div class="form-group gh-s95" id="bulk-duration-group">>
+                    <div class="form-group gh-s95" id="bulk-duration-group">
                         <label class="form-label">Timeout Duration (Minutes)</label>
                         <input type="number" class="form-input" id="bulk-duration-input" value="10" min="1" max="40320">
                     </div>
@@ -2178,15 +2178,15 @@
                     </div>
 
                     <!-- Safety Confirmation Phrase for Kick/Ban -->
-                    <div class="form-group gh-s270" id="bulk-confirm-phrase-group">>
-                        <label class="form-label gh-s271">>High-Impact Confirmation Required:</label>
-                        <p class="gh-s272">>
-                            To prevent accidental mass moderation, type <strong id="bulk-expected-phrase" class="gh-s7">>CONFIRM KICK</strong> below:
+                    <div class="form-group gh-s270" id="bulk-confirm-phrase-group">
+                        <label class="form-label gh-s271">High-Impact Confirmation Required:</label>
+                        <p class="gh-s272">
+                            To prevent accidental mass moderation, type <strong id="bulk-expected-phrase" class="gh-s7">CONFIRM KICK</strong> below:
                         </p>
                         <input type="text" class="form-input" id="bulk-confirm-phrase-input" placeholder="Type confirmation phrase here...">
                     </div>
 
-                    <button type="button" class="btn btn-danger gh-s254" id="btn-launch-bulk-job" onclick="launchBulkJob()">>
+                    <button type="button" class="btn btn-danger gh-s254" id="btn-launch-bulk-job" onclick="launchBulkJob()">
                         🚀 Execute Bulk Job
                     </button>
                 </div>
@@ -2199,14 +2199,14 @@
 <!-- 12. MODERATION AUDIT LOGS TAB              -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-mod-audit">
-    <div class="gh-s9">>
+    <div class="gh-s9">
         <div>
-            <h3 class="gh-s10">>Moderation & Role Management Audit</h3>
-            <p class="gh-s11">>
+            <h3 class="gh-s10">Moderation & Role Management Audit</h3>
+            <p class="gh-s11">
                 Immutable records of all role changes, timeouts, kicks, bans, temp-bans, and bulk operations.
             </p>
         </div>
-        <div class="gh-s135">>
+        <div class="gh-s135">
             <button class="btn btn-sm btn-secondary" onclick="loadModAuditLogs(0)">
                 🔄 Refresh Audit Logs
             </button>
@@ -2214,12 +2214,12 @@
     </div>
 
     <!-- Filters Bar -->
-    <div class="glass-card gh-s273">>
-        <div class="gh-s274">>
-            <div class="gh-s25">>
+    <div class="glass-card gh-s273">
+        <div class="gh-s274">
+            <div class="gh-s25">
                 <input type="text" class="form-input" id="mod-audit-search" placeholder="Search by target user, actor, or reason..." oninput="debounceModAuditSearch()">
             </div>
-            <div class="gh-s275">>
+            <div class="gh-s275">
                 <select class="form-select" id="mod-audit-type-filter" onchange="loadModAuditLogs(0)">
                     <option value="all">All Action Types</option>
                     <option value="TIMEOUT">TIMEOUT</option>
@@ -2255,15 +2255,15 @@
                     </tr>
                 </thead>
                 <tbody id="mod-audit-tbody">
-                    <tr><td colspan="7" class="gh-s276">>Loading moderation audit logs...</td></tr>
+                    <tr><td colspan="7" class="gh-s276">Loading moderation audit logs...</td></tr>
                 </tbody>
             </table>
         </div>
 
         <!-- Pagination -->
-        <div class="gh-s277">>
-            <span class="gh-s107" id="mod-audit-pagination-info">>Showing 0 of 0</span>
-            <div class="gh-s133">>
+        <div class="gh-s277">
+            <span class="gh-s107" id="mod-audit-pagination-info">Showing 0 of 0</span>
+            <div class="gh-s133">
                 <button class="btn btn-sm btn-secondary" id="btn-mod-audit-prev" onclick="prevModAuditPage()" disabled>Previous</button>
                 <button class="btn btn-sm btn-secondary" id="btn-mod-audit-next" onclick="nextModAuditPage()" disabled>Next</button>
             </div>
@@ -2275,9 +2275,9 @@
 <!-- 13. MOD CONFIG & CIRCUIT BREAKER TAB       -->
 <!-- ========================================== -->
 <div class="tab-content" id="tab-mod-config">
-    <div class="gh-s122">>
-        <h3 class="gh-s10">>Moderation Configuration & Safety Controls</h3>
-        <p class="gh-s11">>
+    <div class="gh-s122">
+        <h3 class="gh-s10">Moderation Configuration & Safety Controls</h3>
+        <p class="gh-s11">
             Manage emergency circuit breaker locks, dashboard action capabilities, and customized DM notification templates.
         </p>
     </div>
@@ -2285,36 +2285,36 @@
     <!-- Circuit Breaker Emergency Card -->
     <div class="glass-card mb-24 {{ 'card-emergency-active' if is_emergency_locked else 'card-emergency-normal' }}">
         <div class="card-header">
-            <div class="gh-s32">>
-                <span class="gh-s106">>{{ '🚨' if is_emergency_locked else '🛡️' }}</span>
+            <div class="gh-s32">
+                <span class="gh-s106">{{ '🚨' if is_emergency_locked else '🛡️' }}</span>
                 <div>
                     <h4 class="{{ 'text-emergency-danger' if is_emergency_locked else 'text-emergency-normal' }}">Global Emergency Circuit Breaker</h4>
-                    <span class="gh-s107">>Immediate Server-Wide Protection</span>
+                    <span class="gh-s107">Immediate Server-Wide Protection</span>
                 </div>
             </div>
             <span class="role-badge {{ 'leave' if is_emergency_locked else 'join' }}">
                 {{ 'CIRCUIT BREAKER: LOCKED' if is_emergency_locked else 'CIRCUIT BREAKER: OPERATIONAL' }}
             </span>
         </div>
-        <p class="gh-s123">>
+        <p class="gh-s123">
             When locked, all destructive moderation operations (kicks, bans, timeouts, role changes) and bulk jobs are immediately rejected by the backend server.
         </p>
-        <div class="gh-s223">>
-            <input type="text" class="form-input gh-s170" id="emergency-reason-input" placeholder="Reason for toggling emergency circuit breaker...">>
+        <div class="gh-s223">
+            <input type="text" class="form-input gh-s170" id="emergency-reason-input" placeholder="Reason for toggling emergency circuit breaker...">
             <button class="btn {{ 'btn-success' if is_emergency_locked else 'btn-danger' }}" onclick="toggleEmergencyCircuitBreaker()">
                 {{ 'Disarm Circuit Breaker' if is_emergency_locked else '🚨 Activate Emergency Stop' }}
             </button>
         </div>
     </div>
 
-    <div class="gh-s278">>
+    <div class="gh-s278">
         <!-- Left: Action Capabilities Matrix -->
         <div class="glass-card">
             <div class="card-header">
                 <h4>🔐 Action Capability Matrix</h4>
-                <span class="gh-s116">>Per Dashboard Role</span>
+                <span class="gh-s116">Per Dashboard Role</span>
             </div>
-            <p class="gh-s208">>
+            <p class="gh-s208">
                 Define which dashboard roles have permission to execute specific moderation actions.
             </p>
 
@@ -2387,7 +2387,7 @@
                 </table>
             </div>
 
-            <div class="gh-s279">>
+            <div class="gh-s279">
                 <button type="button" class="btn btn-primary btn-sm" onclick="savePermissionsMatrix()">
                     💾 Save Permissions Matrix
                 </button>
@@ -2398,7 +2398,7 @@
         <div class="glass-card">
             <div class="card-header">
                 <h4>💬 DM Notification Templates</h4>
-                <span class="gh-s116">>Custom Placeholders</span>
+                <span class="gh-s116">Custom Placeholders</span>
             </div>
 
             <div class="form-group">
@@ -2419,12 +2419,12 @@
                 <textarea class="form-textarea" id="template-text-editor" rows="4"></textarea>
             </div>
 
-            <div class="gh-s280">>
+            <div class="gh-s280">
                 Supported Placeholders: <code>{user}</code>, <code>{server}</code>, <code>{role}</code>, <code>{reason}</code>, <code>{duration}</code>, <code>{action}</code>
             </div>
 
-            <div class="gh-s173">>
-                <label class="gh-s281">>
+            <div class="gh-s173">
+                <label class="gh-s281">
                     <input type="checkbox" id="template-enabled-toggle" checked>
                     Enable this notification
                 </label>
@@ -2512,7 +2512,7 @@
                 <textarea id="fb-description" class="form-control" rows="2" placeholder="Brief explanation or rules displayed on the public Discord panel..."></textarea>
             </div>
 
-            <div class="gh-s282">>
+            <div class="gh-s282">
                 <div>
                     <label class="form-label">
                         Destination Channel <span class="required-star">*</span>
@@ -2523,7 +2523,7 @@
                         <option value="{{ ch.id }}">#{{ ch.name }}</option>
                         {% endfor %}
                     </select>
-                    <small class="text-muted gh-s219">>Where new submissions are delivered.</small>
+                    <small class="text-muted gh-s219">Where new submissions are delivered.</small>
                 </div>
                 <div>
                     <label class="form-label">
@@ -2535,21 +2535,21 @@
                         <option value="{{ ch.id }}">#{{ ch.name }}</option>
                         {% endfor %}
                     </select>
-                    <small class="text-muted gh-s219">>Where the 'Fill Form' button is published.</small>
+                    <small class="text-muted gh-s219">Where the 'Fill Form' button is published.</small>
                 </div>
             </div>
 
             <!-- Review System Toggle & Role -->
-            <div class="gh-s283">>
-                <label class="gh-s284">>
+            <div class="gh-s283">
+                <label class="gh-s284">
                     <input type="checkbox" id="fb-review-toggle" onchange="toggleReviewRoleVisibility()">
                     Enable Review & Approval System
                 </label>
-                <p class="gh-s285">>
+                <p class="gh-s285">
                     When enabled, submissions require staff approval/rejection with action buttons, DM alerts, and optional auto-role granting.
                 </p>
-                <div id="fb-approved-role-box" class="gh-s286">>
-                    <label class="form-label gh-s287">>
+                <div id="fb-approved-role-box" class="gh-s286">
+                    <label class="form-label gh-s287">
                         Role Granted on Approval (Optional):
                     </label>
                     <select id="fb-approved-role" class="form-control">
@@ -2560,49 +2560,49 @@
                         {% endif %}
                         {% endfor %}
                     </select>
-                    <small class="gh-s288">>Must be below the bot's highest role and cannot possess Admin/Manage Server permissions.</small>
+                    <small class="gh-s288">Must be below the bot's highest role and cannot possess Admin/Manage Server permissions.</small>
                 </div>
             </div>
 
             <!-- Submissions Limits & Cooldown -->
-            <div class="gh-s282">>
+            <div class="gh-s282">
                 <div>
                     <label class="form-label">
                         Max Submissions per User
                     </label>
                     <input type="number" id="fb-max-subs" class="form-control" min="0" value="0" placeholder="0 = Unlimited">
-                    <small class="text-muted gh-s219">>Set to 1 for one-time applications.</small>
+                    <small class="text-muted gh-s219">Set to 1 for one-time applications.</small>
                 </div>
                 <div>
                     <label class="form-label">
                         User Cooldown (Seconds)
                     </label>
                     <input type="number" id="fb-cooldown" class="form-control" min="0" value="60" placeholder="60">
-                    <small class="text-muted gh-s219">>Prevents repeated rapid spam clicks.</small>
+                    <small class="text-muted gh-s219">Prevents repeated rapid spam clicks.</small>
                 </div>
             </div>
 
             <!-- Schedule Section -->
-            <div class="gh-s289">>
-                <div class="gh-s290">>
+            <div class="gh-s289">
+                <div class="gh-s290">
                     ⏱️ Timing & Schedule (Optional)
                 </div>
-                <div class="gh-s230">>
+                <div class="gh-s230">
                     <div>
-                        <label class="form-label gh-s291">>
+                        <label class="form-label gh-s291">
                             Opens At (Local Date/Time):
                         </label>
                         <input type="datetime-local" id="fb-opens-at" class="form-control">
                     </div>
                     <div>
-                        <label class="form-label gh-s291">>
+                        <label class="form-label gh-s291">
                             Closes At (Local Date/Time):
                         </label>
                         <input type="datetime-local" id="fb-closes-at" class="form-control">
                     </div>
                 </div>
                 <div class="d-flex items-center gap-2 mt-2">
-                    <span class="gh-s292">>Quick Duration Helper:</span>
+                    <span class="gh-s292">Quick Duration Helper:</span>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDuration(3600)">1h</button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDuration(18000)">5h</button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDuration(86400)">24h</button>
@@ -2623,7 +2623,7 @@
 <!-- 2. QUESTIONS BUILDER DRAWER / MODAL        -->
 <!-- ========================================== -->
 <div id="modal-manage-questions" class="modal-backdrop">
-    <div class="modal-box modal-box-lg gh-s293">>
+    <div class="modal-box modal-box-lg gh-s293">
         <div class="modal-header">
             <div>
                 <h3 id="mq-modal-title" class="modal-title">Manage Form Questions</h3>
@@ -2635,42 +2635,42 @@
         <input type="hidden" id="mq-form-id" value="">
 
         <!-- Questions List Container -->
-        <div id="mq-questions-list" class="questions-list-container gh-s170">>
+        <div id="mq-questions-list" class="questions-list-container gh-s170">
             <!-- Rendered dynamically -->
         </div>
 
         <!-- Add Question Sub-Panel -->
         <div class="add-question-box">
-            <h4 class="font-bold mb-3 text-main gh-s294">>➕ Add New Question</h4>
-            <div class="gh-s295">>
+            <h4 class="font-bold mb-3 text-main gh-s294">➕ Add New Question</h4>
+            <div class="gh-s295">
                 <div>
-                    <label class="form-label gh-s296">>Question Title / Label (Max 45 chars):</label>
+                    <label class="form-label gh-s296">Question Title / Label (Max 45 chars):</label>
                     <input type="text" id="mq-new-label" class="form-control" placeholder="e.g. Why do you want to join our team?" maxlength="45">
                 </div>
                 <div>
-                    <label class="form-label gh-s296">>Field Style:</label>
+                    <label class="form-label gh-s296">Field Style:</label>
                     <select id="mq-new-style" class="form-control">
                         <option value="short">Short Single-Line</option>
                         <option value="paragraph">Paragraph Multi-Line</option>
                     </select>
                 </div>
             </div>
-            <div class="gh-s297">>
+            <div class="gh-s297">
                 <div>
-                    <label class="form-label gh-s296">>Placeholder Hint (Max 100 chars):</label>
+                    <label class="form-label gh-s296">Placeholder Hint (Max 100 chars):</label>
                     <input type="text" id="mq-new-placeholder" class="form-control" placeholder="Optional helper text..." maxlength="100">
                 </div>
                 <div>
-                    <label class="form-label gh-s296">>Min Length:</label>
+                    <label class="form-label gh-s296">Min Length:</label>
                     <input type="number" id="mq-new-min" class="form-control" min="0" max="1000" value="0">
                 </div>
                 <div>
-                    <label class="form-label gh-s296">>Max Length (≤1000):</label>
+                    <label class="form-label gh-s296">Max Length (≤1000):</label>
                     <input type="number" id="mq-new-max" class="form-control" min="1" max="1000" value="1000">
                 </div>
             </div>
             <div class="d-flex justify-between items-center">
-                <label class="gh-s298">>
+                <label class="gh-s298">
                     <input type="checkbox" id="mq-new-required" checked>
                     Mandatory / Required Field
                 </label>
@@ -2686,7 +2686,7 @@
 <!-- 3. SUBMISSIONS VIEWER & EXPORT DRAWER      -->
 <!-- ========================================== -->
 <div id="modal-manage-submissions" class="modal-backdrop">
-    <div class="modal-box modal-box-xl gh-s293">>
+    <div class="modal-box modal-box-xl gh-s293">
         <div class="modal-header">
             <div>
                 <h3 id="ms-modal-title" class="modal-title">Form Submissions</h3>
@@ -2714,21 +2714,21 @@
                 <button class="btn btn-sm btn-secondary" onclick="setSubmissionFilter('rejected', this)" id="sub-filter-rejected">Rejected (0)</button>
             </div>
             <div class="submissions-search-wrapper">
-                <input type="text" id="ms-search-input" class="form-control gh-s299" placeholder="Search by user or ID..." oninput="renderFilteredSubmissionsTable()">>
+                <input type="text" id="ms-search-input" class="form-control gh-s299" placeholder="Search by user or ID..." oninput="renderFilteredSubmissionsTable()">
             </div>
         </div>
 
         <!-- Submissions Table Container -->
-        <div class="submissions-table-scroll gh-s170">>
-            <table class="table gh-s27">>
+        <div class="submissions-table-scroll gh-s170">
+            <table class="table gh-s27">
                 <thead>
                     <tr>
-                        <th class="gh-s300">>ID</th>
+                        <th class="gh-s300">ID</th>
                         <th>Submitter</th>
-                        <th class="gh-s128">>Submitted At</th>
-                        <th class="gh-s301">>Status</th>
+                        <th class="gh-s128">Submitted At</th>
+                        <th class="gh-s301">Status</th>
                         <th>Answers Summary</th>
-                        <th class="gh-s302">>Actions</th>
+                        <th class="gh-s302">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="ms-table-body">
@@ -2742,7 +2742,7 @@
 <!-- ========================================== -->
 <!-- 4. SUBMISSION DETAILS MODAL                -->
 <!-- ========================================== -->
-<div id="modal-submission-details" class="modal-backdrop gh-s303">>
+<div id="modal-submission-details" class="modal-backdrop gh-s303">
     <div class="modal-box modal-box-lg">
         <div class="modal-header">
             <h3 id="sd-modal-title" class="modal-title">Submission Details</h3>
@@ -2757,11 +2757,11 @@
             <!-- Populated dynamically with question label and answer -->
         </div>
 
-        <div id="sd-review-info-box" class="gh-s304">>
+        <div id="sd-review-info-box" class="gh-s304">
             <!-- Populated dynamically with reviewer note -->
         </div>
 
-        <div class="modal-footer gh-s305">>
+        <div class="modal-footer gh-s305">
             <div id="sd-action-buttons" class="d-flex gap-2">
                 <!-- Approve, Reject, DM buttons -->
             </div>
@@ -2773,7 +2773,7 @@
 <!-- ========================================== -->
 <!-- 5. REVIEW ACTION (APPROVE/REJECT/DM) MODAL -->
 <!-- ========================================== -->
-<div id="modal-review-action" class="modal-backdrop gh-s306">>
+<div id="modal-review-action" class="modal-backdrop gh-s306">
     <div class="modal-box modal-box-sm">
         <h4 id="ra-modal-title" class="modal-title mb-2">Review Action</h4>
         <p id="ra-modal-desc" class="modal-subtitle mb-3"></p>
@@ -2783,7 +2783,7 @@
         <input type="hidden" id="ra-action" value="">
 
         <div class="form-group mb-4">
-            <label id="ra-input-label" class="form-label gh-s245">>Note</label>
+            <label id="ra-input-label" class="form-label gh-s245">Note</label>
             <textarea id="ra-input-text" class="form-control" rows="4" placeholder="Enter note..."></textarea>
         </div>
 
@@ -2797,16 +2797,16 @@
 <!-- ========================================== -->
 <!-- CONFIRMATION MODAL COMPONENT               -->
 <!-- ========================================== -->
-<div id="mod-confirm-modal" onclick="if(event.target === this) closeConfirmModal()" class="gh-s307">>
-    <div class="gh-s308">>
-        <h4 class="gh-s309" id="modal-confirm-title">>Confirm Destructive Action</h4>
-        <p class="gh-s310" id="modal-confirm-desc">>Are you sure you want to proceed?</p>
+<div id="mod-confirm-modal" onclick="if(event.target === this) closeConfirmModal()" class="gh-s307">
+    <div class="gh-s308">
+        <h4 class="gh-s309" id="modal-confirm-title">Confirm Destructive Action</h4>
+        <p class="gh-s310" id="modal-confirm-desc">Are you sure you want to proceed?</p>
 
-        <div class="gh-s311" id="modal-confirm-details">>
+        <div class="gh-s311" id="modal-confirm-details">
             <!-- Populated dynamically -->
         </div>
 
-        <div class="gh-s312">>
+        <div class="gh-s312">
             <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
             <button class="btn btn-danger" id="modal-confirm-btn" onclick="executeConfirmedModAction()">Confirm & Execute</button>
         </div>

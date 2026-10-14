@@ -978,7 +978,7 @@
 .gh-s20 { font-size: 13px !important; color: var(--text-dim) !important; padding: 8px !important; }
 .gh-s21 { margin-bottom: 24px !important; }
 .gh-s22 { font-size: 13px !important; color: var(--text-muted) !important; margin-bottom: 20px !important; }
-.gh-s23 { align-items: start !important; gap: 24px !important; }
+.gh-s23 { display: grid !important; grid-template-columns: 1.15fr 0.85fr !important; align-items: start !important; gap: 24px !important; }
 .gh-s24 { display: flex !important; gap: 12px !important; margin-bottom: 14px !important; flex-wrap: wrap !important; }
 .gh-s25 { flex: 1 !important; min-width: 200px !important; }
 .gh-s26 { font-size: 12px !important; font-weight: 600 !important; color: var(--text-dim) !important; display: block !important; margin-bottom: 6px !important; }
@@ -1268,3 +1268,23 @@
 .gh-s310 { font-size: 13px !important; color: var(--text-muted) !important; margin-bottom: 18px !important; }
 .gh-s311 { background: rgba(0,0,0,0.3) !important; border-radius: 8px !important; padding: 14px !important; margin-bottom: 20px !important; font-size: 12px !important; }
 .gh-s312 { display: flex !important; justify-content: flex-end !important; gap: 12px !important; }
+
+/* Grid Item Blowout Protection & Responsive Layouts */
+.grid-2 > *,
+.gh-s207 > *,
+.gh-s226 > *,
+.gh-s246 > *,
+.gh-s278 > *,
+.gh-s23 > * {
+    min-width: 0 !important;
+}
+
+@media (max-width: 900px) {
+    .gh-s23,
+    .gh-s207,
+    .gh-s226,
+    .gh-s246,
+    .gh-s278 {
+        grid-template-columns: 1fr !important;
+    }
+}
