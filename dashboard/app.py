@@ -284,7 +284,8 @@ def resolve_author_profile(guild, user_id: str = "", access_key: str = "", name:
 
 def create_dashboard(bot):
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
-    app = Quart(__name__, template_folder=template_dir)
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    app = Quart(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path="/static")
     app.secret_key = Config.WEB_SECRET
     app = cors(app)
     app.discord_bot = bot
@@ -316,6 +317,8 @@ def create_dashboard(bot):
     async def require_authentication():
         # Allow login route and static assets without session
         if request.path.startswith("/login"):
+            return
+        if request.path.startswith("/static"):
             return
         if request.path.startswith("/favicon.ico"):
             return
