@@ -546,51 +546,38 @@ class LoaExtendModal(discord.ui.Modal, title="Extend Leave of Absence (LOA)"):
 class LoaReportModal(discord.ui.Modal, title="Download LOA Report"):
     """Pop-up modal for authorized staff to export LOA records for a date range."""
 
+    start_input = discord.ui.TextInput(
+        label="Start Date (YYYY-MM-DD)",
+        placeholder="e.g. 2026-10-01",
+        min_length=10,
+        max_length=10,
+        required=True,
+    )
+    end_input = discord.ui.TextInput(
+        label="End Date (YYYY-MM-DD)",
+        placeholder="e.g. 2026-10-31",
+        min_length=10,
+        max_length=10,
+        required=True,
+    )
+    status_input = discord.ui.TextInput(
+        label="Status Filter (approved / all)",
+        placeholder="Type 'approved' or 'all' (default: approved)",
+        default="approved",
+        min_length=3,
+        max_length=10,
+        required=False,
+    )
+
     def __init__(self, cog: "Loa"):
         super().__init__(timeout=300)
         self.cog = cog
 
         today = datetime.now(LOCAL_TZ).date()
         month_start = today.replace(day=1)
-
-        self.start_input = discord.ui.TextInput(
-            placeholder="e.g. 2026-10-01",
-            default=month_start.strftime("%Y-%m-%d"),
-            min_length=10,
-            max_length=10,
-            required=True,
-        )
-        self.end_input = discord.ui.TextInput(
-            placeholder="e.g. 2026-10-31",
-            default=today.strftime("%Y-%m-%d"),
-            min_length=10,
-            max_length=10,
-            required=True,
-        )
-        self.status_select = discord.ui.Select(
-            placeholder="Choose which records to include",
-            min_values=1,
-            max_values=1,
-            options=[
-                discord.SelectOption(
-                    label="Approved Only",
-                    value="approved",
-                    description="Active, completed & ended-early leaves",
-                    emoji="✅",
-                    default=True,
-                ),
-                discord.SelectOption(
-                    label="All Records",
-                    value="all",
-                    description="Includes pending, denied & extension requests",
-                    emoji="📚",
-                ),
-            ],
-        )
-
-        self.add_item(discord.ui.Label(text="Start Date", description="Format: YYYY-MM-DD", component=self.start_input))
-        self.add_item(discord.ui.Label(text="End Date", description="Format: YYYY-MM-DD", component=self.end_input))
-        self.add_item(discord.ui.Label(text="Status Filter", component=self.status_select))
+        self.start_input.default = month_start.strftime("%Y-%m-%d")
+        self.end_input.default = today.strftime("%Y-%m-%d")
+        self.status_input.default = "approved"
 
     async def on_submit(self, interaction: discord.Interaction):
         # Re-verify authorization in case roles changed while the modal was open
@@ -598,20 +585,49 @@ class LoaReportModal(discord.ui.Modal, title="Download LOA Report"):
             await self.cog.send_report_unauthorized(interaction)
             return
 
-        start_str = str(self.start_input.value).strip()
-        end_str = str(self.end_input.value).strip()
+        start_str = str(self.start_input.value or self.start_input.default or "").strip()
+        end_str = str(self.end_input.value or self.end_input.default or "").strip()
         error = self.cog.validate_report_range(start_str, end_str)
         if error:
             await interaction.response.send_message(error, ephemeral=True)
             return
 
-        filter_val = self.status_select.values[0] if self.status_select.values else "approved"
+        raw_filter = str(self.status_input.value or self.status_input.default or "approved").strip().lower()
+        filter_val = "all" if "all" in raw_filter else "approved"
 
         await interaction.response.defer(ephemeral=True, thinking=True)
-        embed, csv_file = await self.cog.generate_loa_report(
-            interaction.guild_id, start_str, end_str, filter_val, interaction.user.display_name
-        )
-        await interaction.followup.send(embed=embed, file=csv_file, ephemeral=True)
+        try:
+            embed, csv_file = await self.cog.generate_loa_report(
+                interaction.guild_id, start_str, end_str, filter_val, interaction.user.display_name
+            )
+            await interaction.followup.send(embed=embed, file=csv_file, ephemeral=True)
+        except Exception as e:
+            logger.error(f"Error generating LOA report: {e}", exc_info=True)
+            try:
+                await interaction.followup.send(
+                    f"❌ **Failed to generate report:** `{e}`",
+                    ephemeral=True
+                )
+            except Exception:
+                try:
+                    await interaction.edit_original_response(
+                        content=f"❌ **Failed to generate report:** `{e}`",
+                        embed=None,
+                        attachments=[]
+                    )
+                except Exception:
+                    pass
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        logger.error(f"Unhandled error in LoaReportModal: {error}", exc_info=True)
+        msg = f"❌ **An unexpected error occurred:** `{error}`"
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -1074,7 +1090,20 @@ class LoaDashboardView(discord.ui.View):
             await self.cog.send_report_unauthorized(interaction)
             return
 
-        await interaction.response.send_modal(LoaReportModal(self.cog))
+        try:
+            await interaction.response.send_modal(LoaReportModal(self.cog))
+        except Exception as e:
+            logger.error(f"Failed to open LoaReportModal: {e}", exc_info=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    f"❌ Could not open download modal: `{e}`. You can also run `/loa_report` directly.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    f"❌ Could not open download modal: `{e}`. You can also run `/loa_report` directly.",
+                    ephemeral=True
+                )
 
     async def on_click_prev(self, interaction: discord.Interaction):
         if self.page > 0:
@@ -1844,6 +1873,30 @@ class Loa(commands.Cog):
                 await interaction.response.send_modal(modal)
             except Exception as e:
                 logger.error(f"Error handling loa reject extension interaction: {e}")
+        elif custom_id == "loa:dashboard:report":
+            try:
+                view = LoaDashboardView(self, 0, 1)
+                await view.on_click_report(interaction)
+            except Exception as e:
+                logger.error(f"Error handling dashboard report interaction: {e}", exc_info=True)
+        elif custom_id == "loa:dashboard:apply":
+            try:
+                view = LoaDashboardView(self, 0, 1)
+                await view.on_click_apply(interaction)
+            except Exception as e:
+                logger.error(f"Error handling dashboard apply interaction: {e}", exc_info=True)
+        elif custom_id == "loa:dashboard:end_early":
+            try:
+                view = LoaDashboardView(self, 0, 1)
+                await view.on_click_end_early(interaction)
+            except Exception as e:
+                logger.error(f"Error handling dashboard end early interaction: {e}", exc_info=True)
+        elif custom_id == "loa:dashboard:refresh":
+            try:
+                view = LoaDashboardView(self, 0, 1)
+                await view.on_click_refresh(interaction)
+            except Exception as e:
+                logger.error(f"Error handling dashboard refresh interaction: {e}", exc_info=True)
 
 
     # --- Slash Commands ---
@@ -2315,11 +2368,18 @@ class Loa(commands.Cog):
 
         await interaction.response.defer(ephemeral=ephemeral)
 
-        filter_val = status_filter.value if status_filter else "approved"
-        embed, csv_file = await self.generate_loa_report(
-            interaction.guild_id, start_str, end_str, filter_val, interaction.user.display_name
-        )
-        await interaction.followup.send(embed=embed, file=csv_file, ephemeral=ephemeral)
+        try:
+            filter_val = status_filter.value if status_filter else "approved"
+            embed, csv_file = await self.generate_loa_report(
+                interaction.guild_id, start_str, end_str, filter_val, interaction.user.display_name
+            )
+            await interaction.followup.send(embed=embed, file=csv_file, ephemeral=ephemeral)
+        except Exception as e:
+            logger.error(f"Error in slash_loa_report: {e}", exc_info=True)
+            if interaction.response.is_done():
+                await interaction.followup.send(f"❌ Failed to generate report: `{e}`", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"❌ Failed to generate report: `{e}`", ephemeral=True)
 
     async def generate_loa_report(
         self,
@@ -2387,6 +2447,7 @@ class Loa(commands.Cog):
 
             site_val = (r["site_name"] if "site_name" in r.keys() else "") or ""
             appr_note = (r["approval_comment"] if "approval_comment" in r.keys() else "") or ""
+            status_str = (r["status"] or "unknown").capitalize()
             
             def sanitize_csv_cell(val):
                 if val is None:
@@ -2405,7 +2466,7 @@ class Loa(commands.Cog):
                 sanitize_csv_cell(r["start_date"]),
                 sanitize_csv_cell(r["end_date"]),
                 sanitize_csv_cell(days_num),
-                sanitize_csv_cell(r["status"].capitalize()),
+                sanitize_csv_cell(status_str),
                 sanitize_csv_cell(r["reason"]),
                 sanitize_csv_cell(r["reviewed_by_name"] or ""),
                 sanitize_csv_cell(r["reviewed_at"] or ""),
@@ -2416,6 +2477,7 @@ class Loa(commands.Cog):
 
         csv_buffer.seek(0)
         csv_bytes = io.BytesIO(csv_buffer.getvalue().encode("utf-8-sig"))
+        csv_bytes.seek(0)
         filename = f"loa_report_{start_str}_to_{end_str}.csv"
         csv_file = discord.File(fp=csv_bytes, filename=filename)
 
@@ -2460,16 +2522,21 @@ class Loa(commands.Cog):
                 }.get(r["status"], r["status"])
 
                 site_str = f" • `{r['site_name']}`" if ("site_name" in r.keys() and r["site_name"]) else ""
+                req_id_str = f"#{r['id']:02d}" if isinstance(r['id'], int) else f"#{r['id']}"
                 preview_lines.append(
-                    f"`#{r['id']:02d}` **{r['user_name']}** ({r['team_name']}{site_str}) • `{r['start_date']}` to `{r['end_date']}` • {status_badge}"
+                    f"`{req_id_str}` **{r['user_name']}** ({r['team_name']}{site_str}) • `{r['start_date']}` to `{r['end_date']}` • {status_badge}"
                 )
 
             if len(rows) > 12:
                 preview_lines.append(f"*…and {len(rows) - 12} more records (see attached CSV)*")
 
+            field_val = "\n".join(preview_lines)
+            if len(field_val) > 1020:
+                field_val = field_val[:1015] + "…"
+
             embed.add_field(
                 name=f"📋 Leaves List ({min(12, len(rows))} of {len(rows)})",
-                value="\n".join(preview_lines),
+                value=field_val,
                 inline=False
             )
 
