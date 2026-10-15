@@ -3218,7 +3218,7 @@
 <!-- ========================================== -->
 <!-- QC MODAL 1: LOG FAULT FROM DASHBOARD       -->
 <!-- ========================================== -->
-<div id="modal-qc-log-fault" class="modal-backdrop">
+<div id="modal-qc-log-fault" class="modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-log-fault')">
     <div class="modal-box modal-box-md">
         <div class="modal-header">
             <h3 class="modal-title">➕ Log QC Fault from Dashboard</h3>
@@ -3232,7 +3232,7 @@
                     Team Member / Labeler <span class="required-star">*</span>
                 </label>
                 <input type="text" id="qc-lf-labeler-search" class="form-control" placeholder="Search member name or paste 18-19 digit Discord User ID..." autocomplete="off" oninput="debounceQCMemberSearch(this, 'qc-lf-member-results', 'qc-lf-labeler-id')">
-                <input type="text" id="qc-lf-labeler-id" inputmode="numeric" pattern="\d{17,20}" class="qc-hidden-input" title="Labeler User ID" required>
+                <input type="hidden" id="qc-lf-labeler-id">
                 <div id="qc-lf-member-results" class="qc-member-picker-results"></div>
                 <p class="text-xs text-muted mt-1">Pick a member from the dropdown or paste their exact 18-19 digit Discord Snowflake ID.</p>
             </div>
@@ -3308,7 +3308,7 @@
 <!-- ========================================== -->
 <!-- QC MODAL 2: ADD / EDIT PROJECT             -->
 <!-- ========================================== -->
-<div id="modal-qc-project" class="modal-backdrop">
+<div id="modal-qc-project" class="modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-project')">
     <div class="modal-box modal-box-sm">
         <div class="modal-header">
             <h3 class="modal-title" id="qc-proj-modal-title">➕ Add New Project</h3>
@@ -3355,7 +3355,7 @@
 <!-- ========================================== -->
 <!-- QC MODAL 3: ADD / EDIT DYNAMIC TEAM        -->
 <!-- ========================================== -->
-<div id="modal-qc-team" class="modal-backdrop">
+<div id="modal-qc-team" class="modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-team')">
     <div class="modal-box modal-box-md">
         <div class="modal-header">
             <h3 class="modal-title">👥 Configure Dynamic Team</h3>
@@ -3414,7 +3414,7 @@
 <!-- ========================================== -->
 <!-- QC MODAL 4: SCREENSHOT PREVIEW             -->
 <!-- ========================================== -->
-<div id="modal-qc-screenshot" class="modal-backdrop">
+<div id="modal-qc-screenshot" class="modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-screenshot')">
     <div class="modal-box modal-box-md">
         <div class="modal-header">
             <h3 class="modal-title">🖼️ Fault Screenshot Preview</h3>
@@ -3437,7 +3437,7 @@
 <!-- ========================================== -->
 <!-- QC MODAL 5: LABELER DIAGNOSTIC PROFILE     -->
 <!-- ========================================== -->
-<div id="modal-qc-labeler-details" class="modal-backdrop">
+<div id="modal-qc-labeler-details" class="modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-labeler-details')">
     <div class="modal-box qc-modal-lg">
         <div class="modal-header">
             <h3 class="modal-title">📊 Labeler Diagnostic Profile</h3>

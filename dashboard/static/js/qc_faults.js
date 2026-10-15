@@ -563,10 +563,15 @@ async function populateQCModalDropdowns() {
     // Load projects
     const pData = await apiRequest(`/api/guild/${guildId}/qc/projects`, 'GET');
     if (pData && pData.success && projSelect) {
-        projSelect.innerHTML = '<option value="">-- Select Active Project --</option>' +
-            (pData.projects || []).filter(p => p.is_active).map(p =>
-                `<option value="${escapeHTML(p.project_code)}">${escapeHTML(p.project_code)} — ${escapeHTML(p.project_name)}</option>`
-            ).join('');
+        const activeProjects = (pData.projects || []).filter(p => p.is_active);
+        if (activeProjects.length === 0) {
+            projSelect.innerHTML = '<option value="">⚠️ No active projects found! Add a project in Projects tab first.</option>';
+        } else {
+            projSelect.innerHTML = '<option value="">-- Select Active Project --</option>' +
+                activeProjects.map(p =>
+                    `<option value="${escapeHTML(p.project_code)}">${escapeHTML(p.project_code)} — ${escapeHTML(p.project_name)}</option>`
+                ).join('');
+        }
     }
 
     // Load teams
@@ -607,7 +612,13 @@ async function populateQCFaultFilterDropdowns() {
 async function handleQCLogFaultSubmit(event) {
     event.preventDefault();
 
-    const labelerIdRaw = String(document.getElementById('qc-lf-labeler-id').value).trim();
+    let labelerIdRaw = String(document.getElementById('qc-lf-labeler-id').value).trim();
+    const searchInputVal = String(document.getElementById('qc-lf-labeler-search')?.value || '').trim();
+    if (!/^\d{17,20}$/.test(labelerIdRaw) && /^\d{17,20}$/.test(searchInputVal)) {
+        labelerIdRaw = searchInputVal;
+        document.getElementById('qc-lf-labeler-id').value = searchInputVal;
+    }
+
     if (!/^\d{17,20}$/.test(labelerIdRaw)) {
         showToast('Please select a member or enter a valid 18-19 digit Discord User ID', 'error');
         return;
@@ -1041,12 +1052,18 @@ function selectQCMember(memberId, memberDisplayName, inputElId, targetIdInputId,
 
 function openQCModal(modalId) {
     const el = document.getElementById(modalId);
-    if (el) el.classList.add('active');
+    if (el) {
+        el.classList.add('active');
+        el.style.display = 'flex';
+    }
 }
 
 function closeQCModal(modalId) {
     const el = document.getElementById(modalId);
-    if (el) el.classList.remove('active');
+    if (el) {
+        el.classList.remove('active');
+        el.style.display = 'none';
+    }
 }
 
 function openQCScreenshotPreview(imageUrl) {
