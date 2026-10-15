@@ -120,7 +120,14 @@ class Moderation(commands.Cog):
     async def cog_load(self):
         """Initializes moderation engine and registers all published persistent views."""
         await self.engine.start()
-        await self._register_all_published_views()
+        asyncio.create_task(self._startup_register_views())
+
+    async def _startup_register_views(self):
+        try:
+            await self.bot.wait_until_ready()
+            await self._register_all_published_views()
+        except Exception as e:
+            logger.error("Error in startup role panel view registration: %s", e)
 
     async def cog_unload(self):
         await self.engine.stop()
@@ -128,13 +135,18 @@ class Moderation(commands.Cog):
     async def _register_all_published_views(self):
         """Restores persistent buttons for all published panels across all guilds."""
         try:
-            for guild in self.bot.guilds:
-                panels = await self.db.list_role_panels(guild.id)
-                for p in panels:
-                    if p.get("message_id") and p.get("is_enabled"):
-                        view = PersistentRolePanelView(p)
-                        self.bot.add_view(view, message_id=p["message_id"])
-                        logger.info("Restored persistent view for role panel #%d (Msg ID: %s)", p["id"], p["message_id"])
+            if hasattr(self.db, "list_all_enabled_role_panels"):
+                panels = await self.db.list_all_enabled_role_panels()
+            else:
+                panels = []
+                for guild in self.bot.guilds:
+                    panels.extend(await self.db.list_role_panels(guild.id))
+
+            for p in panels:
+                if p.get("message_id") and p.get("is_enabled"):
+                    view = PersistentRolePanelView(p)
+                    self.bot.add_view(view, message_id=p["message_id"])
+                    logger.info("Restored persistent view for role panel #%d (Msg ID: %s)", p["id"], p["message_id"])
         except Exception as e:
             logger.error("Error registering persistent role panel views: %s", e)
 

@@ -495,11 +495,17 @@ class FormsCog(commands.Cog):
         for k in stale_keys:
             self.drafts.pop(k, None)
 
+        # Purge stale cooldowns (> 3600 seconds)
+        stale_cds = [k for k, ts in self.cooldowns.items() if now - ts > 3600]
+        for k in stale_cds:
+            self.cooldowns.pop(k, None)
+
         # 2. Check scheduled forms that are due to open
         try:
             due_opens = await self.db.get_due_open_forms(now_int)
             for form in due_opens:
                 await self.refresh_panel_message(form)
+                await self.db.mark_open_panel_synced(form["id"])
         except Exception as e:
             logger.error("Error refreshing scheduled forms: %s", e)
 
@@ -570,7 +576,7 @@ class FormsCog(commands.Cog):
         try:
             questions = await self.db.get_questions(form["id"])
             submissions = await self.db.list_submissions(form["guild_id"], form["id"], limit=5000)
-            csv_bytes = generate_csv_bytes(form, questions, submissions)
+            csv_bytes = await asyncio.to_thread(generate_csv_bytes, form, questions, submissions)
             file_name = f"form_{form['id']}_final_report.csv"
             discord_file = discord.File(fp=csv_bytes, filename=file_name)
 
@@ -669,6 +675,9 @@ class FormsCog(commands.Cog):
 
     async def finalize_submission(self, interaction: discord.Interaction, form: Dict[str, Any], answers: Dict[str, Any]):
         """Processes final submission, inserts DB record, and posts destination embed."""
+        if interaction is not None and not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
         guild = interaction.guild
         user = interaction.user
         if not guild:
@@ -704,34 +713,49 @@ class FormsCog(commands.Cog):
             embed_color = 0xF59E0B if review_enabled else 0x10B981  # Amber if pending review, Green if direct
             status_text = "⏳ Pending Review" if review_enabled else "✅ Submitted"
 
-            dest_embed = discord.Embed(
+            embeds = []
+            first_embed = discord.Embed(
                 title=f"📋 New Submission: {form['title']} (ID: #{sub_id})",
                 color=embed_color,
                 timestamp=datetime.now(timezone.utc)
             )
-            dest_embed.set_author(name=f"{user.name} ({user.id})", icon_url=user.display_avatar.url)
-            dest_embed.add_field(name="Status", value=f"**{status_text}**", inline=True)
-            dest_embed.add_field(name="Submitter", value=f"{user.mention}", inline=True)
+            first_embed.set_author(name=f"{user.name} ({user.id})", icon_url=user.display_avatar.url)
+            first_embed.add_field(name="Status", value=f"**{status_text}**", inline=True)
+            first_embed.add_field(name="Submitter", value=f"{user.mention}", inline=True)
 
-            # Add question & answer fields
+            curr_embed = first_embed
+            embeds.append(curr_embed)
+            current_field_count = 2
+            current_chars = len(curr_embed.title or "") + len(user.name) + len(status_text) + len(user.mention) + 50
+
+            # Add question & answer fields with overflow protection (<=23 fields, <=5500 chars per embed)
             for idx, q in enumerate(questions, start=1):
                 ans = answers.get(str(q["id"])) or answers.get(q["id"]) or "*[No answer provided]*"
-                # Discord embed field value limit is 1024 chars
                 safe_ans = str(ans)[:1000] if ans else "*[Empty]*"
-                dest_embed.add_field(
-                    name=f"Q{idx}: {q['label'][:45]}",
-                    value=safe_ans,
-                    inline=False
-                )
+                field_name = f"Q{idx}: {q['label'][:45]}"
+                field_len = len(field_name) + len(safe_ans)
 
-            dest_embed.set_footer(text=f"Form #{form['id']} • Submission #{sub_id}")
+                if current_field_count >= 23 or (current_chars + field_len > 5500):
+                    curr_embed = discord.Embed(
+                        title=f"📋 Submission #{sub_id} (Continued)",
+                        color=embed_color
+                    )
+                    embeds.append(curr_embed)
+                    current_field_count = 0
+                    current_chars = len(curr_embed.title or "")
+
+                curr_embed.add_field(name=field_name, value=safe_ans, inline=False)
+                current_field_count += 1
+                current_chars += field_len
+
+            embeds[-1].set_footer(text=f"Form #{form['id']} • Submission #{sub_id}")
 
             # Attach review view if review system enabled, otherwise view=None
             review_view = build_review_view(sub_id) if review_enabled else None
 
             try:
                 dest_msg = await dest_channel.send(
-                    embed=dest_embed,
+                    embeds=embeds,
                     view=review_view,
                     allowed_mentions=discord.AllowedMentions.none()
                 )
@@ -745,10 +769,11 @@ class FormsCog(commands.Cog):
         else:
             reply_msg = f"🎉 **Thank you!** Your submission for **{form['title']}** has been recorded successfully."
 
-        if not interaction.response.is_done():
-            await interaction.response.send_message(reply_msg, ephemeral=True)
-        else:
-            await interaction.followup.send(reply_msg, ephemeral=True)
+        if interaction is not None:
+            if interaction.response.is_done():
+                await interaction.followup.send(reply_msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(reply_msg, ephemeral=True)
 
     # =========================================================================
     # Review System Callbacks & Security Checks
@@ -797,7 +822,7 @@ class FormsCog(commands.Cog):
 
     async def process_approval(
         self,
-        interaction: discord.Interaction,
+        interaction: Optional[discord.Interaction],
         sub_id: int,
         form: Dict[str, Any],
         note: str,
@@ -807,19 +832,26 @@ class FormsCog(commands.Cog):
         Processes submission approval: updates DB, updates destination message embed,
         disables approve/reject buttons, assigns approved_role_id with role hierarchy checks, and DMs submitter.
         """
-        reviewer = reviewer_user or interaction.user
-        guild = interaction.guild if interaction else self.bot.get_guild(form["guild_id"])
+        if interaction is not None and not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
+        reviewer = reviewer_user or (interaction.user if interaction else None)
+        reviewer_name = getattr(reviewer, "name", "Staff Reviewer")
+        guild = (interaction.guild if interaction else None) or self.bot.get_guild(form["guild_id"])
         if not guild:
             if interaction:
-                await interaction.response.send_message("❌ Server context unavailable.", ephemeral=True)
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ Server context unavailable.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ Server context unavailable.", ephemeral=True)
             return False
 
         # 1. Update DB
         await self.db.update_submission_status(
             sub_id=sub_id,
             status="approved",
-            reviewer_id=reviewer.id,
-            reviewer_name=reviewer.name,
+            reviewer_id=getattr(reviewer, "id", 0),
+            reviewer_name=reviewer_name,
             review_note=note or None
         )
 
@@ -837,9 +869,14 @@ class FormsCog(commands.Cog):
                 # Verify bot role hierarchy and danger flags
                 if bot_top and role.position < bot_top.position and not role.permissions.administrator and not role.permissions.manage_guild:
                     member = guild.get_member(sub["user_id"])
+                    if not member:
+                        try:
+                            member = await guild.fetch_member(sub["user_id"])
+                        except (discord.NotFound, discord.HTTPException):
+                            member = None
                     if member:
                         try:
-                            await member.add_roles(role, reason=f"Form #{form['id']} submission #{sub_id} approved by {reviewer.name}")
+                            await member.add_roles(role, reason=f"Form #{form['id']} submission #{sub_id} approved by {reviewer_name}")
                             role_assigned = True
                         except Exception as e:
                             logger.error("Could not assign approved role to %s: %s", member.id, e)
@@ -858,7 +895,7 @@ class FormsCog(commands.Cog):
                         # Update status field
                         for i, f in enumerate(embed.fields):
                             if f.name.lower() == "status":
-                                embed.set_field_at(i, name="Status", value=f"**✅ Approved by {reviewer.name}**", inline=True)
+                                embed.set_field_at(i, name="Status", value=f"**✅ Approved by {reviewer_name}**", inline=True)
                         if note:
                             embed.add_field(name="Reviewer Note", value=note[:1000], inline=False)
                         # Disable approve and reject buttons, keep DM enabled
@@ -880,13 +917,16 @@ class FormsCog(commands.Cog):
         except Exception:
             pass  # User has DMs disabled
 
-        if interaction and not interaction.response.is_done():
-            await interaction.response.send_message(f"✅ Submission **#{sub_id}** approved successfully.", ephemeral=True)
+        if interaction is not None:
+            if interaction.response.is_done():
+                await interaction.followup.send(f"✅ Submission **#{sub_id}** approved successfully.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"✅ Submission **#{sub_id}** approved successfully.", ephemeral=True)
         return True
 
     async def process_rejection(
         self,
-        interaction: discord.Interaction,
+        interaction: Optional[discord.Interaction],
         sub_id: int,
         form: Dict[str, Any],
         reason: str,
@@ -896,19 +936,26 @@ class FormsCog(commands.Cog):
         Processes submission rejection: updates DB, updates destination message embed,
         disables approve/reject buttons, and sends DM with rejection reason.
         """
-        reviewer = reviewer_user or interaction.user
-        guild = interaction.guild if interaction else self.bot.get_guild(form["guild_id"])
+        if interaction is not None and not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
+        reviewer = reviewer_user or (interaction.user if interaction else None)
+        reviewer_name = getattr(reviewer, "name", "Staff Reviewer")
+        guild = (interaction.guild if interaction else None) or self.bot.get_guild(form["guild_id"])
         if not guild:
             if interaction:
-                await interaction.response.send_message("❌ Server context unavailable.", ephemeral=True)
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ Server context unavailable.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ Server context unavailable.", ephemeral=True)
             return False
 
         # 1. Update DB
         await self.db.update_submission_status(
             sub_id=sub_id,
             status="rejected",
-            reviewer_id=reviewer.id,
-            reviewer_name=reviewer.name,
+            reviewer_id=getattr(reviewer, "id", 0),
+            reviewer_name=reviewer_name,
             review_note=reason
         )
 
@@ -929,7 +976,7 @@ class FormsCog(commands.Cog):
                         embed.color = 0xEF4444  # Red
                         for i, f in enumerate(embed.fields):
                             if f.name.lower() == "status":
-                                embed.set_field_at(i, name="Status", value=f"**❌ Rejected by {reviewer.name}**", inline=True)
+                                embed.set_field_at(i, name="Status", value=f"**❌ Rejected by {reviewer_name}**", inline=True)
                         embed.add_field(name="Rejection Reason", value=reason[:1000], inline=False)
                         new_view = build_review_view(sub_id, disabled=True)
                         await msg.edit(embed=embed, view=new_view)
@@ -945,25 +992,36 @@ class FormsCog(commands.Cog):
         except Exception:
             pass
 
-        if interaction and not interaction.response.is_done():
-            await interaction.response.send_message(f"❌ Submission **#{sub_id}** has been rejected.", ephemeral=True)
+        if interaction is not None:
+            if interaction.response.is_done():
+                await interaction.followup.send(f"❌ Submission **#{sub_id}** has been rejected.", ephemeral=True)
+            else:
+                await interaction.response.send_message(f"❌ Submission **#{sub_id}** has been rejected.", ephemeral=True)
         return True
 
     async def process_staff_dm(
         self,
-        interaction: discord.Interaction,
+        interaction: Optional[discord.Interaction],
         sub_id: int,
         form: Dict[str, Any],
         dm_message: str,
         reviewer_user: Optional[discord.User | discord.Member] = None
     ) -> bool:
         """Sends an official staff message to the submitter and notes it on the destination message."""
-        reviewer = reviewer_user or interaction.user
-        guild = interaction.guild if interaction else self.bot.get_guild(form["guild_id"])
+        if interaction is not None and not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
+        reviewer = reviewer_user or (interaction.user if interaction else None)
+        reviewer_name = getattr(reviewer, "name", "Staff Reviewer")
+        reviewer_mention = getattr(reviewer, "mention", reviewer_name)
+        guild = (interaction.guild if interaction else None) or self.bot.get_guild(form["guild_id"])
         sub = await self.db.get_submission(sub_id)
         if not sub or not guild:
             if interaction:
-                await interaction.response.send_message("❌ Submission or server context unavailable.", ephemeral=True)
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ Submission or server context unavailable.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ Submission or server context unavailable.", ephemeral=True)
             return False
 
         dm_delivered = False
@@ -976,7 +1034,7 @@ class FormsCog(commands.Cog):
                     color=0x6366F1,
                     timestamp=datetime.now(timezone.utc)
                 )
-                embed.set_footer(text=f"Server: {guild.name} • Sent by {reviewer.name}")
+                embed.set_footer(text=f"Server: {guild.name} • Sent by {reviewer_name}")
                 await submitter.send(embed=embed)
                 dm_delivered = True
         except Exception as e:
@@ -989,17 +1047,21 @@ class FormsCog(commands.Cog):
             if ch and hasattr(ch, "send"):
                 try:
                     await ch.send(
-                        content=f"💬 Staff {reviewer.mention} sent a DM to submitter <@{sub['user_id']}> regarding submission **#{sub_id}**:\n> {dm_message[:200]}",
+                        content=f"💬 Staff {reviewer_mention} sent a DM to submitter <@{sub['user_id']}> regarding submission **#{sub_id}**:\n> {dm_message[:200]}",
                         allowed_mentions=discord.AllowedMentions.none()
                     )
                 except Exception:
                     pass
 
-        if interaction and not interaction.response.is_done():
+        if interaction is not None:
             if dm_delivered:
-                await interaction.response.send_message(f"✅ Staff DM sent to <@{sub['user_id']}> successfully.", ephemeral=True)
+                resp_text = f"✅ Staff DM sent to <@{sub['user_id']}> successfully."
             else:
-                await interaction.response.send_message(f"⚠️ Could not deliver DM to user (they may have DMs closed), but message was logged to destination channel.", ephemeral=True)
+                resp_text = f"⚠️ Could not deliver DM to user (they may have DMs closed), but message was logged to destination channel."
+            if interaction.response.is_done():
+                await interaction.followup.send(resp_text, ephemeral=True)
+            else:
+                await interaction.response.send_message(resp_text, ephemeral=True)
         return dm_delivered
 
     # =========================================================================
@@ -1097,26 +1159,29 @@ class FormsCog(commands.Cog):
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def cmd_publish_form(self, interaction: discord.Interaction, form_id: int, channel: Optional[discord.TextChannel] = None):
+        if interaction is not None and not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+
         target_ch = channel or interaction.channel
         if not isinstance(target_ch, discord.TextChannel):
-            await interaction.response.send_message("❌ Target channel must be a text channel.", ephemeral=True)
+            await interaction.followup.send("❌ Target channel must be a text channel.", ephemeral=True)
             return
 
         form = await self.db.get_form(interaction.guild_id, form_id)  # type: ignore
         if not form:
-            await interaction.response.send_message("❌ Form not found on this server.", ephemeral=True)
+            await interaction.followup.send("❌ Form not found on this server.", ephemeral=True)
             return
 
         questions = await self.db.get_questions(form_id)
         if not questions:
-            await interaction.response.send_message("⚠️ Please add at least one question to the form before publishing (`/form question add`).", ephemeral=True)
+            await interaction.followup.send("⚠️ Please add at least one question to the form before publishing (`/form question add`).", ephemeral=True)
             return
 
         embed, view = build_panel_embed_and_view(form)
         msg = await target_ch.send(embed=embed, view=view)
         await self.db.update_panel_message(form_id, target_ch.id, msg.id)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"✅ Form **#{form_id}** panel has been published to {target_ch.mention}! [Jump to Panel]({msg.jump_url})",
             ephemeral=True
         )
@@ -1239,10 +1304,10 @@ class FormsCog(commands.Cog):
         submissions = await self.db.list_submissions(interaction.guild_id, form_id, status=status, limit=5000)  # type: ignore
 
         if format == "xlsx" and OPENPYXL_AVAILABLE:
-            file_bytes = generate_xlsx_bytes(form, questions, submissions)
+            file_bytes = await asyncio.to_thread(generate_xlsx_bytes, form, questions, submissions)
             file_name = f"form_{form_id}_submissions.xlsx"
         else:
-            file_bytes = generate_csv_bytes(form, questions, submissions)
+            file_bytes = await asyncio.to_thread(generate_csv_bytes, form, questions, submissions)
             file_name = f"form_{form_id}_submissions.csv"
 
         discord_file = discord.File(fp=file_bytes, filename=file_name)

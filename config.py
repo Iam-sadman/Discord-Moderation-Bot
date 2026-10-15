@@ -1,6 +1,7 @@
 import os
 import json
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
+from contextlib import asynccontextmanager
 import aiosqlite
 from dotenv import load_dotenv
 
@@ -24,14 +25,28 @@ class Config:
     SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", 300))
     ARC_CHANNEL_ID = os.getenv("ARC_CHANNEL_ID", "")
 
+    # In-memory settings cache to reduce SQLite disk I/O on every message
+    _settings_cache: Dict[Tuple[int, str], Any] = {}
+    _guild_cache_loaded: set = set()
+
     # =========================================================================
     # Database Initialization & Generic Guild Settings
     # =========================================================================
 
     @classmethod
+    @asynccontextmanager
+    async def connect_db(cls):
+        """Yields an aiosqlite connection with WAL mode, busy timeout, and normal sync."""
+        async with aiosqlite.connect(cls.DB_PATH) as db:
+            await db.execute("PRAGMA journal_mode=WAL;")
+            await db.execute("PRAGMA synchronous=NORMAL;")
+            await db.execute("PRAGMA busy_timeout=5000;")
+            yield db
+
+    @classmethod
     async def init_db(cls):
         os.makedirs(os.path.dirname(cls.DB_PATH), exist_ok=True)
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        async with cls.connect_db() as db:
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS guild_settings (
                     guild_id INTEGER NOT NULL,
@@ -66,22 +81,20 @@ class Config:
 
     @classmethod
     async def get_guild_setting(cls, guild_id: int, key: str, default: Any = None) -> Any:
-        async with aiosqlite.connect(cls.DB_PATH) as db:
-            cursor = await db.execute(
-                "SELECT value FROM guild_settings WHERE guild_id = ? AND key = ?",
-                (guild_id, key)
-            )
-            row = await cursor.fetchone()
-            if row is None:
-                return default
-            try:
-                return json.loads(row[0])
-            except (json.JSONDecodeError, TypeError):
-                return row[0]
+        guild_id = int(guild_id)
+        if (guild_id, key) in cls._settings_cache:
+            return cls._settings_cache[(guild_id, key)]
+        if guild_id in cls._guild_cache_loaded:
+            return default
+
+        # Lazy load all settings for this guild into RAM on first read
+        await cls.get_all_guild_settings(guild_id)
+        return cls._settings_cache.get((guild_id, key), default)
 
     @classmethod
     async def set_guild_setting(cls, guild_id: int, key: str, value: Any):
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        guild_id = int(guild_id)
+        async with cls.connect_db() as db:
             serialized = json.dumps(value)
             await db.execute(
                 """INSERT INTO guild_settings (guild_id, key, value)
@@ -90,19 +103,27 @@ class Config:
                 (guild_id, key, serialized)
             )
             await db.commit()
+        cls._settings_cache[(guild_id, key)] = value
+        cls._guild_cache_loaded.add(guild_id)
 
     @classmethod
     async def delete_guild_setting(cls, guild_id: int, key: str):
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        guild_id = int(guild_id)
+        async with cls.connect_db() as db:
             await db.execute(
                 "DELETE FROM guild_settings WHERE guild_id = ? AND key = ?",
                 (guild_id, key)
             )
             await db.commit()
+        cls._settings_cache.pop((guild_id, key), None)
 
     @classmethod
     async def get_all_guild_settings(cls, guild_id: int) -> Dict[str, Any]:
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        guild_id = int(guild_id)
+        if guild_id in cls._guild_cache_loaded:
+            return {k: v for (g, k), v in cls._settings_cache.items() if g == guild_id}
+
+        async with cls.connect_db() as db:
             cursor = await db.execute(
                 "SELECT key, value FROM guild_settings WHERE guild_id = ?",
                 (guild_id,)
@@ -111,9 +132,12 @@ class Config:
             result = {}
             for key, value in rows:
                 try:
-                    result[key] = json.loads(value)
+                    val = json.loads(value)
                 except (json.JSONDecodeError, TypeError):
-                    result[key] = value
+                    val = value
+                result[key] = val
+                cls._settings_cache[(guild_id, key)] = val
+            cls._guild_cache_loaded.add(guild_id)
             return result
 
     # =========================================================================
@@ -302,7 +326,7 @@ class Config:
     async def create_playlist(cls, guild_id: int, name: str, user_id: int, user_name: str) -> bool:
         """Creates a named playlist for a guild. Returns False if already exists."""
         clean_name = name.strip()[:64]
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        async with cls.connect_db() as db:
             try:
                 await db.execute(
                     """INSERT INTO guild_music_playlists (guild_id, playlist_name, created_by, created_by_name)
@@ -318,7 +342,7 @@ class Config:
     async def delete_playlist(cls, guild_id: int, name: str) -> bool:
         """Deletes a named playlist and all its tracks."""
         clean_name = name.strip()
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        async with cls.connect_db() as db:
             cursor = await db.execute(
                 "DELETE FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)",
                 (guild_id, clean_name)
@@ -330,7 +354,7 @@ class Config:
     async def add_track_to_playlist(cls, guild_id: int, name: str, title: str, url: str, source_type: str = "url") -> bool:
         """Adds a track to a playlist."""
         clean_name = name.strip()
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        async with cls.connect_db() as db:
             cursor = await db.execute(
                 "SELECT id FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)",
                 (guild_id, clean_name)
@@ -359,7 +383,7 @@ class Config:
     async def remove_track_from_playlist(cls, guild_id: int, name: str, position: int) -> Optional[str]:
         """Removes a track by 1-based index. Returns the track title if removed, None otherwise."""
         clean_name = name.strip()
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        async with cls.connect_db() as db:
             cursor = await db.execute(
                 "SELECT id FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)",
                 (guild_id, clean_name)
@@ -385,7 +409,7 @@ class Config:
     async def get_playlist(cls, guild_id: int, name: str) -> Optional[Dict[str, Any]]:
         """Returns playlist metadata and track list."""
         clean_name = name.strip()
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        async with cls.connect_db() as db:
             cursor = await db.execute(
                 """SELECT id, playlist_name, created_by, created_by_name, created_at
                    FROM guild_music_playlists WHERE guild_id = ? AND LOWER(playlist_name) = LOWER(?)""",
@@ -424,7 +448,7 @@ class Config:
     @classmethod
     async def list_playlists(cls, guild_id: int) -> List[Dict[str, Any]]:
         """Lists all playlists in a guild with track counts."""
-        async with aiosqlite.connect(cls.DB_PATH) as db:
+        async with cls.connect_db() as db:
             cursor = await db.execute(
                 """SELECT p.id, p.playlist_name, p.created_by, p.created_by_name, p.created_at,
                           COUNT(t.id) as track_count

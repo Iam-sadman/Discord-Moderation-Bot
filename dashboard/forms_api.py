@@ -4,6 +4,7 @@ Provides RESTful endpoints for forms CRUD, dynamic question management,
 reordering, Discord panel publishing, submission review actions, and spreadsheet exports.
 """
 
+import asyncio
 import os
 import io
 import time
@@ -20,6 +21,20 @@ from services.forms_exporter import generate_csv_bytes, generate_xlsx_bytes, OPE
 logger = logging.getLogger("FormsAPI")
 
 forms_bp = Blueprint("forms_api", __name__)
+
+
+@forms_bp.before_request
+async def enforce_forms_operator_access():
+    """Restricts create, edit, delete, publish, and review actions to Administrator and Moderator roles."""
+    if request.path.startswith("/api/internal/"):
+        return
+    if request.method in ("POST", "PUT", "DELETE"):
+        role = session.get("role", "Viewer")
+        if str(role).strip().lower() not in ("administrator", "master admin", "moderator"):
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Operator privileges (Moderator or Administrator) required to perform this action."
+            }), 403
 
 
 def get_bot():
@@ -40,6 +55,7 @@ def verify_internal_secret(req) -> bool:
     secret = req.headers.get("X-Internal-Secret", "")
     expected = getattr(Config, "INTERNAL_SECRET", "") or getattr(Config, "WEB_SECRET", "")
     return bool(secret and expected and secret == expected)
+
 
 
 # =============================================================================
@@ -452,6 +468,7 @@ async def api_review_submission(guild_id: int, form_id: int, sub_id: int):
     class WebReviewer:
         id = 0
         name = reviewer_name
+        mention = f"**{reviewer_name}**"
 
     reviewer = WebReviewer()
 
@@ -499,11 +516,11 @@ async def api_export_submissions(guild_id: int, form_id: int):
     submissions = await db.list_submissions(guild_id, form_id, status=status_filter, limit=10000)
 
     if export_format == "xlsx" and OPENPYXL_AVAILABLE:
-        stream = generate_xlsx_bytes(form, questions, submissions)
+        stream = await asyncio.to_thread(generate_xlsx_bytes, form, questions, submissions)
         filename = f"form_{form_id}_submissions.xlsx"
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        stream = generate_csv_bytes(form, questions, submissions)
+        stream = await asyncio.to_thread(generate_csv_bytes, form, questions, submissions)
         filename = f"form_{form_id}_submissions.csv"
         mimetype = "text/csv; charset=utf-8"
 
@@ -525,6 +542,10 @@ async def api_internal_bridge():
     Protected bridge endpoint for automated webhook / IPC communication.
     Binds to localhost and requires valid X-Internal-Secret.
     """
+    client_ip = request.remote_addr or ""
+    if client_ip not in ("127.0.0.1", "::1", "localhost", "<local>") and not getattr(current_app, "testing", False):
+        return jsonify({"error": "Forbidden: internal bridge only accessible via loopback"}), 403
+
     if not verify_internal_secret(request):
         return jsonify({"error": "Unauthorized bridge access"}), 401
 

@@ -4,6 +4,8 @@ Tracks client IP addresses, local network MAC addresses, browser device signatur
 and records all dashboard login attempts and permission updates.
 """
 
+import asyncio
+import time
 import os
 import re
 import uuid
@@ -16,6 +18,25 @@ import aiosqlite
 from config import Config
 
 logger = logging.getLogger("DashboardSecurity")
+
+_mac_cache: dict[str, tuple[str, float]] = {}
+MAC_CACHE_TTL: float = 3600.0
+
+
+def _resolve_arp_sync(clean_ip: str) -> Optional[str]:
+    try:
+        output = subprocess.check_output(
+            ["arp", "-a", clean_ip],
+            timeout=1.5,
+            stderr=subprocess.DEVNULL,
+            universal_newlines=True
+        )
+        match = re.search(r"([0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2})", output)
+        if match:
+            return match.group(1).replace("-", ":").upper()
+    except Exception:
+        pass
+    return None
 
 
 def get_client_ip(request) -> str:
@@ -30,23 +51,32 @@ def get_client_ip(request) -> str:
     return request.remote_addr or "127.0.0.1"
 
 
-def get_client_mac(ip_address: str) -> str:
+async def get_client_mac(ip_address: str) -> str:
     """
     Attempts to resolve client MAC address:
+    - Uses in-memory TTL cache (3600s per IP) to avoid event loop delays.
     - If loopback/localhost: returns local hardware MAC via uuid.getnode().
-    - If local subnet: queries system ARP cache (Windows/Linux) for client MAC.
-    - If remote routed: returns 'Remote / Non-LAN' with subnet identifier.
+    - If local subnet: queries system ARP cache (Windows/Linux) via asyncio.to_thread.
+    - If remote routed: returns 'Remote (Gateway Routed)'.
     """
     if not ip_address:
         return "Unknown"
 
     clean_ip = ip_address.strip()
+    now = time.time()
+
+    if clean_ip in _mac_cache:
+        cached_mac, ts = _mac_cache[clean_ip]
+        if now - ts < MAC_CACHE_TTL:
+            return cached_mac
 
     # 1. Localhost / loopback check
     if clean_ip in ("127.0.0.1", "::1", "localhost", "0.0.0.0"):
         mac_num = uuid.getnode()
         mac_hex = f"{mac_num:012x}"
-        return ":".join(mac_hex[i:i+2] for i in range(0, 12, 2)).upper()
+        mac = ":".join(mac_hex[i:i+2] for i in range(0, 12, 2)).upper()
+        _mac_cache[clean_ip] = (mac, now)
+        return mac
 
     # 2. Local network ARP resolution (Windows / Linux)
     # Check if IP looks like a private local IPv4 address
@@ -57,23 +87,15 @@ def get_client_mac(ip_address: str) -> str:
     )
 
     if is_private_lan:
-        try:
-            # Run arp -a <ip>
-            output = subprocess.check_output(
-                ["arp", "-a", clean_ip],
-                timeout=1.5,
-                stderr=subprocess.DEVNULL,
-                universal_newlines=True
-            )
-            # Find MAC regex: XX-XX-XX-XX-XX-XX or XX:XX:XX:XX:XX:XX
-            match = re.search(r"([0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2})", output)
-            if match:
-                return match.group(1).replace("-", ":").upper()
-        except Exception:
-            pass
+        mac = await asyncio.to_thread(_resolve_arp_sync, clean_ip)
+        if mac:
+            _mac_cache[clean_ip] = (mac, now)
+            return mac
 
     # 3. For routed internet / WAN requests (Layer 2 frame replaced by gateway)
-    return "Remote (Gateway Routed)"
+    res = "Remote (Gateway Routed)"
+    _mac_cache[clean_ip] = (res, now)
+    return res
 
 
 def get_device_info(request) -> str:

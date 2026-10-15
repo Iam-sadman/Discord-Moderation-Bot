@@ -341,6 +341,19 @@ class ModerationDB:
                 panels.append(p)
             return panels
 
+    async def list_all_enabled_role_panels(self) -> List[Dict[str, Any]]:
+        await self.init_db()
+        async with self.get_connection() as db:
+            cursor = await db.execute("SELECT * FROM role_panels WHERE is_enabled = 1 AND message_id IS NOT NULL ORDER BY id DESC")
+            rows = await cursor.fetchall()
+            panels = []
+            for r in rows:
+                p = dict(r)
+                items_cur = await db.execute("SELECT * FROM role_panel_items WHERE panel_id = ? ORDER BY position ASC, id ASC", (p["id"],))
+                p["items"] = [dict(item) for item in await items_cur.fetchall()]
+                panels.append(p)
+            return panels
+
     async def set_panel_items(self, panel_id: int, items: List[Dict[str, Any]]):
         await self.init_db()
         async with self.get_connection() as db:

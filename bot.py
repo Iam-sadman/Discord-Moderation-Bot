@@ -164,7 +164,7 @@ class ModularBot(commands.Bot):
         logger.info(f"Active Prefix Commands: {[c.name for c in self.commands]}")
         logger.info(f"Message Content Intent: {'ENABLED' if self.intents.message_content else 'DISABLED'}")
 
-        # Print prefix per guild and sync slash commands
+        # Print prefix per guild
         for guild in self.guilds:
             p = "!"
             if hasattr(Config, "get_prefix") and callable(getattr(Config, "get_prefix")):
@@ -176,12 +176,6 @@ class ModularBot(commands.Bot):
                 p = getattr(Config, "PREFIX", "!")
 
             logger.info(f" -> Guild: '{guild.name}' ({guild.id}) | Prefix: '{p}' (Fallback '!' also active)")
-            try:
-                self.tree.copy_global_to(guild=guild)
-                synced = await self.tree.sync(guild=guild)
-                logger.info(f"    [OK] Synced {len(synced)} slash commands directly to: {guild.name}")
-            except Exception as e:
-                logger.warning(f"    [!] Notice: Guild sync for {guild.name}: {e}")
 
         logger.info("=" * 60)
 

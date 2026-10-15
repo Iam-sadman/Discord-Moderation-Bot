@@ -68,10 +68,15 @@ class FormsDB:
                     cooldown_seconds INTEGER DEFAULT 60,
                     created_by TEXT NOT NULL,
                     closed_report_sent BOOLEAN DEFAULT 0,
+                    open_panel_synced BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            try:
+                await db.execute("ALTER TABLE forms ADD COLUMN open_panel_synced BOOLEAN DEFAULT 0;")
+            except Exception:
+                pass
             await db.execute("CREATE INDEX IF NOT EXISTS idx_forms_guild ON forms(guild_id);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_forms_panel_msg ON forms(panel_message_id);")
 
@@ -221,7 +226,7 @@ class FormsDB:
             "title", "description", "panel_channel_id", "panel_message_id",
             "dest_channel_id", "review_enabled", "approved_role_id", "is_enabled",
             "opens_at", "closes_at", "is_closed", "max_submissions_per_user",
-            "cooldown_seconds", "closed_report_sent"
+            "cooldown_seconds", "closed_report_sent", "open_panel_synced"
         }
         updates = []
         params = []
@@ -232,6 +237,10 @@ class FormsDB:
                     params.append(1 if val else 0)
                 else:
                     params.append(val)
+
+        # When opens_at is updated and open_panel_synced isn't explicitly set, reset open_panel_synced to 0
+        if "opens_at" in fields and "open_panel_synced" not in fields:
+            updates.append("open_panel_synced = 0")
 
         if not updates:
             return False
@@ -279,8 +288,19 @@ class FormsDB:
             await db.commit()
             return cursor.rowcount > 0
 
+    async def mark_open_panel_synced(self, form_id: int) -> bool:
+        """Marks that the transition from Scheduled -> Open has been synced to the Discord panel."""
+        await self.init_db()
+        async with self.get_connection() as db:
+            cursor = await db.execute(
+                "UPDATE forms SET open_panel_synced = 1 WHERE id = ?",
+                (form_id,)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
     async def get_due_open_forms(self, current_time: int) -> List[Dict[str, Any]]:
-        """Finds forms scheduled to open whose opens_at <= current_time < closes_at and are closed/scheduled."""
+        """Finds unsynced forms scheduled to open whose opens_at <= current_time < closes_at."""
         await self.init_db()
         async with self.get_connection() as db:
             cursor = await db.execute("""
@@ -291,6 +311,7 @@ class FormsDB:
                   AND opens_at <= ? 
                   AND (closes_at IS NULL OR closes_at > ?)
                   AND panel_message_id IS NOT NULL
+                  AND (open_panel_synced IS NULL OR open_panel_synced = 0)
             """, (current_time, current_time))
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]

@@ -81,9 +81,22 @@ def _clean_excel_str(val) -> str:
     return str(val).strip()
 
 
+_cached_users: List[Dict[str, Any]] = []
+_cached_mtime: float = -1.0
+
+
 def load_all_users() -> List[Dict[str, Any]]:
-    """Reads all user rows from the Excel workbook."""
+    """Reads all user rows from the Excel workbook with mtime caching."""
+    global _cached_users, _cached_mtime
     init_users_sheet()
+    try:
+        current_mtime = os.path.getmtime(USERS_EXCEL_PATH) if os.path.exists(USERS_EXCEL_PATH) else 0.0
+    except OSError:
+        current_mtime = 0.0
+
+    if _cached_users and current_mtime == _cached_mtime:
+        return list(_cached_users)
+
     users = []
     try:
         wb = openpyxl.load_workbook(USERS_EXCEL_PATH, data_only=True)
@@ -110,14 +123,17 @@ def load_all_users() -> List[Dict[str, Any]]:
                 "created_at": created_at,
                 "notes": notes
             })
+        _cached_users = users
+        _cached_mtime = current_mtime
     except Exception as e:
         logger.error(f"Error reading dashboard users Excel file: {e}")
-    return users
+    return list(_cached_users or users)
 
 
 def authenticate_user(user_id: str, access_key: str) -> Optional[Dict[str, Any]]:
     """
     Validates user credentials against the Excel registry.
+    Requires exact key matching (no partial key matches).
     Returns user dictionary if valid and active, otherwise None.
     """
     if not user_id or not access_key:
@@ -131,10 +147,10 @@ def authenticate_user(user_id: str, access_key: str) -> Optional[Dict[str, Any]]
         if u["user_id"].lower() == clean_id.lower():
             key_matches = (
                 u["access_key"] == clean_key or
-                u.get("raw_access_key") == clean_key or
-                (clean_key.isdigit() and u["access_key"].isdigit() and clean_key[:14] == u["access_key"][:14])
+                u.get("raw_access_key") == clean_key
             )
             if key_matches:
                 if u["status"].lower() == "active":
                     return u
     return None
+

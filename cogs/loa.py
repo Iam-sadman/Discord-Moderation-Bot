@@ -51,6 +51,9 @@ DEFAULT_TEAMS = [
 async def init_loa_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA journal_mode=WAL;")
+        await db.execute("PRAGMA synchronous=NORMAL;")
+        await db.execute("PRAGMA busy_timeout=5000;")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS loa_settings (
                 guild_id INTEGER PRIMARY KEY,
@@ -111,6 +114,10 @@ async def init_loa_db():
         await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_loa_guild_status 
             ON loa_requests(guild_id, status)
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_loa_guild_user_status
+            ON loa_requests(guild_id, user_id, status)
         """)
         await db.commit()
 
@@ -1120,15 +1127,19 @@ class Loa(commands.Cog):
             return False
         return True
 
+    async def _initial_check_and_expire(self):
+        try:
+            await self.bot.wait_until_ready()
+            await self.check_and_expire_loas()
+        except Exception as exc:
+            logger.error(f"Failed initial LOA check on ready: {exc}")
+
     async def cog_load(self):
         await init_loa_db()
         # Register persistent dashboard view so global custom_ids are routed
         self.bot.add_view(LoaDashboardView(self, 0, 1))
-        # Initial catch-up check in case bot was offline at midnight
-        try:
-            await self.check_and_expire_loas()
-        except Exception as exc:
-            logger.error(f"Failed initial LOA check on cog load: {exc}")
+        # Initial catch-up check in case bot was offline at midnight (run in background after ready)
+        asyncio.create_task(self._initial_check_and_expire())
 
     def cog_unload(self):
         self.loa_check_loop.cancel()
@@ -1833,12 +1844,7 @@ class Loa(commands.Cog):
                 await interaction.response.send_modal(modal)
             except Exception as e:
                 logger.error(f"Error handling loa reject extension interaction: {e}")
-        elif custom_id == "loa:dashboard:end_early":
-            try:
-                view = LoaDashboardView(self, 0, 1)
-                await view.on_click_end_early(interaction)
-            except Exception as e:
-                logger.error(f"Error handling dashboard end early interaction: {e}")
+
 
     # --- Slash Commands ---
 
@@ -2381,22 +2387,31 @@ class Loa(commands.Cog):
 
             site_val = (r["site_name"] if "site_name" in r.keys() else "") or ""
             appr_note = (r["approval_comment"] if "approval_comment" in r.keys() else "") or ""
+            
+            def sanitize_csv_cell(val):
+                if val is None:
+                    return ""
+                val_str = str(val)
+                if val_str and val_str[0] in ("=", "+", "-", "@", "\t", "\r"):
+                    return f"'{val_str}"
+                return val_str
+
             csv_writer.writerow([
-                r["id"],
-                r["user_id"],
-                r["user_name"],
-                r["team_name"],
-                site_val,
-                r["start_date"],
-                r["end_date"],
-                days_num,
-                r["status"].capitalize(),
-                r["reason"],
-                r["reviewed_by_name"] or "",
-                r["reviewed_at"] or "",
-                appr_note,
-                r["rejection_reason"] or "",
-                r["applied_at"]
+                sanitize_csv_cell(r["id"]),
+                sanitize_csv_cell(r["user_id"]),
+                sanitize_csv_cell(r["user_name"]),
+                sanitize_csv_cell(r["team_name"]),
+                sanitize_csv_cell(site_val),
+                sanitize_csv_cell(r["start_date"]),
+                sanitize_csv_cell(r["end_date"]),
+                sanitize_csv_cell(days_num),
+                sanitize_csv_cell(r["status"].capitalize()),
+                sanitize_csv_cell(r["reason"]),
+                sanitize_csv_cell(r["reviewed_by_name"] or ""),
+                sanitize_csv_cell(r["reviewed_at"] or ""),
+                sanitize_csv_cell(appr_note),
+                sanitize_csv_cell(r["rejection_reason"] or ""),
+                sanitize_csv_cell(r["applied_at"])
             ])
 
         csv_buffer.seek(0)

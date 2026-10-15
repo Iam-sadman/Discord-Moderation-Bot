@@ -300,7 +300,7 @@ def create_dashboard(bot):
     async def record_audit_event(action: str, target: str, details: str):
         user_id = session.get("user_id", "anonymous")
         ip = get_client_ip(request)
-        mac = get_client_mac(ip)
+        mac = await get_client_mac(ip)
         device = get_device_info(request)
         await log_dashboard_event(
             user_id=user_id,
@@ -355,7 +355,7 @@ def create_dashboard(bot):
             access_key = (data.get("access_key") or "").strip()
 
             ip = get_client_ip(request)
-            mac = get_client_mac(ip)
+            mac = await get_client_mac(ip)
             device = get_device_info(request)
 
             user = authenticate_user(user_id, access_key)
@@ -410,7 +410,7 @@ def create_dashboard(bot):
     async def logout():
         user_id = session.get("user_id", "unknown")
         ip = get_client_ip(request)
-        mac = get_client_mac(ip)
+        mac = await get_client_mac(ip)
         device = get_device_info(request)
 
         await log_dashboard_event(
@@ -660,8 +660,14 @@ def create_dashboard(bot):
         return jsonify({"success": True, "catalog": catalog})
 
     # ──── API Routes: Settings & Permissions (Audited) ────
+    def is_operator_authorized() -> bool:
+        role = session.get("role", "Viewer")
+        return str(role).strip().lower() in ("administrator", "master admin", "moderator")
+
     @app.route("/api/guild/<int:guild_id>/module", methods=["POST"])
     async def toggle_module(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         module_name = data.get("module")
         enabled = bool(data.get("enabled", True))
@@ -676,6 +682,8 @@ def create_dashboard(bot):
 
     @app.route("/api/guild/<int:guild_id>/settings/prefix", methods=["POST"])
     async def update_prefix(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         new_prefix = (data.get("prefix") or "!").strip()
         
@@ -689,6 +697,8 @@ def create_dashboard(bot):
 
     @app.route("/api/guild/<int:guild_id>/log/channel", methods=["POST"])
     async def set_log_channel(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         raw_cid = data.get("channel_id")
         channel_id = None
@@ -708,6 +718,8 @@ def create_dashboard(bot):
 
     @app.route("/api/guild/<int:guild_id>/log/filter", methods=["POST"])
     async def update_log_filter(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         action = data.get("action")  # "add", "remove", "clear"
         raw_uid = data.get("user_id")
@@ -743,6 +755,8 @@ def create_dashboard(bot):
 
     @app.route("/api/guild/<int:guild_id>/announcement_roles", methods=["POST"])
     async def update_announcement_roles(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         action = data.get("action")
         raw_rid = data.get("role_id")
@@ -778,6 +792,8 @@ def create_dashboard(bot):
 
     @app.route("/api/guild/<int:guild_id>/loa_config", methods=["POST"])
     async def update_loa_config(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         timezone = data.get("timezone")
 
@@ -793,6 +809,8 @@ def create_dashboard(bot):
 
     @app.route("/api/guild/<int:guild_id>/settings", methods=["POST"])
     async def update_settings(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         key = data.get("key")
         value = data.get("value")
@@ -1173,6 +1191,8 @@ def create_dashboard(bot):
 
     @app.route("/api/guild/<int:guild_id>/cog_permissions", methods=["POST"])
     async def api_set_cog_permissions(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         data = await request.get_json()
         cog_name = data.get("cog_name")
         access_level = data.get("access_level", "admin_only")
@@ -1193,6 +1213,8 @@ def create_dashboard(bot):
     # ──── Announcement Composer & Delivery API ────
     @app.route("/api/guild/<int:guild_id>/announcement/send", methods=["POST"])
     async def api_send_announcement(guild_id):
+        if not is_operator_authorized():
+            return jsonify({"error": "Forbidden", "message": "Operator privileges required."}), 403
         guild = bot.get_guild(guild_id)
         if not guild:
             return jsonify({"error": "Guild not found or bot not in guild"}), 404
