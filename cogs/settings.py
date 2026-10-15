@@ -1,3 +1,4 @@
+from typing import Optional
 import discord
 from discord.ext import commands
 from config import Config
@@ -268,11 +269,18 @@ class Settings(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Failed to reload `{target}`: `{e}`")
 
-    # ─── Instant Guild Command Syncing (!sync) ─────────────────────
+    # ─── Instant Guild Command Syncing (!sync & !clearsync) ─────────
 
     @commands.command(name="sync")
-    async def cmd_sync(self, ctx: commands.Context):
-        """Instantly syncs slash commands directly to this server guild (!sync). Restricted to Administrators."""
+    async def cmd_sync(self, ctx: commands.Context, scope: Optional[str] = None):
+        """
+        Synchronizes slash commands and purges duplicate commands (!sync).
+        Usage:
+          !sync        -> Removes duplicate guild commands & cleanly syncs global slash commands (Recommended)
+          !sync clear  -> Explicitly clears all duplicate guild-specific commands from this server
+          !sync guild  -> Forces guild-level registration
+        Restricted to Administrators.
+        """
         if not is_administrator(ctx):
             await ctx.send("❌ You need **Administrator** permission to use Settings commands.")
             return
@@ -283,14 +291,42 @@ class Settings(commands.Cog):
 
         async with ctx.typing():
             try:
-                self.bot.tree.copy_global_to(guild=ctx.guild)
-                synced = await self.bot.tree.sync(guild=ctx.guild)
-                await ctx.send(
-                    f"✅ **Instantly synced {len(synced)} slash commands directly to {ctx.guild.name}!**\n"
-                    f"Slash commands (/announcement, /loa_*, /log, /play, /arc, etc.) are now live."
-                )
+                scope_clean = (scope or "").strip().lower()
+
+                if scope_clean == "guild":
+                    # Force guild-specific copy
+                    self.bot.tree.copy_global_to(guild=ctx.guild)
+                    synced = await self.bot.tree.sync(guild=ctx.guild)
+                    await ctx.send(
+                        f"✅ **Synced {len(synced)} guild commands to {ctx.guild.name}!**\n"
+                        f"⚠️ *Note:* If commands appear duplicated, run `!sync` (without parameters) to clean them up."
+                    )
+                elif scope_clean in ("clear", "clean", "purge"):
+                    # Explicitly remove guild commands
+                    self.bot.tree.clear_commands(guild=ctx.guild)
+                    await self.bot.tree.sync(guild=ctx.guild)
+                    await ctx.send(
+                        f"🧹 **Successfully purged all duplicate guild commands from {ctx.guild.name}!**\n"
+                        f"💡 Press `Ctrl + R` in Discord desktop (or restart Discord mobile app) to refresh Discord's local cache."
+                    )
+                else:
+                    # Default: Purge duplicate guild commands, then cleanly sync global tree
+                    self.bot.tree.clear_commands(guild=ctx.guild)
+                    await self.bot.tree.sync(guild=ctx.guild)
+                    global_synced = await self.bot.tree.sync()
+                    await ctx.send(
+                        f"✅ **Command Sync Complete & Duplicates Removed!**\n"
+                        f"• Purged duplicate guild commands from **{ctx.guild.name}**\n"
+                        f"• Synchronized **{len(global_synced)}** global slash commands\n"
+                        f"💡 *Tip:* If you still see duplicates immediately, press `Ctrl + R` on Discord desktop (or restart your Discord mobile app) to refresh Discord's client cache."
+                    )
             except Exception as e:
                 await ctx.send(f"❌ Failed to sync slash commands: `{e}`")
+
+    @commands.command(name="clearsync", aliases=["clearguild", "unsync"])
+    async def cmd_clearsync(self, ctx: commands.Context):
+        """Removes duplicate guild slash commands from this server (!clearsync). Restricted to Administrators."""
+        await self.cmd_sync(ctx, scope="clear")
 
     # ─── Advanced Key-Value Settings (!set & !reset) ───────────────
 

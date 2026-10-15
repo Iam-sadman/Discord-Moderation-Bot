@@ -1134,16 +1134,22 @@ function selectQCMember(memberId, memberDisplayName, inputElId, targetIdInputId,
 }
 
 // =============================================================================
-// 10. Modals & Screenshot Preview
+// 10. Modals & Screenshot Preview (Top-Layer Lightbox)
 // =============================================================================
 
 function openQCModal(modalId) {
     console.log('[QC] Opening modal:', modalId);
     const el = document.getElementById(modalId);
     if (el) {
+        // Lightbox modal must have ultra-high z-index and body attachment
+        const isLightbox = (modalId === 'modal-qc-screenshot');
+        if (isLightbox && el.parentElement !== document.body) {
+            document.body.appendChild(el);
+        }
+        const zIndex = isLightbox ? '999999' : '10000';
         el.classList.add('active');
         el.style.setProperty('display', 'flex', 'important');
-        el.style.setProperty('z-index', '10000', 'important');
+        el.style.setProperty('z-index', zIndex, 'important');
         el.style.setProperty('visibility', 'visible', 'important');
         el.style.setProperty('opacity', '1', 'important');
     } else {
@@ -1157,16 +1163,92 @@ function closeQCModal(modalId) {
     if (el) {
         el.classList.remove('active');
         el.style.setProperty('display', 'none', 'important');
+        if (modalId === 'modal-qc-screenshot') {
+            const img = document.getElementById('qc-screenshot-preview-img');
+            if (img) {
+                img.classList.remove('is-zoomed');
+                img.style.transform = '';
+            }
+        }
     }
 }
 
 function openQCScreenshotPreview(imageUrl) {
+    if (!imageUrl) return;
+    const cleanUrl = String(imageUrl).trim();
+    if (!cleanUrl) return;
+
+    const modal = document.getElementById('modal-qc-screenshot');
     const img = document.getElementById('qc-screenshot-preview-img');
     const link = document.getElementById('qc-screenshot-preview-link');
-    if (img) img.src = imageUrl;
-    if (link) link.href = imageUrl;
-    openQCModal('modal-qc-screenshot');
+    const hint = document.getElementById('qc-screenshot-zoom-hint');
+
+    if (img) {
+        img.src = cleanUrl;
+        img.classList.remove('is-zoomed');
+        img.style.transform = '';
+    }
+    if (link) {
+        link.href = cleanUrl;
+    }
+    if (hint) {
+        hint.textContent = '(Click image to zoom in/out)';
+    }
+
+    if (modal) {
+        // Move to document.body so no parent stacking context, transform, or sibling modal can cover it
+        if (modal.parentElement !== document.body) {
+            document.body.appendChild(modal);
+        }
+        modal.classList.add('active');
+        modal.style.setProperty('display', 'flex', 'important');
+        modal.style.setProperty('z-index', '999999', 'important');
+        modal.style.setProperty('visibility', 'visible', 'important');
+        modal.style.setProperty('opacity', '1', 'important');
+    }
 }
+
+function toggleQCScreenshotZoom() {
+    const img = document.getElementById('qc-screenshot-preview-img');
+    const hint = document.getElementById('qc-screenshot-zoom-hint');
+    if (!img) return;
+
+    if (img.classList.contains('is-zoomed')) {
+        img.classList.remove('is-zoomed');
+        if (hint) hint.textContent = '(Click image to zoom in)';
+    } else {
+        img.classList.add('is-zoomed');
+        if (hint) hint.textContent = '(Click image to zoom out)';
+    }
+}
+
+function handleQCLogFaultImageInput(val) {
+    const btn = document.getElementById('qc-lf-preview-btn');
+    if (!btn) return;
+    const trimmed = (val || '').trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        btn.style.display = 'inline-flex';
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
+function previewQCLogFaultImage() {
+    const input = document.getElementById('qc-lf-image-url');
+    if (input && input.value) {
+        openQCScreenshotPreview(input.value.trim());
+    }
+}
+
+// Global Escape Key Listener for Modals
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' || e.key === 'Esc' || e.keyCode === 27) {
+        const screenshotModal = document.getElementById('modal-qc-screenshot');
+        if (screenshotModal && screenshotModal.classList.contains('active')) {
+            closeQCModal('modal-qc-screenshot');
+        }
+    }
+});
 
 function escapeHTML(str) {
     if (!str) return '';
@@ -1194,6 +1276,9 @@ window.handleQCTeamSubmit = handleQCTeamSubmit;
 window.handleQCSettingsSubmit = handleQCSettingsSubmit;
 window.exportQCFaults = exportQCFaults;
 window.openQCScreenshotPreview = openQCScreenshotPreview;
+window.toggleQCScreenshotZoom = toggleQCScreenshotZoom;
+window.handleQCLogFaultImageInput = handleQCLogFaultImageInput;
+window.previewQCLogFaultImage = previewQCLogFaultImage;
 window.openQCLabelerProfile = openQCLabelerProfile;
 window.deleteQCProject = deleteQCProject;
 window.toggleQCProjectStatus = toggleQCProjectStatus;

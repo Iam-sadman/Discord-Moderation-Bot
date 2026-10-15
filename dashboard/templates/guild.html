@@ -3,9 +3,9 @@
 {% block title %}{{ guild.name }} — Control Hub{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.3">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.3">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.4">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.4">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.4">
 {% endblock %}
 
 {% block content %}
@@ -3290,7 +3290,12 @@
                 <label class="form-label">
                     Screenshot Discord CDN Link <span class="text-muted">(Optional)</span>
                 </label>
-                <input type="url" id="qc-lf-image-url" class="form-control" placeholder="https://cdn.discordapp.com/attachments/...">
+                <div class="d-flex gap-2">
+                    <input type="url" id="qc-lf-image-url" class="form-control" placeholder="https://cdn.discordapp.com/attachments/..." oninput="handleQCLogFaultImageInput(this.value)">
+                    <button type="button" id="qc-lf-preview-btn" class="btn btn-secondary btn-sm" style="white-space:nowrap; display:none;" onclick="previewQCLogFaultImage()">
+                        🖼️ Preview
+                    </button>
+                </div>
                 <p class="text-xs text-muted mt-1">Only valid image URL strings are stored. Binary image blobs are never saved to database.</p>
             </div>
 
@@ -3416,30 +3421,7 @@
 </div>
 
 <!-- ========================================== -->
-<!-- QC MODAL 4: SCREENSHOT PREVIEW             -->
-<!-- ========================================== -->
-<div id="modal-qc-screenshot" class="modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-screenshot')">
-    <div class="modal-box modal-box-md">
-        <div class="modal-header">
-            <h3 class="modal-title">🖼️ Fault Screenshot Preview</h3>
-            <button onclick="closeQCModal('modal-qc-screenshot')" class="modal-close-btn">&times;</button>
-        </div>
-
-        <div class="qc-img-preview-box">
-            <img id="qc-screenshot-preview-img" src="" alt="Screenshot">
-        </div>
-
-        <div class="d-flex justify-between align-center mt-3">
-            <a id="qc-screenshot-preview-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">
-                ↗ Open Original on Discord CDN
-            </a>
-            <button class="btn btn-secondary btn-sm" onclick="closeQCModal('modal-qc-screenshot')">Close</button>
-        </div>
-    </div>
-</div>
-
-<!-- ========================================== -->
-<!-- QC MODAL 5: LABELER DIAGNOSTIC PROFILE     -->
+<!-- QC MODAL 4: LABELER DIAGNOSTIC PROFILE     -->
 <!-- ========================================== -->
 <div id="modal-qc-labeler-details" class="modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-labeler-details')">
     <div class="modal-box qc-modal-lg">
@@ -3552,6 +3534,37 @@
 
         <div class="d-flex justify-end mt-3">
             <button class="btn btn-secondary" onclick="closeQCModal('modal-qc-labeler-details')">Close Profile</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- QC MODAL 5: TOP-LAYER SCREENSHOT PREVIEW   -->
+<!-- Placed at template bottom to guarantee     -->
+<!-- highest DOM stacking layer over all modals -->
+<!-- ========================================== -->
+<div id="modal-qc-screenshot" class="modal-backdrop qc-screenshot-modal-backdrop" onclick="if(event.target === this) closeQCModal('modal-qc-screenshot')">
+    <div class="modal-box qc-screenshot-modal-box">
+        <div class="modal-header">
+            <div class="d-flex align-center gap-2">
+                <h3 class="modal-title">🖼️ Fault Screenshot Preview</h3>
+                <span class="text-xs text-muted" id="qc-screenshot-zoom-hint">(Click image to zoom in/out)</span>
+            </div>
+            <div class="d-flex align-center gap-2">
+                <a id="qc-screenshot-preview-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="Open full resolution in new tab">
+                    ↗ Open CDN
+                </a>
+                <button type="button" onclick="closeQCModal('modal-qc-screenshot')" class="modal-close-btn">&times;</button>
+            </div>
+        </div>
+
+        <div class="qc-img-preview-box" id="qc-screenshot-container" onclick="toggleQCScreenshotZoom()">
+            <img id="qc-screenshot-preview-img" src="" alt="Screenshot" title="Click to zoom in/out">
+        </div>
+
+        <div class="d-flex justify-between align-center mt-3">
+            <span class="text-xs text-muted">Press <kbd style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: monospace;">Esc</kbd> or click backdrop to close</span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="closeQCModal('modal-qc-screenshot')">Close Preview</button>
         </div>
     </div>
 </div>
@@ -7212,5 +7225,5 @@ async function saveCurrentTemplate() {
         initModerationSystem();
     });
 </script>
-<script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.3"></script>
+<script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.4"></script>
 {% endblock %}

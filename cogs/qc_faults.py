@@ -180,7 +180,7 @@ def build_fault_alert_embed(
 
     embed = discord.Embed(
         title=title_icon,
-        description=description,
+        description=description[:2048] if description else "",
         color=color,
         timestamp=datetime.now(timezone.utc)
     )
@@ -325,7 +325,8 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
         severity="Severity of the fault (Minor, Major, or Critical)",
         description="Detailed explanation of the fault / Task ID reference",
         fault_type="Optional manual category or tag (e.g. Missed Object, Misclassification)",
-        screenshot="Optional screenshot of the task / error (image file)",
+        screenshot="Direct screenshot upload (choose image file from PC/mobile)",
+        screenshot_url="Optional image URL link (alternative if image is already hosted)",
         team_override="Optional team role override if labeler has multiple teams or unassigned"
     )
     @app_commands.choices(
@@ -344,6 +345,7 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
         description: str,
         fault_type: Optional[str] = None,
         screenshot: Optional[discord.Attachment] = None,
+        screenshot_url: Optional[str] = None,
         team_override: Optional[discord.Role] = None
     ):
         # 1. Defer response immediately as ephemeral
@@ -363,7 +365,7 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
             )
             return
 
-        # 3. Validate image attachment if provided
+        # 3. Validate image attachment or screenshot URL if provided
         if screenshot:
             content_type = getattr(screenshot, "content_type", "") or ""
             filename = (screenshot.filename or "").lower()
@@ -371,6 +373,23 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
             if not content_type.startswith("image/") and not any(filename.endswith(ext) for ext in valid_exts):
                 await interaction.followup.send(
                     "❌ The provided attachment is not a supported image file (.png, .jpg, .jpeg, .webp, .gif).",
+                    ephemeral=True
+                )
+                return
+
+            # Safety guard: Limit image size to 20MB to prevent memory exhaustion
+            if getattr(screenshot, "size", 0) and screenshot.size > 20 * 1024 * 1024:
+                await interaction.followup.send(
+                    "❌ The attached image is too large (maximum allowed size is 20MB).",
+                    ephemeral=True
+                )
+                return
+
+        if screenshot_url:
+            clean_url = screenshot_url.strip()
+            if not (clean_url.startswith("http://") or clean_url.startswith("https://")):
+                await interaction.followup.send(
+                    "❌ The provided screenshot URL must start with `http://` or `https://`.",
                     ephemeral=True
                 )
                 return
@@ -455,17 +474,19 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
             await interaction.followup.send(f"❌ Failed to record fault in database: `{e}`", ephemeral=True)
             return
 
-        # 7. Re-upload screenshot as discord.File if provided (ensuring persistent Discord CDN storage)
+        # 7. Prepare screenshot: Re-upload attachment as discord.File or use provided URL
         image_url: Optional[str] = None
         file_to_send: Optional[discord.File] = None
 
         if screenshot:
             try:
-                # Read bytes and construct fresh discord.File
+                # Read bytes and construct fresh discord.File to guarantee persistent Discord CDN hosting
                 img_bytes = await screenshot.read()
                 file_to_send = discord.File(io.BytesIO(img_bytes), filename=screenshot.filename)
             except Exception as e:
                 logger.warning(f"[!] Could not read screenshot attachment: {e}")
+        elif screenshot_url and (screenshot_url.strip().startswith("http://") or screenshot_url.strip().startswith("https://")):
+            image_url = screenshot_url.strip()
 
         # 8. Build alert embed, dynamic ack view, and ping content
         content, embed, view, allowed_mentions = build_fault_alert_embed(
@@ -478,7 +499,7 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
             severity=severity.value,
             description=description.strip(),
             fault_type=fault_type.strip() if fault_type else None,
-            image_url=None
+            image_url=image_url if not file_to_send else None
         )
 
         if file_to_send:
@@ -502,11 +523,17 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
                     allowed_mentions=allowed_mentions
                 )
 
-            # Extract permanent Discord CDN URL from sent message
-            if sent_msg.embeds and sent_msg.embeds[0].image and sent_msg.embeds[0].image.url:
-                image_url = sent_msg.embeds[0].image.url
-            elif sent_msg.attachments:
-                image_url = sent_msg.attachments[0].url
+            # Extract permanent Discord CDN HTTPS URL from sent message
+            if sent_msg.attachments and sent_msg.attachments[0].url:
+                image_url = str(sent_msg.attachments[0].url)
+            elif sent_msg.embeds and sent_msg.embeds[0].image and sent_msg.embeds[0].image.url:
+                raw_url = str(sent_msg.embeds[0].image.url)
+                if raw_url.startswith("http://") or raw_url.startswith("https://"):
+                    image_url = raw_url
+            elif screenshot and hasattr(screenshot, "url") and screenshot.url:
+                image_url = str(screenshot.url)
+            elif screenshot_url and (screenshot_url.strip().startswith("http://") or screenshot_url.strip().startswith("https://")):
+                image_url = screenshot_url.strip()
 
             # Update DB with alert message ID and permanent image URL string
             async with self.db.get_connection() as conn:

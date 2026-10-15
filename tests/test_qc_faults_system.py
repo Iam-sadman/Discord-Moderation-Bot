@@ -536,6 +536,63 @@ class TestQCFaultsSystem(unittest.IsolatedAsyncioTestCase):
         content_type = exp_res.headers.get("Content-Type", "")
         self.assertIn("text/csv", content_type)
 
+    async def test_10_discord_button_labeler_strict_permission(self):
+        """Verifies that DynamicFaultAckButton only allows the assigned labeler to acknowledge."""
+        assigned_id = 123456789012345678
+        fault_id = await self.db.create_fault_log(
+            guild_id=self.guild_id,
+            project_code="TEST-ACK",
+            labeler_id=assigned_id,
+            labeler_name="LabelerUser",
+            team_id=None,
+            team_name="Unassigned",
+            leader_id=None,
+            logged_by_id=self.logged_by_id,
+            logged_by_name="TestChecker",
+            severity="critical",
+            description="Strict Ack Button Permission Test",
+        )
+
+        btn = DynamicFaultAckButton(fault_id=fault_id)
+
+        # 1. Non-assigned user attempts to click
+        other_user = MagicMock()
+        other_user.id = 999999999999999999
+        interaction_other = MagicMock()
+        interaction_other.guild_id = self.guild_id
+        interaction_other.user = other_user
+        interaction_other.response.defer = AsyncMock()
+        interaction_other.followup.send = AsyncMock()
+
+        await btn.callback(interaction_other)
+        interaction_other.followup.send.assert_called_once()
+        reject_msg = interaction_other.followup.send.call_args[0][0]
+        self.assertIn("Only the assigned labeler", reject_msg)
+
+        # Status must still be open
+        f_before = await self.db.get_fault_log(fault_id, self.guild_id)
+        self.assertEqual(f_before["status"], "open")
+
+        # 2. Assigned labeler clicks
+        labeler_user = MagicMock()
+        labeler_user.id = assigned_id
+        interaction_labeler = MagicMock()
+        interaction_labeler.guild_id = self.guild_id
+        interaction_labeler.user = labeler_user
+        interaction_labeler.response.defer = AsyncMock()
+        interaction_labeler.followup.send = AsyncMock()
+        interaction_labeler.message = None
+
+        await btn.callback(interaction_labeler)
+        interaction_labeler.followup.send.assert_called_once()
+        success_msg = interaction_labeler.followup.send.call_args[0][0]
+        self.assertIn("Acknowledged", success_msg)
+
+        # Status must now be acknowledged
+        f_after = await self.db.get_fault_log(fault_id, self.guild_id)
+        self.assertEqual(f_after["status"], "acknowledged")
+
 
 if __name__ == "__main__":
     unittest.main()
+
