@@ -73,37 +73,59 @@
 /* ==========================================================================
    2. KPI Cards Grid
    ========================================================================== */
+/* ==========================================================================
+   2. KPI Cards Grid
+   ========================================================================== */
 .qc-kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
     margin-bottom: 24px;
 }
 
 .qc-kpi-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    background: linear-gradient(145deg, rgba(22, 29, 45, 0.75) 0%, rgba(13, 19, 33, 0.85) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-md);
-    padding: 20px;
+    padding: 18px 20px;
     display: flex;
     align-items: center;
     gap: 16px;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--shadow-sm);
-    transition: var(--transition);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.qc-kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: transparent;
+    transition: background 0.25s ease;
 }
 
 .qc-kpi-card:hover {
     transform: translateY(-2px);
-    border-color: var(--border-hover);
-    box-shadow: var(--shadow-md);
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
+.kpi-total:hover::before { background: #6366f1; }
+.kpi-critical:hover::before { background: #ef4444; }
+.kpi-major:hover::before { background: #f59e0b; }
+.kpi-minor:hover::before { background: #10b981; }
+.kpi-ack:hover::before { background: #06b6d4; }
+
 .qc-kpi-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: var(--radius-md);
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -120,46 +142,36 @@
     font-weight: 800;
     color: #ffffff;
     line-height: 1.1;
+    letter-spacing: -0.02em;
 }
 
 .qc-kpi-label {
-    font-size: 12px;
-    color: var(--text-muted);
+    font-size: 11px;
+    color: #94a3b8;
     margin-top: 4px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
     font-weight: 600;
 }
 
 /* Color Accents for KPIs */
-.kpi-total .qc-kpi-icon { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
-.kpi-critical .qc-kpi-icon { background: rgba(239, 68, 68, 0.15); color: #f87171; }
-.kpi-major .qc-kpi-icon { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-.kpi-minor .qc-kpi-icon { background: rgba(16, 185, 129, 0.15); color: #34d399; }
-.kpi-ack .qc-kpi-icon { background: rgba(6, 182, 212, 0.15); color: #22d3ee; }
+.kpi-total .qc-kpi-icon { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.25); }
+.kpi-critical .qc-kpi-icon { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.25); }
+.kpi-major .qc-kpi-icon { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.25); }
+.kpi-minor .qc-kpi-icon { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.25); }
+.kpi-ack .qc-kpi-icon { background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.25); }
 
 /* ==========================================================================
-   3. Side-by-Side Containers & Cards
+   3. Panel Cards & Containers
    ========================================================================== */
-.qc-grid-2col {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
-    gap: 24px;
-    margin-bottom: 24px;
-}
-
-@media (max-width: 900px) {
-    .qc-grid-2col {
-        grid-template-columns: 1fr;
-    }
-}
-
 .qc-panel-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    background: rgba(17, 24, 39, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-lg);
-    padding: 22px;
-    box-shadow: var(--shadow-sm);
+    padding: 24px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.28);
     display: flex;
     flex-direction: column;
 }
@@ -167,86 +179,231 @@
 .qc-panel-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 18px;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 12px;
 }
 
 .qc-panel-title {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 700;
     color: #ffffff;
     display: flex;
     align-items: center;
     gap: 8px;
+    letter-spacing: -0.01em;
 }
 
 /* ==========================================================================
-   4. Tables & Badges
+   4. Tables, Cells, Badges & Chips
    ========================================================================== */
 .qc-table-responsive {
     overflow-x: auto;
     width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: var(--radius-md);
+    background: rgba(15, 23, 42, 0.4);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+.qc-table-responsive::-webkit-scrollbar {
+    height: 7px;
+}
+
+.qc-table-responsive::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.5);
+}
+
+.qc-table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 4px;
 }
 
 .qc-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 13px;
     color: var(--text-main);
 }
 
 .qc-table th {
-    background: rgba(15, 23, 42, 0.7);
-    color: var(--text-muted);
-    font-weight: 600;
+    background: rgba(15, 23, 42, 0.85);
+    color: #94a3b8;
+    font-weight: 700;
     text-align: left;
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--border-subtle);
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     white-space: nowrap;
     font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.06em;
 }
 
 .qc-table td {
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--border-subtle);
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     vertical-align: middle;
+    transition: background 0.15s ease;
 }
 
-.qc-table tr:hover td {
-    background: rgba(255, 255, 255, 0.02);
+.qc-table tbody tr:last-child td {
+    border-bottom: none;
 }
 
-/* Severity Badges */
+.qc-table tbody tr:hover td {
+    background: rgba(99, 102, 241, 0.05);
+}
+
+/* Numerical Counter Pill */
+.qc-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    padding: 2px 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 9999px;
+    font-size: 12px;
+    color: #ffffff;
+}
+
+/* Monospace Project Code Badge */
+.qc-code-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.28);
+    color: #a5b4fc;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+/* Category Tag Chips */
+.qc-type-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    font-size: 11px;
+    color: #cbd5e1;
+    margin: 2px;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.qc-chips-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+/* Table Avatar & Placeholder */
+.qc-table-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    flex-shrink: 0;
+}
+
+.qc-table-avatar-placeholder {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(99, 102, 241, 0.2);
+    color: #a5b4fc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    flex-shrink: 0;
+}
+
+.qc-team-icon-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: rgba(99, 102, 241, 0.15);
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.qc-role-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 3px solid #6366f1;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.qc-action-btn {
+    white-space: nowrap;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+}
+
+.qc-action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Severity Badges (Pills) */
 .badge-sev {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
-    border-radius: var(--radius-sm);
+    justify-content: center;
+    min-width: 28px;
+    padding: 3px 9px;
+    border-radius: 9999px;
     font-size: 11px;
     font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
 }
 
 .badge-sev-minor {
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(16, 185, 129, 0.14);
     color: #34d399;
     border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .badge-sev-major {
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(245, 158, 11, 0.14);
     color: #fbbf24;
     border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .badge-sev-critical {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(239, 68, 68, 0.14);
     color: #f87171;
     border: 1px solid rgba(239, 68, 68, 0.3);
 }
@@ -256,10 +413,11 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 3px 10px;
-    border-radius: var(--radius-full);
+    padding: 4px 12px;
+    border-radius: 9999px;
     font-size: 11px;
     font-weight: 600;
+    white-space: nowrap;
 }
 
 .badge-status-open {
@@ -288,20 +446,22 @@
 
 /* Progress bar inside table cell */
 .qc-rate-bar-bg {
-    width: 60px;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    width: 80px;
+    height: 7px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
     overflow: hidden;
     display: inline-block;
     vertical-align: middle;
-    margin-right: 6px;
+    margin-right: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .qc-rate-bar-fill {
     height: 100%;
     background: var(--accent-emerald);
-    border-radius: 3px;
+    border-radius: 9999px;
+    transition: width 0.4s ease;
 }
 
 /* ==========================================================================

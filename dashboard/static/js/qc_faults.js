@@ -100,28 +100,43 @@ function renderQCProjectsSummaryTable(projects) {
     if (!tbody) return;
 
     if (!projects || projects.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No projects configured or logged yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-6">No projects configured or logged yet. Click "+ Add Project Code" to create one.</td></tr>';
         return;
     }
 
     tbody.innerHTML = projects.map(p => {
         const topTypes = (p.top_fault_types && p.top_fault_types.length > 0)
-            ? p.top_fault_types.map(t => `<span class="qc-type-tag">${escapeHTML(t)}</span>`).join(' ')
-            : '<span class="text-muted text-xs">None</span>';
+            ? p.top_fault_types.map(t => `<span class="qc-type-chip">${escapeHTML(t)}</span>`).join('')
+            : '<span class="text-muted text-xs italic">No specific categories logged</span>';
 
         return `
             <tr>
                 <td>
-                    <span class="font-bold text-main">📁 ${escapeHTML(p.project_code)}</span>
-                    <div class="text-xs text-muted">${escapeHTML(p.project_name || '')}</div>
+                    <div class="d-flex align-center gap-3">
+                        <span class="qc-code-pill">📁 ${escapeHTML(p.project_code)}</span>
+                        <div>
+                            <div class="font-semibold text-main">${escapeHTML(p.project_name || p.project_code)}</div>
+                            ${p.description ? `<div class="text-xs text-muted mt-0.5">${escapeHTML(p.description)}</div>` : ''}
+                        </div>
+                    </div>
                 </td>
-                <td><span class="font-bold">${p.total_faults}</span></td>
-                <td><span class="badge-sev badge-sev-minor">${p.minor_count}</span></td>
-                <td><span class="badge-sev badge-sev-major">${p.major_count}</span></td>
-                <td><span class="badge-sev badge-sev-critical">${p.critical_count}</span></td>
-                <td>${topTypes}</td>
+                <td class="text-center">
+                    <span class="qc-stat-pill font-bold">${p.total_faults}</span>
+                </td>
+                <td class="text-center">
+                    <span class="badge-sev badge-sev-minor">${p.minor_count}</span>
+                </td>
+                <td class="text-center">
+                    <span class="badge-sev badge-sev-major">${p.major_count}</span>
+                </td>
+                <td class="text-center">
+                    <span class="badge-sev badge-sev-critical">${p.critical_count}</span>
+                </td>
                 <td>
-                    <button class="btn btn-secondary btn-sm" onclick="filterFaultsByProject('${escapeHTML(p.project_code)}')" title="View faults for this project">
+                    <div class="qc-chips-wrap">${topTypes}</div>
+                </td>
+                <td class="text-right">
+                    <button class="btn btn-secondary btn-sm qc-action-btn" onclick="filterFaultsByProject('${escapeHTML(p.project_code)}')" title="View faults for this project">
                         🔍 View Faults
                     </button>
                 </td>
@@ -135,46 +150,59 @@ function renderQCTeamsSummaryTable(teams) {
     if (!tbody) return;
 
     if (!teams || teams.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No teams configured yet. Configure teams in the Teams tab.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-6">No dynamic teams configured yet. Click "+ Add Dynamic Team" to create one.</td></tr>';
         return;
     }
 
     tbody.innerHTML = teams.map(t => {
         const leaderHtml = t.leader_user_id
-            ? `<div class="d-flex align-center gap-2">
-                 ${t.leader_avatar ? `<img src="${t.leader_avatar}" class="qc-member-picker-avatar" alt="Avatar">` : ''}
+            ? `<div class="d-flex align-center gap-2.5">
+                 ${t.leader_avatar 
+                     ? `<img src="${t.leader_avatar}" class="qc-table-avatar" alt="Avatar">` 
+                     : `<div class="qc-table-avatar-placeholder">${escapeHTML((t.leader_display_name || t.leader_name || 'L')[0].toUpperCase())}</div>`}
                  <div>
-                   <span class="font-semibold text-main">${escapeHTML(t.leader_display_name || t.leader_name || 'Leader')}</span>
-                   <div class="text-xs text-muted">ID: ${escapeHTML(String(t.leader_user_id))}</div>
+                   <div class="font-semibold text-main leading-tight">${escapeHTML(t.leader_display_name || t.leader_name || 'Leader')}</div>
+                   <div class="text-xs text-muted font-mono mt-0.5">ID: ${escapeHTML(String(t.leader_user_id))}</div>
                  </div>
                </div>`
-            : '<span class="text-muted italic">Unassigned</span>';
+            : '<span class="text-muted text-xs italic">— Unassigned —</span>';
+
+        const rateColor = t.ack_rate >= 80 ? '#10b981' : (t.ack_rate >= 50 ? '#f59e0b' : '#ef4444');
 
         return `
             <tr>
                 <td>
-                    <span class="font-bold text-main">👥 ${escapeHTML(t.team_name)}</span>
+                    <div class="font-bold text-main d-flex align-center gap-2">
+                        <span class="qc-team-icon-pill">👥</span>
+                        <span>${escapeHTML(t.team_name)}</span>
+                    </div>
                 </td>
                 <td>
-                    <span class="server-tag" style="border-left: 3px solid ${escapeHTML(t.role_color || '#6366f1')};">
+                    <span class="qc-role-pill" style="border-left-color: ${escapeHTML(t.role_color || '#6366f1')};">
                         🛡️ ${escapeHTML(t.role_name || 'Role')}
                     </span>
                 </td>
                 <td>${leaderHtml}</td>
-                <td><span class="font-bold">${t.total_faults}</span></td>
-                <td>
-                    <span class="badge-sev badge-sev-minor" title="Minor">${t.minor_count}</span>
-                    <span class="badge-sev badge-sev-major" title="Major">${t.major_count}</span>
-                    <span class="badge-sev badge-sev-critical" title="Critical">${t.critical_count}</span>
+                <td class="text-center">
+                    <span class="qc-stat-pill font-bold">${t.total_faults}</span>
                 </td>
-                <td>
-                    <div class="qc-rate-bar-bg" title="${t.ack_rate}% acknowledged">
-                        <div class="qc-rate-bar-fill" style="width: ${Math.min(100, t.ack_rate)}%;"></div>
+                <td class="text-center">
+                    <div class="d-flex align-center justify-center gap-1.5">
+                        <span class="badge-sev badge-sev-minor" title="Minor: ${t.minor_count}">${t.minor_count}</span>
+                        <span class="badge-sev badge-sev-major" title="Major: ${t.major_count}">${t.major_count}</span>
+                        <span class="badge-sev badge-sev-critical" title="Critical: ${t.critical_count}">${t.critical_count}</span>
                     </div>
-                    <span class="text-xs font-semibold">${t.ack_rate}%</span>
                 </td>
                 <td>
-                    <button class="btn btn-secondary btn-sm" onclick="filterFaultsByTeam('${escapeHTML(t.team_name)}')" title="View faults for this team">
+                    <div class="d-flex align-center gap-2.5">
+                        <div class="qc-rate-bar-bg" title="${t.ack_rate}% Acknowledged / Fixed">
+                            <div class="qc-rate-bar-fill" style="width: ${Math.min(100, t.ack_rate)}%; background: ${rateColor};"></div>
+                        </div>
+                        <span class="text-xs font-bold" style="color: ${rateColor};">${t.ack_rate}%</span>
+                    </div>
+                </td>
+                <td class="text-right">
+                    <button class="btn btn-secondary btn-sm qc-action-btn" onclick="filterFaultsByTeam('${escapeHTML(t.team_name)}')" title="View faults for this team">
                         🔍 View Faults
                     </button>
                 </td>
@@ -210,41 +238,57 @@ async function searchQCLabelers() {
             <table class="qc-table">
                 <thead>
                     <tr>
-                        <th>Labeler</th>
-                        <th>Team</th>
-                        <th>Total Faults</th>
-                        <th>Severity Breakdown</th>
-                        <th>Fix / Ack Rate</th>
-                        <th>Actions</th>
+                        <th style="min-width: 200px;">Labeler</th>
+                        <th style="min-width: 140px;">Team</th>
+                        <th class="text-center" style="width: 100px;">Total Faults</th>
+                        <th class="text-center" style="min-width: 160px;">Severity Breakdown</th>
+                        <th style="min-width: 160px;">Resolution Rate</th>
+                        <th class="text-right" style="width: 170px;">Action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${data.labelers.map(l => `
+                    ${data.labelers.map(l => {
+                        const rateColor = l.ack_rate >= 80 ? '#10b981' : (l.ack_rate >= 50 ? '#f59e0b' : '#ef4444');
+                        return `
                         <tr>
                             <td>
-                                <span class="font-bold text-main">👤 ${escapeHTML(l.labeler_name)}</span>
-                                <div class="text-xs text-muted">ID: ${escapeHTML(String(l.labeler_id))}</div>
-                            </td>
-                            <td><span class="text-muted">${escapeHTML(l.team_name || 'Unassigned')}</span></td>
-                            <td><span class="font-bold text-main">${l.total_faults}</span></td>
-                            <td>
-                                <span class="badge-sev badge-sev-minor">${l.minor_count}m</span>
-                                <span class="badge-sev badge-sev-major">${l.major_count}M</span>
-                                <span class="badge-sev badge-sev-critical">${l.critical_count}C</span>
-                            </td>
-                            <td>
-                                <div class="qc-rate-bar-bg">
-                                    <div class="qc-rate-bar-fill" style="width: ${Math.min(100, l.ack_rate)}%;"></div>
+                                <div class="d-flex align-center gap-2.5">
+                                    <div class="qc-table-avatar-placeholder">👤</div>
+                                    <div>
+                                        <div class="font-bold text-main leading-tight">${escapeHTML(l.labeler_name)}</div>
+                                        <div class="text-xs text-muted font-mono mt-0.5">ID: ${escapeHTML(String(l.labeler_id))}</div>
+                                    </div>
                                 </div>
-                                <span class="text-xs font-semibold">${l.ack_rate}%</span>
                             </td>
                             <td>
-                                <button class="btn btn-primary btn-sm" onclick="viewQCLabelerDetails('${escapeHTML(String(l.labeler_id))}')">
+                                <span class="qc-role-pill">👥 ${escapeHTML(l.team_name || 'Unassigned')}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="qc-stat-pill font-bold">${l.total_faults}</span>
+                            </td>
+                            <td class="text-center">
+                                <div class="d-flex align-center justify-center gap-1.5">
+                                    <span class="badge-sev badge-sev-minor" title="Minor: ${l.minor_count}">${l.minor_count}</span>
+                                    <span class="badge-sev badge-sev-major" title="Major: ${l.major_count}">${l.major_count}</span>
+                                    <span class="badge-sev badge-sev-critical" title="Critical: ${l.critical_count}">${l.critical_count}</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="d-flex align-center gap-2.5">
+                                    <div class="qc-rate-bar-bg" title="${l.ack_rate}% Acknowledged / Fixed">
+                                        <div class="qc-rate-bar-fill" style="width: ${Math.min(100, l.ack_rate)}%; background: ${rateColor};"></div>
+                                    </div>
+                                    <span class="text-xs font-bold" style="color: ${rateColor};">${l.ack_rate}%</span>
+                                </div>
+                            </td>
+                            <td class="text-right">
+                                <button class="btn btn-primary btn-sm qc-action-btn" onclick="viewQCLabelerDetails('${escapeHTML(String(l.labeler_id))}')">
                                     📊 Diagnostic Profile
                                 </button>
                             </td>
                         </tr>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>
@@ -424,30 +468,37 @@ function renderQCFaultsTable(faults, total) {
 
         return `
             <tr>
-                <td><strong>#${f.id}</strong></td>
+                <td><span class="qc-stat-pill font-mono">#${f.id}</span></td>
                 <td>
-                    <span class="font-bold text-main">📁 ${escapeHTML(f.project_code)}</span>
+                    <span class="qc-code-pill">${escapeHTML(f.project_code)}</span>
                 </td>
-                <td>
+                <td class="text-center">
                     <span class="badge-sev ${sevClass}">${escapeHTML((f.severity || '').toUpperCase())}</span>
                 </td>
-                <td>${statusBadge}</td>
+                <td class="text-center">${statusBadge}</td>
                 <td>
-                    <a href="javascript:void(0)" onclick="viewQCLabelerDetails('${escapeHTML(String(f.labeler_id))}')" class="font-semibold text-main hover-underline">
-                        👤 ${escapeHTML(f.labeler_name)}
-                    </a>
-                    <div class="text-xs text-muted">ID: ${escapeHTML(String(f.labeler_id))}</div>
+                    <div class="d-flex align-center gap-2">
+                        <div class="qc-table-avatar-placeholder">👤</div>
+                        <div>
+                            <a href="javascript:void(0)" onclick="viewQCLabelerDetails('${escapeHTML(String(f.labeler_id))}')" class="font-semibold text-main hover-underline leading-tight">
+                                ${escapeHTML(f.labeler_name)}
+                            </a>
+                            <div class="text-xs text-muted font-mono mt-0.5">ID: ${escapeHTML(String(f.labeler_id))}</div>
+                        </div>
+                    </div>
                 </td>
                 <td>
-                    <span class="text-main">${escapeHTML(f.team_name || 'Unassigned')}</span>
+                    <span class="qc-role-pill">👥 ${escapeHTML(f.team_name || 'Unassigned')}</span>
                 </td>
                 <td>
-                    <span class="qc-type-tag">${escapeHTML(f.fault_type || 'General')}</span>
+                    <span class="qc-type-chip">${escapeHTML(f.fault_type || 'General')}</span>
                 </td>
-                <td style="max-width: 280px;" class="text-xs">${escapeHTML(f.description || '')}</td>
-                <td>${screenshotLink}</td>
-                <td class="text-xs text-muted">${escapeHTML(f.created_at || '')}</td>
-                <td>${ackActionBtn}</td>
+                <td>
+                    <div class="qc-desc-cell font-mono text-xs leading-relaxed">${escapeHTML(f.description || '')}</div>
+                </td>
+                <td class="text-center">${screenshotLink}</td>
+                <td class="text-xs text-muted font-mono">${escapeHTML(f.created_at || '')}</td>
+                <td class="text-right">${ackActionBtn}</td>
             </tr>
         `;
     }).join('');
@@ -730,17 +781,17 @@ async function loadQCProjects() {
 
         return `
             <tr>
-                <td><strong class="text-main">📁 ${escapeHTML(p.project_code)}</strong></td>
-                <td><span class="font-semibold">${escapeHTML(p.project_name)}</span></td>
-                <td class="text-xs text-muted" style="max-width: 250px;">${escapeHTML(p.description || '—')}</td>
-                <td>${statusBadge}</td>
-                <td class="text-xs text-muted">${escapeHTML(p.created_at || '')}</td>
-                <td>
-                    <div class="d-flex gap-2">
-                        <button class="btn btn-secondary btn-sm" onclick="toggleQCProjectStatus('${escapeHTML(p.project_code)}', ${p.is_active})">
+                <td><span class="qc-code-pill">📁 ${escapeHTML(p.project_code)}</span></td>
+                <td><span class="font-semibold text-main">${escapeHTML(p.project_name)}</span></td>
+                <td class="text-xs text-muted leading-relaxed" style="max-width: 280px;">${escapeHTML(p.description || '—')}</td>
+                <td class="text-center">${statusBadge}</td>
+                <td class="text-xs text-muted font-mono">${escapeHTML(p.created_at || '')}</td>
+                <td class="text-right">
+                    <div class="d-flex justify-end gap-2">
+                        <button class="btn btn-secondary btn-sm qc-action-btn" onclick="toggleQCProjectStatus('${escapeHTML(p.project_code)}', ${p.is_active})">
                             ${toggleBtnLabel}
                         </button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteQCProject('${escapeHTML(p.project_code)}')">
+                        <button class="btn btn-danger btn-sm qc-action-btn" onclick="deleteQCProject('${escapeHTML(p.project_code)}')">
                             🗑️ Delete
                         </button>
                     </div>
@@ -844,14 +895,16 @@ async function loadQCTeams() {
 
     tbody.innerHTML = teams.map(t => {
         const leaderHtml = t.leader_user_id
-            ? `<div class="d-flex align-center gap-2">
-                 ${t.leader_avatar ? `<img src="${t.leader_avatar}" class="qc-member-picker-avatar" alt="Avatar">` : ''}
+            ? `<div class="d-flex align-center gap-2.5">
+                 ${t.leader_avatar 
+                     ? `<img src="${t.leader_avatar}" class="qc-table-avatar" alt="Avatar">` 
+                     : `<div class="qc-table-avatar-placeholder">${escapeHTML((t.leader_display_name || t.leader_name || 'L')[0].toUpperCase())}</div>`}
                  <div>
-                   <strong class="text-main">${escapeHTML(t.leader_display_name || t.leader_name || 'Leader')}</strong>
-                   <div class="text-xs text-muted">ID: ${escapeHTML(String(t.leader_user_id))}</div>
+                   <div class="font-semibold text-main leading-tight">${escapeHTML(t.leader_display_name || t.leader_name || 'Leader')}</div>
+                   <div class="text-xs text-muted font-mono mt-0.5">ID: ${escapeHTML(String(t.leader_user_id))}</div>
                  </div>
                </div>`
-            : '<span class="text-muted italic">Unassigned</span>';
+            : '<span class="text-muted text-xs italic">— Unassigned —</span>';
 
         const channelName = t.team_channel_id
             ? `#${guildChannels.find(c => String(c.id) === String(t.team_channel_id))?.name || t.team_channel_id}`
@@ -859,18 +912,23 @@ async function loadQCTeams() {
 
         return `
             <tr>
-                <td><strong class="text-main">👥 ${escapeHTML(t.team_name)}</strong></td>
                 <td>
-                    <span class="server-tag" style="border-left: 3px solid ${escapeHTML(t.role_color || '#6366f1')};">
+                    <div class="font-bold text-main d-flex align-center gap-2">
+                        <span class="qc-team-icon-pill">👥</span>
+                        <span>${escapeHTML(t.team_name)}</span>
+                    </div>
+                </td>
+                <td>
+                    <span class="qc-role-pill" style="border-left-color: ${escapeHTML(t.role_color || '#6366f1')};">
                         🛡️ ${escapeHTML(t.role_name || `Role #${t.team_role_id}`)}
                     </span>
-                    <div class="text-xs text-muted">Role ID: ${escapeHTML(String(t.team_role_id))}</div>
+                    <div class="text-xs text-muted font-mono mt-1">Role ID: ${escapeHTML(String(t.team_role_id))}</div>
                 </td>
                 <td>${leaderHtml}</td>
-                <td><span class="text-xs">${channelName}</span></td>
-                <td><span class="text-xs text-muted">${escapeHTML(t.created_at || '')}</span></td>
-                <td>
-                    <button class="btn btn-danger btn-sm" onclick="deleteQCTeam(${t.id}, '${escapeHTML(t.team_name)}')">
+                <td><span class="qc-type-chip">${channelName}</span></td>
+                <td><span class="text-xs text-muted font-mono">${escapeHTML(t.created_at || '')}</span></td>
+                <td class="text-right">
+                    <button class="btn btn-danger btn-sm qc-action-btn" onclick="deleteQCTeam(${t.id}, '${escapeHTML(t.team_name)}')">
                         🗑️ Delete
                     </button>
                 </td>

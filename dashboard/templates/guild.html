@@ -3,9 +3,9 @@
 {% block title %}{{ guild.name }} — Control Hub{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.2">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.2">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.3">
 {% endblock %}
 
 {% block content %}
@@ -2930,61 +2930,65 @@
         </div>
 
         <!-- Side-by-Side: Project Summary & Team Summary -->
-        <div class="qc-grid-2col">
-            <!-- Project-Wise Summary Table -->
-            <div class="qc-panel-card">
-                <div class="qc-panel-header">
-                    <h3 class="qc-panel-title">📁 Project-Wise Summary</h3>
-                    <button class="btn btn-secondary btn-sm" onclick="exportQCFaults('csv')" title="Export current project data">
-                        📥 Export Project CSV
-                    </button>
+        <!-- Project-Wise Summary Table (Full Width) -->
+        <div class="qc-panel-card mb-4">
+            <div class="qc-panel-header">
+                <div>
+                    <h3 class="qc-panel-title">📁 Project-Wise Quality Summary</h3>
+                    <p class="text-xs text-muted mt-1">Aggregated fault distribution, severity counts, and recurring error categories per project code.</p>
                 </div>
-                <div class="qc-table-responsive">
-                    <table class="qc-table">
-                        <thead>
-                            <tr>
-                                <th>Project Code</th>
-                                <th>Total</th>
-                                <th>Minor</th>
-                                <th>Major</th>
-                                <th>Critical</th>
-                                <th>Top Fault Categories</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="qc-projects-summary-tbody">
-                            <tr><td colspan="7" class="text-center py-4">⏳ Loading project analytics...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+                <button class="btn btn-secondary btn-sm" onclick="exportQCFaults('csv')" title="Export current project data">
+                    📥 Export Project CSV
+                </button>
             </div>
+            <div class="qc-table-responsive">
+                <table class="qc-table">
+                    <thead>
+                        <tr>
+                            <th style="min-width: 220px;">Project Details</th>
+                            <th class="text-center" style="width: 90px;">Total</th>
+                            <th class="text-center" style="width: 100px;">Minor</th>
+                            <th class="text-center" style="width: 100px;">Major</th>
+                            <th class="text-center" style="width: 100px;">Critical</th>
+                            <th style="min-width: 260px;">Top Fault Categories</th>
+                            <th class="text-right" style="width: 140px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qc-projects-summary-tbody">
+                        <tr><td colspan="7" class="text-center py-5">⏳ Loading project analytics...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
-            <!-- Team-Wise & Leader Summary Table -->
-            <div class="qc-panel-card">
-                <div class="qc-panel-header">
-                    <h3 class="qc-panel-title">👥 Team & Leader Performance</h3>
-                    <button class="btn btn-secondary btn-sm" onclick="switchQCSubTab('teams')" title="Manage dynamic teams">
-                        ⚙️ Configure Teams
-                    </button>
+        <!-- Team-Wise & Leader Summary Table (Full Width) -->
+        <div class="qc-panel-card mb-4">
+            <div class="qc-panel-header">
+                <div>
+                    <h3 class="qc-panel-title">👥 Team & Leadership Accountability</h3>
+                    <p class="text-xs text-muted mt-1">Role-mapped production teams with Leader attribution, severity breakdown, and acknowledgment fix rate.</p>
                 </div>
-                <div class="qc-table-responsive">
-                    <table class="qc-table">
-                        <thead>
-                            <tr>
-                                <th>Team Name</th>
-                                <th>Discord Role</th>
-                                <th>Team Leader</th>
-                                <th>Total</th>
-                                <th>Breakdown</th>
-                                <th>Fix Rate</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="qc-teams-summary-tbody">
-                            <tr><td colspan="7" class="text-center py-4">⏳ Loading team analytics...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+                <button class="btn btn-secondary btn-sm" onclick="switchQCSubTab('teams')" title="Manage dynamic teams">
+                    ⚙️ Configure Teams
+                </button>
+            </div>
+            <div class="qc-table-responsive">
+                <table class="qc-table">
+                    <thead>
+                        <tr>
+                            <th style="min-width: 180px;">Team Name</th>
+                            <th style="min-width: 160px;">Discord Role</th>
+                            <th style="min-width: 200px;">Team Leader</th>
+                            <th class="text-center" style="width: 90px;">Total</th>
+                            <th class="text-center" style="min-width: 160px;">Severity Breakdown</th>
+                            <th style="min-width: 160px;">Resolution Rate</th>
+                            <th class="text-right" style="width: 140px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qc-teams-summary-tbody">
+                        <tr><td colspan="7" class="text-center py-5">⏳ Loading team analytics...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -3076,17 +3080,17 @@
                 <table class="qc-table">
                     <thead>
                         <tr>
-                            <th>#ID</th>
-                            <th>Project</th>
-                            <th>Severity</th>
-                            <th>Status</th>
-                            <th>Labeler</th>
-                            <th>Team</th>
-                            <th>Category</th>
-                            <th>Description / Task ID</th>
-                            <th>Screenshot</th>
-                            <th>Logged At</th>
-                            <th>Action</th>
+                            <th style="width: 75px;">#ID</th>
+                            <th style="min-width: 120px;">Project</th>
+                            <th class="text-center" style="width: 110px;">Severity</th>
+                            <th class="text-center" style="width: 130px;">Status</th>
+                            <th style="min-width: 180px;">Labeler</th>
+                            <th style="min-width: 130px;">Team</th>
+                            <th style="min-width: 140px;">Category</th>
+                            <th style="min-width: 240px;">Description / Task ID</th>
+                            <th class="text-center" style="width: 110px;">Screenshot</th>
+                            <th style="min-width: 120px;">Logged At</th>
+                            <th class="text-right" style="width: 130px;">Action</th>
                         </tr>
                     </thead>
                     <tbody id="qc-faults-table-tbody">
@@ -3125,12 +3129,12 @@
                 <table class="qc-table">
                     <thead>
                         <tr>
-                            <th>Project Code</th>
-                            <th>Project Name</th>
-                            <th>Description</th>
-                            <th>Status</th>
-                            <th>Created At</th>
-                            <th>Actions</th>
+                            <th style="min-width: 160px;">Project Code</th>
+                            <th style="min-width: 200px;">Project Name</th>
+                            <th style="min-width: 240px;">Description</th>
+                            <th class="text-center" style="width: 120px;">Status</th>
+                            <th style="min-width: 140px;">Created At</th>
+                            <th class="text-right" style="width: 170px;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="qc-projects-table-tbody">
@@ -3162,12 +3166,12 @@
                 <table class="qc-table">
                     <thead>
                         <tr>
-                            <th>Team Name</th>
-                            <th>Mapped Discord Role</th>
-                            <th>Team Leader</th>
-                            <th>Channel Override</th>
-                            <th>Created At</th>
-                            <th>Actions</th>
+                            <th style="min-width: 180px;">Team Name</th>
+                            <th style="min-width: 180px;">Mapped Discord Role</th>
+                            <th style="min-width: 200px;">Team Leader</th>
+                            <th style="min-width: 180px;">Channel Override</th>
+                            <th style="min-width: 140px;">Created At</th>
+                            <th class="text-right" style="width: 120px;">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="qc-teams-table-tbody">
@@ -7208,5 +7212,5 @@ async function saveCurrentTemplate() {
         initModerationSystem();
     });
 </script>
-<script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.2"></script>
+<script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.3"></script>
 {% endblock %}

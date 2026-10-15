@@ -90,25 +90,14 @@ class DynamicFaultAckButton(discord.ui.DynamicItem[discord.ui.Button], template=
             await interaction.followup.send(f"ℹ️ Fault #{self.fault_id} has already been acknowledged.", ephemeral=True)
             return
 
-        # Authorization: Assigned labeler, Admin, Checker role, or Team Leader
+        # Authorization: Strictly ONLY the mentioned / assigned labeler can acknowledge this fault
         user = interaction.user
-        is_assigned_labeler = (user.id == fault.get("labeler_id"))
-        is_admin = bool(
-            getattr(user.guild_permissions, "administrator", False) or
-            getattr(user.guild_permissions, "manage_guild", False)
-        )
-        is_team_leader = (fault.get("leader_id") is not None and user.id == fault.get("leader_id"))
+        assigned_labeler_id = fault.get("labeler_id")
 
-        # Check checker roles from settings
-        settings = await db.get_settings(guild_id)
-        checker_roles = set(settings.get("checker_role_ids") or [])
-        user_role_ids = {r.id for r in getattr(user, "roles", [])}
-        is_checker = bool(checker_roles.intersection(user_role_ids))
-
-        if not (is_assigned_labeler or is_admin or is_team_leader or is_checker):
+        if str(user.id) != str(assigned_labeler_id):
             await interaction.followup.send(
-                "❌ You do not have permission to acknowledge this fault.\n"
-                "Only the assigned labeler, team leader, or staff may acknowledge it.",
+                f"❌ You cannot acknowledge this fault.\n"
+                f"Only the assigned labeler (<@{assigned_labeler_id}>) can click this button to acknowledge the fault once fixed.",
                 ephemeral=True
             )
             return
