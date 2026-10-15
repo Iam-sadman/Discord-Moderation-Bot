@@ -14,10 +14,13 @@ import io
 import re
 import json
 import time
+import logging
 import discord
 from quart import Quart, render_template, request, redirect, url_for, session, jsonify
 from quart_cors import cors
 from config import Config
+
+logger = logging.getLogger("Dashboard")
 
 from dashboard.auth import authenticate_user, load_all_users
 from dashboard.security import (
@@ -295,6 +298,9 @@ def create_dashboard(bot):
 
     from dashboard.forms_api import forms_bp
     app.register_blueprint(forms_bp)
+
+    from dashboard.qc_faults_api import qc_faults_bp
+    app.register_blueprint(qc_faults_bp)
 
     # ──── Helper: Record Security Event ────
     async def record_audit_event(action: str, target: str, details: str):

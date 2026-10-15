@@ -4,6 +4,7 @@
 
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}">
 {% endblock %}
 
@@ -88,6 +89,9 @@
     </button>
     <button class="tab-btn" onclick="switchGuildTab('forms', this)" id="tab-btn-forms">
         📝 Form Builder & Management
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('qc-faults', this)" id="tab-btn-qc-faults">
+        🎯 QC & Fault Tracker
     </button>
     <button class="tab-btn" onclick="switchGuildTab('music', this)" id="tab-btn-music">
         🎵 Music Engine
@@ -203,10 +207,14 @@
                     {{ cog.commands_count }} Commands
                 </span>
                 {% if cog.cog_name.lower() in ['music', 'logger', 'loa', 'labelertracker', 'announcement'] %}
-                <label class="switch" title="Toggle this bot module">
+                {% set mod_key = 'labeler_tracker' if cog.cog_name.lower() == 'labelertracker' else cog.cog_name.lower() %}
+                <label class="switch" title="Toggle {{ cog.cog_name }}">
                     <input type="checkbox" id="switch-cog-{{ cog.cog_name }}" 
-                           {{ "checked" if modules.get(cog.cog_name.lower() if cog.cog_name.lower() != 'labelertracker' else 'labeler_tracker', True) else "" }}
-                           onchange="handleModuleToggle('{{ cog.cog_name.lower() if cog.cog_name.lower() != 'labelertracker' else 'labeler_tracker' }}', this.checked)">
+                           title="Toggle {{ cog.cog_name }}"
+                           aria-label="Toggle {{ cog.cog_name }}"
+                           {{ "checked" if modules.get(mod_key, True) else "" }}
+                           data-module="{{ mod_key }}"
+                           onchange="handleModuleToggle(this.dataset.module, this.checked)">
                     <span class="slider"></span>
                 </label>
                 {% endif %}
@@ -267,7 +275,7 @@
                         <label class="gh-s26">
                             🎯 Destination Channel *
                         </label>
-                        <select id="ann-channel-select" class="gh-s27">
+                        <select id="ann-channel-select" class="gh-s27" title="Destination Channel">
                             <option value="">-- Select Target Text Channel --</option>
                             {% for ch in text_channels %}
                             <option value="{{ ch.id }}">#{{ ch.name }}</option>
@@ -279,7 +287,7 @@
                         <label class="gh-s26">
                             📋 Message Format
                         </label>
-                        <select id="ann-format-type" onchange="handleAnnouncementTypeChange()" class="gh-s27">
+                        <select id="ann-format-type" onchange="handleAnnouncementTypeChange()" class="gh-s27" title="Message Format">
                             <option value="embed" selected>Rich Embed (Recommended)</option>
                             <option value="text">Plain Text Message</option>
                         </select>
@@ -292,7 +300,7 @@
                         <label class="gh-s26">
                             🔔 Mention / Ping Target
                         </label>
-                        <select id="ann-mention-type" onchange="handleMentionChange()" class="gh-s27">
+                        <select id="ann-mention-type" onchange="handleMentionChange()" class="gh-s27" title="Mention Target">
                             <option value="none" selected>No Mention (Silent)</option>
                             <option value="everyone">@everyone (All Members)</option>
                             <option value="here">@here (Online Members)</option>
@@ -304,7 +312,7 @@
                         <label class="gh-s26">
                             Select Role to Ping
                         </label>
-                        <select id="ann-mention-role-select" onchange="updateAnnouncementPreview()" class="gh-s27">
+                        <select id="ann-mention-role-select" onchange="updateAnnouncementPreview()" class="gh-s27" title="Role to Ping">
                             <option value="">-- Choose Role --</option>
                             {% for r in roles %}
                             {% if r.name != "@everyone" %}
@@ -319,7 +327,7 @@
                 <div class="gh-s31">
                     <div class="gh-s32">
                         <label class="toggle-switch gh-s33" title="Show your User ID / profile name on the announcement">
-                            <input type="checkbox" id="ann-show-author" onchange="updateAnnouncementPreview()">
+                            <input type="checkbox" id="ann-show-author" onchange="updateAnnouncementPreview()" title="Show Author (User ID)" aria-label="Show Author (User ID)">
                             <span class="toggle-slider"></span>
                         </label>
                         <div>
@@ -578,7 +586,7 @@
                             <input type="color" id="ann-embed-color-picker" value="#5865F2" 
                                    onchange="selectEmbedColor(this.value, null)" class="gh-s89" title="Custom Color Picker">
                             <input type="text" id="ann-embed-color" value="#5865F2" 
-                                   oninput="selectEmbedColor(this.value, null)" class="gh-s90">
+                                   oninput="selectEmbedColor(this.value, null)" class="gh-s90" title="Embed Hex Color" placeholder="#5865F2">
                         </div>
                     </div>
 
@@ -596,7 +604,7 @@
                                  ondragover="event.preventDefault(); this.classList.add('dragover');"
                                  ondragleave="this.classList.remove('dragover');"
                                  ondrop="event.preventDefault(); this.classList.remove('dragover'); handleBannerDrop(event);">
-                                <input type="file" id="ann-banner-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleBannerFileSelected(this.files)">
+                                <input type="file" id="ann-banner-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleBannerFileSelected(this.files)" title="Upload Banner File">
 
                                 <!-- Empty State -->
                                 <div id="banner-empty-state" class="gh-s96">
@@ -635,7 +643,7 @@
                                  ondragover="event.preventDefault(); this.classList.add('dragover');"
                                  ondragleave="this.classList.remove('dragover');"
                                  ondrop="event.preventDefault(); this.classList.remove('dragover'); handleThumbDrop(event);">
-                                <input type="file" id="ann-thumb-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleThumbFileSelected(this.files)">
+                                <input type="file" id="ann-thumb-file" accept="image/png, image/jpeg, image/jpg, image/gif, image/webp" class="gh-s95" onchange="handleThumbFileSelected(this.files)" title="Upload Thumbnail File">
 
                                 <!-- Empty State -->
                                 <div id="thumb-empty-state" class="gh-s96">
@@ -675,7 +683,7 @@
                              ondragleave="this.classList.remove('dragover');"
                              ondrop="event.preventDefault(); this.classList.remove('dragover'); handleExtraFilesDrop(event);">
                             <input type="file" id="ann-extra-files" multiple
-                                   accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.mp4,.mp3,.wav" class="gh-s95" onchange="handleExtraFilesSelected(this.files)">
+                                   accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z,.mp4,.mp3,.wav" class="gh-s95" onchange="handleExtraFilesSelected(this.files)" title="Upload Extra Attachments">
                             <div id="extra-attach-hint" class="gh-s105">
                                 <span class="gh-s106">📎</span>
                                 <span class="gh-s107">Click to add files or drag &amp; drop — images, PDFs, docs, archives…</span>
@@ -798,7 +806,7 @@
                        onkeyup="if(event.key === 'Enter') loadServerLogs(0)">
             </div>
             <div class="gh-s126">
-                <select id="log-action-filter" onchange="loadServerLogs(0)">
+                <select id="log-action-filter" onchange="loadServerLogs(0)" title="Action Type Filter">
                     <option value="all">-- All Action Types --</option>
                     {% for action in action_types %}
                     <option value="{{ action }}">{{ action }}</option>
@@ -877,7 +885,7 @@
                     <div class="setting-desc">YouTube / local playback, queue system, voice connections</div>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" id="mod-toggle-music" {{ "checked" if modules.music else "" }} onchange="handleModuleToggle('music', this.checked)">
+                    <input type="checkbox" id="mod-toggle-music" {{ "checked" if modules.music else "" }} onchange="handleModuleToggle('music', this.checked)" title="Toggle Music Engine" aria-label="Toggle Music Engine">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -887,7 +895,7 @@
                     <div class="setting-desc">Voice, message edits, deletions, role updates auditing</div>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" id="mod-toggle-logger" {{ "checked" if modules.logger else "" }} onchange="handleModuleToggle('logger', this.checked)">
+                    <input type="checkbox" id="mod-toggle-logger" {{ "checked" if modules.logger else "" }} onchange="handleModuleToggle('logger', this.checked)" title="Toggle Server Logger" aria-label="Toggle Server Logger">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -897,7 +905,7 @@
                     <div class="setting-desc">Self-service leaves, checker review workflows, dashboard</div>
                 </div>
                 <label class="switch">
-                    <input type="checkbox" id="mod-toggle-loa" {{ "checked" if modules.loa else "" }} onchange="handleModuleToggle('loa', this.checked)">
+                    <input type="checkbox" id="mod-toggle-loa" {{ "checked" if modules.loa else "" }} onchange="handleModuleToggle('loa', this.checked)" title="Toggle Leave of Absence" aria-label="Toggle Leave of Absence">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -914,7 +922,7 @@
                 Select which Discord text channel receives live audit logging embeds.
             </p>
             <div class="gh-s138">
-                <select id="log-channel-select">
+                <select id="log-channel-select" title="Audit Log Destination Channel">
                     <option value="">-- No Channel (Disabled) --</option>
                     {% for ch in text_channels %}
                     <option value="{{ ch.id }}" {{ "selected" if log_channel and log_channel.id == ch.id else "" }}>
@@ -941,7 +949,7 @@
                 {% endif %}
             </div>
             <div class="gh-s142">
-                <select id="filter-user-select" class="gh-s143">
+                <select id="filter-user-select" class="gh-s143" title="Select Member to Filter">
                     <option value="">-- Select Member to Filter --</option>
                     {% for m in members %}
                     <option value="{{ m.id }}">{{ m.name }} (#{{ m.id }})</option>
@@ -973,7 +981,7 @@
                 {% endif %}
             </div>
             <div class="gh-s142">
-                <select id="announcement-role-select" class="gh-s143">
+                <select id="announcement-role-select" class="gh-s143" title="Select Allowed Role">
                     <option value="">-- Select Allowed Role --</option>
                     {% for r in roles %}
                     {% if r.name != "@everyone" %}
@@ -1015,7 +1023,7 @@
                         Controls access to <code>/announcement</code> and modal broadcast features.
                     </p>
                     <label class="gh-s149">Access Level</label>
-                    <select id="perm-level-announcement" onchange="handleCogLevelChange('announcement')" class="gh-s150">
+                    <select id="perm-level-announcement" onchange="handleCogLevelChange('announcement')" class="gh-s150" title="Announcement Cog Access Level">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('announcement', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('announcement', {}).get('access_level') == 'roles_only' else "" }}>👥 Allowed Roles (+ Admins)</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('announcement', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone (Public)</option>
@@ -1035,7 +1043,7 @@
                             {% endif %}
                         </div>
                         <div class="gh-s153">
-                            <select id="perm-select-announcement" class="gh-s154">
+                            <select id="perm-select-announcement" class="gh-s154" title="Select Role to Grant Announcement Cog Access">
                                 <option value="">-- Add Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1058,7 +1066,7 @@
                         Controls access to <code>/play</code>, skip, stop, and queue playback controls.
                     </p>
                     <label class="gh-s149">Access Level</label>
-                    <select id="perm-level-music" onchange="handleCogLevelChange('music')" class="gh-s150">
+                    <select id="perm-level-music" onchange="handleCogLevelChange('music')" class="gh-s150" title="Music Player Cog Access Level">
                         <option value="everyone" {{ "selected" if cog_permissions.get('music', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone (All Voice Members)</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('music', {}).get('access_level') == 'roles_only' else "" }}>👥 DJ / Permitted Roles (+ Admins)</option>
                         <option value="admin_only" {{ "selected" if cog_permissions.get('music', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
@@ -1078,7 +1086,7 @@
                             {% endif %}
                         </div>
                         <div class="gh-s153">
-                            <select id="perm-select-music" class="gh-s154">
+                            <select id="perm-select-music" class="gh-s154" title="Select Role to Grant Music Access">
                                 <option value="">-- Add DJ Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1101,7 +1109,7 @@
                         Controls access to <code>/loa_report</code>, checker reviews, and management.
                     </p>
                     <label class="gh-s149">Access Level</label>
-                    <select id="perm-level-loa" onchange="handleCogLevelChange('loa')" class="gh-s150">
+                    <select id="perm-level-loa" onchange="handleCogLevelChange('loa')" class="gh-s150" title="LOA Cog Access Level">
                         <option value="roles_only" {{ "selected" if cog_permissions.get('loa', {}).get('access_level') == 'roles_only' else "" }}>👥 Checkers & Staff Roles (+ Admins)</option>
                         <option value="admin_only" {{ "selected" if cog_permissions.get('loa', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('loa', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone</option>
@@ -1121,7 +1129,7 @@
                             {% endif %}
                         </div>
                         <div class="gh-s153">
-                            <select id="perm-select-loa" class="gh-s154">
+                            <select id="perm-select-loa" class="gh-s154" title="Select Role to Grant LOA Checker Access">
                                 <option value="">-- Add Checker Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1144,7 +1152,7 @@
                         Controls access to <code>/arc_setup</code>, <code>/arc</code>, and live scraping triggers.
                     </p>
                     <label class="gh-s149">Access Level</label>
-                    <select id="perm-level-labeler_tracker" onchange="handleCogLevelChange('labeler_tracker')" class="gh-s150">
+                    <select id="perm-level-labeler_tracker" onchange="handleCogLevelChange('labeler_tracker')" class="gh-s150" title="ARC Tracker Cog Access Level">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('labeler_tracker', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('labeler_tracker', {}).get('access_level') == 'roles_only' else "" }}>👥 ARC Leads & Staff (+ Admins)</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('labeler_tracker', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone</option>
@@ -1164,7 +1172,7 @@
                             {% endif %}
                         </div>
                         <div class="gh-s153">
-                            <select id="perm-select-labeler_tracker" class="gh-s154">
+                            <select id="perm-select-labeler_tracker" class="gh-s154" title="Select Role to Grant ARC Access">
                                 <option value="">-- Add ARC Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1187,7 +1195,7 @@
                         Controls access to <code>/log history</code>, <code>/log search</code>, and log exports.
                     </p>
                     <label class="gh-s149">Access Level</label>
-                    <select id="perm-level-logger" onchange="handleCogLevelChange('logger')" class="gh-s150">
+                    <select id="perm-level-logger" onchange="handleCogLevelChange('logger')" class="gh-s150" title="Server Logger Cog Access Level">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('logger', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('logger', {}).get('access_level') == 'roles_only' else "" }}>👥 Moderation Staff (+ Admins)</option>
                         <option value="everyone" {{ "selected" if cog_permissions.get('logger', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone</option>
@@ -1207,7 +1215,7 @@
                             {% endif %}
                         </div>
                         <div class="gh-s153">
-                            <select id="perm-select-logger" class="gh-s154">
+                            <select id="perm-select-logger" class="gh-s154" title="Select Role to Grant Logger Access">
                                 <option value="">-- Add Mod Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1230,7 +1238,7 @@
                         Controls access to prefix commands <code>!settings</code>, <code>!prefix</code>, and module toggles.
                     </p>
                     <label class="gh-s149">Access Level</label>
-                    <select id="perm-level-settings" onchange="handleCogLevelChange('settings')" class="gh-s150">
+                    <select id="perm-level-settings" onchange="handleCogLevelChange('settings')" class="gh-s150" title="Server Settings Cog Access Level">
                         <option value="admin_only" {{ "selected" if cog_permissions.get('settings', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
                         <option value="roles_only" {{ "selected" if cog_permissions.get('settings', {}).get('access_level') == 'roles_only' else "" }}>👥 Elevated Managers (+ Admins)</option>
                     </select>
@@ -1249,7 +1257,7 @@
                             {% endif %}
                         </div>
                         <div class="gh-s153">
-                            <select id="perm-select-settings" class="gh-s154">
+                            <select id="perm-select-settings" class="gh-s154" title="Select Role to Grant Settings Access">
                                 <option value="">-- Add Manager Role --</option>
                                 {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
                             </select>
@@ -1404,6 +1412,7 @@
                     <span id="vol-display">{{ music_state.volume }}%</span>
                 </label>
                 <input type="range" min="0" max="200" value="{{ music_state.volume }}" id="music-volume-slider" class="gh-s172"
+                       title="Volume Level"
                        oninput="document.getElementById('vol-display').textContent = this.value + '%'"
                        onchange="handleVolumeChange(this.value)">
             </div>
@@ -1413,7 +1422,7 @@
                 <label class="gh-s169">
                     🔁 Looping Mode
                 </label>
-                <select id="music-loop-select" onchange="handleLoopChange(this.value)" class="gh-s27">
+                <select id="music-loop-select" onchange="handleLoopChange(this.value)" class="gh-s27" title="Looping Mode">
                     <option value="off" {{ "selected" if music_state.loop_mode == 'off' else "" }}>Disabled (Off)</option>
                     <option value="single" {{ "selected" if music_state.loop_mode == 'single' else "" }}>Repeat Track (Single)</option>
                     <option value="queue" {{ "selected" if music_state.loop_mode == 'queue' else "" }}>Repeat Entire Queue</option>
@@ -1449,7 +1458,7 @@
                             </div>
                         </div>
                     </div>
-                    <button class="btn-remove-track" onclick="handleRemoveQueueTrack({{ item.position }})" title="Remove track">
+                    <button class="btn-remove-track" data-position="{{ item.position }}" onclick="handleRemoveQueueTrack(parseInt(this.dataset.position, 10))" title="Remove track">
                         🗑️
                     </button>
                 </div>
@@ -1499,16 +1508,16 @@
 
                     <!-- Playlist Action Buttons -->
                     <div class="gh-s192">
-                        <button type="button" class="btn btn-sm btn-primary" onclick="handlePlayPlaylist({{ pl.name|tojson }})" title="Stream this playlist to voice channel">
+                        <button type="button" class="btn btn-sm btn-primary" data-playlist="{{ pl.name }}" onclick="handlePlayPlaylist(this.dataset.playlist)" title="Stream this playlist to voice channel">
                             ▶️ Play in Voice
                         </button>
-                        <button type="button" class="btn btn-sm btn-secondary" onclick="promptAddTrackToPlaylist({{ pl.name|tojson }})" title="Add YouTube, Spotify, or SoundCloud track">
+                        <button type="button" class="btn btn-sm btn-secondary" data-playlist="{{ pl.name }}" onclick="promptAddTrackToPlaylist(this.dataset.playlist)" title="Add YouTube, Spotify, or SoundCloud track">
                             ➕ Add Song
                         </button>
                         <button type="button" class="btn btn-sm btn-secondary" onclick="togglePlaylistTracksView('pl-tracks-{{ loop.index }}')" title="Expand / collapse track list">
                             👁️ View Tracks
                         </button>
-                        <button type="button" class="btn btn-sm btn-secondary gh-s193" onclick="handleDeletePlaylist({{ pl.name|tojson }})" title="Delete playlist">
+                        <button type="button" class="btn btn-sm btn-secondary gh-s193" data-playlist="{{ pl.name }}" onclick="handleDeletePlaylist(this.dataset.playlist)" title="Delete playlist">
                             🗑️ Delete
                         </button>
                     </div>
@@ -1533,7 +1542,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <button class="btn-remove-track" onclick="handleRemovePlaylistTrack({{ pl.name|tojson }}, {{ track.position or loop.index }})" title="Remove track from playlist">
+                            <button class="btn-remove-track" data-playlist="{{ pl.name }}" data-position="{{ track.position or loop.index }}" onclick="handleRemovePlaylistTrack(this.dataset.playlist, parseInt(this.dataset.position, 10))" title="Remove track from playlist">
                                 🗑️
                             </button>
                         </div>
@@ -1623,7 +1632,7 @@
                 <!-- Member Search Filters -->
                 <div class="gh-s211">
                     <input type="text" class="form-input gh-s170" id="member-search-input" placeholder="Search by username, display name, or user ID..." oninput="debounceMemberSearch()">
-                    <select class="form-select gh-s28" id="member-role-filter" onchange="loadMembersList(0)">
+                    <select class="form-select gh-s28" id="member-role-filter" onchange="loadMembersList(0)" title="Role Filter">
                         <option value="">All Roles</option>
                     </select>
                 </div>
@@ -1649,7 +1658,7 @@
                 <div id="member-inspector-card" class="gh-s213">
                     <div class="gh-s214">
                         <div class="gh-s215">
-                            <img id="insp-avatar" src="" class="gh-s216">
+                            <img id="insp-avatar" src="" alt="Member Avatar" class="gh-s216">
                             <div>
                                 <h4 id="insp-name" class="gh-s189">User</h4>
                                 <span id="insp-id" class="gh-s217">ID</span>
@@ -1668,7 +1677,7 @@
                     <div class="gh-s221">
                         <div>
                             <label class="form-label gh-s219">Assign Manageable Role:</label>
-                            <select class="form-select" id="insp-assign-role-select">
+                            <select class="form-select" id="insp-assign-role-select" title="Assign Manageable Role">
                                 <option value="">Select Role to Add...</option>
                             </select>
                             <button type="button" class="btn btn-sm btn-primary gh-s222" onclick="submitRoleChange('assign')">
@@ -1677,7 +1686,7 @@
                         </div>
                         <div>
                             <label class="form-label gh-s219">Remove Existing Role:</label>
-                            <select class="form-select" id="insp-remove-role-select">
+                            <select class="form-select" id="insp-remove-role-select" title="Remove Existing Role">
                                 <option value="">Select Role to Remove...</option>
                             </select>
                             <button type="button" class="btn btn-sm btn-danger gh-s222" onclick="submitRoleChange('remove')">
@@ -1733,7 +1742,7 @@
 
             <div class="form-group">
                 <label class="form-label">Destination Discord Channel <span class="gh-s227">*</span></label>
-                <select class="form-select" id="panel-channel-select" onchange="onPanelChannelSelectChange(this.value)">
+                <select class="form-select" id="panel-channel-select" onchange="onPanelChannelSelectChange(this.value)" title="Destination Discord Channel">
                     {% for ch in text_channels %}
                     <option value="{{ ch.id }}">{{ ch.label if ch.label else '#' ~ ch.name }}</option>
                     {% endfor %}
@@ -1761,8 +1770,8 @@
                 <div class="form-group">
                     <label class="form-label">Embed Accent Color</label>
                     <div class="gh-s231">
-                        <input type="color" id="panel-color-picker" value="#5865F2" class="gh-s232" onchange="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();">
-                        <input type="text" class="form-input gh-s233" id="panel-color-hex" value="#5865F2" oninput="document.getElementById('panel-color-picker').value = this.value; updatePanelLivePreview();">
+                        <input type="color" id="panel-color-picker" value="#5865F2" class="gh-s232" title="Panel Accent Color Picker" onchange="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();">
+                        <input type="text" class="form-input gh-s233" id="panel-color-hex" value="#5865F2" title="Panel Color Hex" placeholder="#5865F2" oninput="document.getElementById('panel-color-picker').value = this.value; updatePanelLivePreview();">
                     </div>
                 </div>
                 <div class="form-group">
@@ -1834,9 +1843,9 @@
                                 <div class="discord-embed-title" id="panel-preview-title">Choose Your Community Roles</div>
                                 <div class="discord-embed-desc" id="panel-preview-desc">Click the buttons below to assign or remove roles from your profile!</div>
                             </div>
-                            <img id="panel-preview-thumb" src="" class="gh-s241">
+                            <img id="panel-preview-thumb" src="" alt="Thumbnail Preview" class="gh-s241">
                         </div>
-                        <img id="panel-preview-image" src="" class="gh-s242">
+                        <img id="panel-preview-image" src="" alt="Image Preview" class="gh-s242">
                         <div class="discord-btn-row" id="panel-preview-buttons">
                             <!-- Live Preview Buttons Rendered Here -->
                         </div>
@@ -1894,7 +1903,7 @@
                     </button>
                 </div>
                 <div id="target-resolved-card" class="gh-s247">
-                    <img id="target-res-avatar" src="" class="gh-s248">
+                    <img id="target-res-avatar" src="" alt="Target Avatar" class="gh-s248">
                     <div>
                         <div id="target-res-name" class="gh-s249">User</div>
                         <div id="target-res-info" class="gh-s116">ID</div>
@@ -1928,7 +1937,7 @@
                     </div>
                     <div class="gh-s231">
                         <input type="number" class="form-input gh-s170" id="mod-custom-duration-num" placeholder="Duration amount..." min="1">
-                        <select class="form-select gh-s161" id="mod-custom-duration-unit">
+                        <select class="form-select gh-s161" id="mod-custom-duration-unit" title="Duration Unit">
                             <option value="60">Minutes</option>
                             <option value="3600">Hours</option>
                             <option value="86400">Days</option>
@@ -1939,7 +1948,7 @@
                 <!-- Message History Deletion (for ban & tempban) -->
                 <div class="form-group gh-s95" id="mod-msg-delete-group">
                     <label class="form-label">Delete Message History</label>
-                    <select class="form-select" id="mod-delete-days-select">
+                    <select class="form-select" id="mod-delete-days-select" title="Delete Message History Days">
                         <option value="0">Don't delete any messages</option>
                         <option value="1">Previous 24 Hours (1 Day)</option>
                         <option value="7">Previous 7 Days</option>
@@ -2054,7 +2063,7 @@
             <!-- Role Inclusions / Exclusions -->
             <div class="form-group">
                 <label class="form-label">Members Who Possess Role(s):</label>
-                <select class="form-select gh-s262" id="bulk-filter-has-roles" multiple onchange="toggleBulkActionOptions()">
+                <select class="form-select gh-s262" id="bulk-filter-has-roles" multiple onchange="toggleBulkActionOptions()" title="Members Who Possess Role(s)">
                     {% for r in roles %}
                     <option value="{{ r.id }}">@{{ r.name }}</option>
                     {% endfor %}
@@ -2064,7 +2073,7 @@
 
             <div class="form-group">
                 <label class="form-label">Members Who Lack Role(s):</label>
-                <select class="form-select gh-s262" id="bulk-filter-lacks-roles" multiple>
+                <select class="form-select gh-s262" id="bulk-filter-lacks-roles" multiple title="Members Who Lack Role(s)">
                     {% for r in roles %}
                     <option value="{{ r.id }}">@{{ r.name }}</option>
                     {% endfor %}
@@ -2075,11 +2084,11 @@
             <div class="gh-s230">
                 <div class="form-group">
                     <label class="form-label">Joined Before:</label>
-                    <input type="datetime-local" class="form-input" id="bulk-filter-joined-before">
+                    <input type="datetime-local" class="form-input" id="bulk-filter-joined-before" title="Joined Before Date" placeholder="YYYY-MM-DDTHH:MM">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Joined After:</label>
-                    <input type="datetime-local" class="form-input" id="bulk-filter-joined-after">
+                    <input type="datetime-local" class="form-input" id="bulk-filter-joined-after" title="Joined After Date" placeholder="YYYY-MM-DDTHH:MM">
                 </div>
             </div>
 
@@ -2087,11 +2096,11 @@
             <div class="gh-s230">
                 <div class="form-group">
                     <label class="form-label">Discord Account Created Before:</label>
-                    <input type="datetime-local" class="form-input" id="bulk-filter-account-before">
+                    <input type="datetime-local" class="form-input" id="bulk-filter-account-before" title="Discord Account Created Before Date" placeholder="YYYY-MM-DDTHH:MM">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Target Type:</label>
-                    <select class="form-select" id="bulk-filter-is-bot">
+                    <select class="form-select" id="bulk-filter-is-bot" title="Target Type">
                         <option value="false">Human Members Only</option>
                         <option value="true">Bots Only</option>
                         <option value="">Both Humans & Bots</option>
@@ -2147,7 +2156,7 @@
 
                     <div class="form-group">
                         <label class="form-label">Action to Apply</label>
-                        <select class="form-select" id="bulk-action-type-select" onchange="toggleBulkActionOptions()">
+                        <select class="form-select" id="bulk-action-type-select" onchange="toggleBulkActionOptions()" title="Action to Apply">
                             <option value="role_add">Assign Role</option>
                             <option value="role_remove">Remove Role</option>
                             <option value="timeout">Timeout</option>
@@ -2158,7 +2167,7 @@
 
                     <div class="form-group" id="bulk-role-select-group">
                         <label class="form-label" id="bulk-role-select-label">Select Role to Assign (+)</label>
-                        <select class="form-select" id="bulk-target-role-select">
+                        <select class="form-select" id="bulk-target-role-select" title="Select Role to Assign or Remove">
                             <option value="" disabled selected>-- Choose Role --</option>
                             {% for r in roles %}
                             <option value="{{ r.id }}">@{{ r.name }}</option>
@@ -2169,7 +2178,7 @@
 
                     <div class="form-group gh-s95" id="bulk-duration-group">
                         <label class="form-label">Timeout Duration (Minutes)</label>
-                        <input type="number" class="form-input" id="bulk-duration-input" value="10" min="1" max="40320">
+                        <input type="number" class="form-input" id="bulk-duration-input" value="10" min="1" max="40320" title="Timeout Duration Minutes" placeholder="10">
                     </div>
 
                     <div class="form-group">
@@ -2220,7 +2229,7 @@
                 <input type="text" class="form-input" id="mod-audit-search" placeholder="Search by target user, actor, or reason..." oninput="debounceModAuditSearch()">
             </div>
             <div class="gh-s275">
-                <select class="form-select" id="mod-audit-type-filter" onchange="loadModAuditLogs(0)">
+                <select class="form-select" id="mod-audit-type-filter" onchange="loadModAuditLogs(0)" title="Action Type Filter">
                     <option value="all">All Action Types</option>
                     <option value="TIMEOUT">TIMEOUT</option>
                     <option value="KICK">KICK</option>
@@ -2301,7 +2310,7 @@
         </p>
         <div class="gh-s223">
             <input type="text" class="form-input gh-s170" id="emergency-reason-input" placeholder="Reason for toggling emergency circuit breaker...">
-            <button class="btn {{ 'btn-success' if is_emergency_locked else 'btn-danger' }}" onclick="toggleEmergencyCircuitBreaker()">
+            <button class="btn {{ 'btn-success' if is_emergency_locked else 'btn-danger' }}" id="btn-toggle-emergency" data-locked="{{ 'true' if is_emergency_locked else 'false' }}" onclick="toggleEmergencyCircuitBreaker()">
                 {{ 'Disarm Circuit Breaker' if is_emergency_locked else '🚨 Activate Emergency Stop' }}
             </button>
         </div>
@@ -2331,57 +2340,57 @@
                     <tbody id="matrix-tbody">
                         <tr>
                             <td>Manage Roles</td>
-                            <td><input type="checkbox" id="perm-admin-manage_roles" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-manage_roles" checked></td>
-                            <td><input type="checkbox" id="perm-viewer-manage_roles"></td>
+                            <td><input type="checkbox" id="perm-admin-manage_roles" checked disabled title="Admin Manage Roles" aria-label="Admin Manage Roles"></td>
+                            <td><input type="checkbox" id="perm-mod-manage_roles" checked title="Moderator Manage Roles" aria-label="Moderator Manage Roles"></td>
+                            <td><input type="checkbox" id="perm-viewer-manage_roles" title="Viewer Manage Roles" aria-label="Viewer Manage Roles"></td>
                         </tr>
                         <tr>
                             <td>Create Role Panels</td>
-                            <td><input type="checkbox" id="perm-admin-create_panels" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-create_panels" checked></td>
-                            <td><input type="checkbox" id="perm-viewer-create_panels"></td>
+                            <td><input type="checkbox" id="perm-admin-create_panels" checked disabled title="Admin Create Panels" aria-label="Admin Create Panels"></td>
+                            <td><input type="checkbox" id="perm-mod-create_panels" checked title="Moderator Create Panels" aria-label="Moderator Create Panels"></td>
+                            <td><input type="checkbox" id="perm-viewer-create_panels" title="Viewer Create Panels" aria-label="Viewer Create Panels"></td>
                         </tr>
                         <tr>
                             <td>Timeout Members</td>
-                            <td><input type="checkbox" id="perm-admin-timeout" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-timeout" checked></td>
-                            <td><input type="checkbox" id="perm-viewer-timeout"></td>
+                            <td><input type="checkbox" id="perm-admin-timeout" checked disabled title="Admin Timeout Members" aria-label="Admin Timeout Members"></td>
+                            <td><input type="checkbox" id="perm-mod-timeout" checked title="Moderator Timeout Members" aria-label="Moderator Timeout Members"></td>
+                            <td><input type="checkbox" id="perm-viewer-timeout" title="Viewer Timeout Members" aria-label="Viewer Timeout Members"></td>
                         </tr>
                         <tr>
                             <td>Kick Members</td>
-                            <td><input type="checkbox" id="perm-admin-kick" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-kick" checked></td>
-                            <td><input type="checkbox" id="perm-viewer-kick"></td>
+                            <td><input type="checkbox" id="perm-admin-kick" checked disabled title="Admin Kick Members" aria-label="Admin Kick Members"></td>
+                            <td><input type="checkbox" id="perm-mod-kick" checked title="Moderator Kick Members" aria-label="Moderator Kick Members"></td>
+                            <td><input type="checkbox" id="perm-viewer-kick" title="Viewer Kick Members" aria-label="Viewer Kick Members"></td>
                         </tr>
                         <tr>
                             <td>Permanent Ban</td>
-                            <td><input type="checkbox" id="perm-admin-ban" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-ban"></td>
-                            <td><input type="checkbox" id="perm-viewer-ban"></td>
+                            <td><input type="checkbox" id="perm-admin-ban" checked disabled title="Admin Permanent Ban" aria-label="Admin Permanent Ban"></td>
+                            <td><input type="checkbox" id="perm-mod-ban" title="Moderator Permanent Ban" aria-label="Moderator Permanent Ban"></td>
+                            <td><input type="checkbox" id="perm-viewer-ban" title="Viewer Permanent Ban" aria-label="Viewer Permanent Ban"></td>
                         </tr>
                         <tr>
                             <td>Temporary Ban</td>
-                            <td><input type="checkbox" id="perm-admin-tempban" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-tempban" checked></td>
-                            <td><input type="checkbox" id="perm-viewer-tempban"></td>
+                            <td><input type="checkbox" id="perm-admin-tempban" checked disabled title="Admin Temporary Ban" aria-label="Admin Temporary Ban"></td>
+                            <td><input type="checkbox" id="perm-mod-tempban" checked title="Moderator Temporary Ban" aria-label="Moderator Temporary Ban"></td>
+                            <td><input type="checkbox" id="perm-viewer-tempban" title="Viewer Temporary Ban" aria-label="Viewer Temporary Ban"></td>
                         </tr>
                         <tr>
                             <td>Unban Members</td>
-                            <td><input type="checkbox" id="perm-admin-unban" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-unban" checked></td>
-                            <td><input type="checkbox" id="perm-viewer-unban"></td>
+                            <td><input type="checkbox" id="perm-admin-unban" checked disabled title="Admin Unban Members" aria-label="Admin Unban Members"></td>
+                            <td><input type="checkbox" id="perm-mod-unban" checked title="Moderator Unban Members" aria-label="Moderator Unban Members"></td>
+                            <td><input type="checkbox" id="perm-viewer-unban" title="Viewer Unban Members" aria-label="Viewer Unban Members"></td>
                         </tr>
                         <tr>
                             <td>Bulk Moderation</td>
-                            <td><input type="checkbox" id="perm-admin-bulk_mod" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-bulk_mod"></td>
-                            <td><input type="checkbox" id="perm-viewer-bulk_mod"></td>
+                            <td><input type="checkbox" id="perm-admin-bulk_mod" checked disabled title="Admin Bulk Moderation" aria-label="Admin Bulk Moderation"></td>
+                            <td><input type="checkbox" id="perm-mod-bulk_mod" title="Moderator Bulk Moderation" aria-label="Moderator Bulk Moderation"></td>
+                            <td><input type="checkbox" id="perm-viewer-bulk_mod" title="Viewer Bulk Moderation" aria-label="Viewer Bulk Moderation"></td>
                         </tr>
                         <tr>
                             <td>Emergency Circuit Breaker</td>
-                            <td><input type="checkbox" id="perm-admin-emergency" checked disabled></td>
-                            <td><input type="checkbox" id="perm-mod-emergency"></td>
-                            <td><input type="checkbox" id="perm-viewer-emergency"></td>
+                            <td><input type="checkbox" id="perm-admin-emergency" checked disabled title="Admin Emergency Stop" aria-label="Admin Emergency Stop"></td>
+                            <td><input type="checkbox" id="perm-mod-emergency" title="Moderator Emergency Stop" aria-label="Moderator Emergency Stop"></td>
+                            <td><input type="checkbox" id="perm-viewer-emergency" title="Viewer Emergency Stop" aria-label="Viewer Emergency Stop"></td>
                         </tr>
                     </tbody>
                 </table>
@@ -2403,7 +2412,7 @@
 
             <div class="form-group">
                 <label class="form-label">Select Action Template</label>
-                <select class="form-select" id="template-action-select" onchange="loadSelectedTemplate()">
+                <select class="form-select" id="template-action-select" onchange="loadSelectedTemplate()" title="Select Action Template">
                     <option value="timeout">Timeout Notice</option>
                     <option value="kick">Kick Notice</option>
                     <option value="ban">Permanent Ban Notice</option>
@@ -2416,7 +2425,7 @@
 
             <div class="form-group">
                 <label class="form-label">Template Content</label>
-                <textarea class="form-textarea" id="template-text-editor" rows="4"></textarea>
+                <textarea class="form-textarea" id="template-text-editor" rows="4" title="Template Content" placeholder="Enter DM notification template..."></textarea>
             </div>
 
             <div class="gh-s280">
@@ -2467,7 +2476,7 @@
         </div>
         <div class="forms-filter-group">
             <span class="forms-filter-label">Status Filter:</span>
-            <select id="forms-status-filter" class="form-control forms-filter-select" onchange="filterFormsList()">
+            <select id="forms-status-filter" class="form-control forms-filter-select" onchange="filterFormsList()" title="Forms Status Filter">
                 <option value="all">All Forms</option>
                 <option value="open">🟢 Active / Open</option>
                 <option value="scheduled">⏳ Scheduled</option>
@@ -2517,7 +2526,7 @@
                     <label class="form-label">
                         Destination Channel <span class="required-star">*</span>
                     </label>
-                    <select id="fb-dest-channel" class="form-control" required>
+                    <select id="fb-dest-channel" class="form-control" required title="Destination Text Channel">
                         <option value="">Select text channel...</option>
                         {% for ch in text_channels %}
                         <option value="{{ ch.id }}">#{{ ch.name }}</option>
@@ -2529,7 +2538,7 @@
                     <label class="form-label">
                         Public Panel Channel
                     </label>
-                    <select id="fb-panel-channel" class="form-control">
+                    <select id="fb-panel-channel" class="form-control" title="Public Panel Channel">
                         <option value="">(Optional - select channel)</option>
                         {% for ch in text_channels %}
                         <option value="{{ ch.id }}">#{{ ch.name }}</option>
@@ -2552,7 +2561,7 @@
                     <label class="form-label gh-s287">
                         Role Granted on Approval (Optional):
                     </label>
-                    <select id="fb-approved-role" class="form-control">
+                    <select id="fb-approved-role" class="form-control" title="Role Granted on Approval">
                         <option value="">None (Don't assign role)</option>
                         {% for r in roles %}
                         {% if not r.managed and not r.is_default %}
@@ -2592,13 +2601,13 @@
                         <label class="form-label gh-s291">
                             Opens At (Local Date/Time):
                         </label>
-                        <input type="datetime-local" id="fb-opens-at" class="form-control">
+                        <input type="datetime-local" id="fb-opens-at" class="form-control" title="Opens At Date and Time" placeholder="YYYY-MM-DDTHH:MM">
                     </div>
                     <div>
                         <label class="form-label gh-s291">
                             Closes At (Local Date/Time):
                         </label>
-                        <input type="datetime-local" id="fb-closes-at" class="form-control">
+                        <input type="datetime-local" id="fb-closes-at" class="form-control" title="Closes At Date and Time" placeholder="YYYY-MM-DDTHH:MM">
                     </div>
                 </div>
                 <div class="d-flex items-center gap-2 mt-2">
@@ -2649,7 +2658,7 @@
                 </div>
                 <div>
                     <label class="form-label gh-s296">Field Style:</label>
-                    <select id="mq-new-style" class="form-control">
+                    <select id="mq-new-style" class="form-control" title="Question Field Style">
                         <option value="short">Short Single-Line</option>
                         <option value="paragraph">Paragraph Multi-Line</option>
                     </select>
@@ -2662,11 +2671,11 @@
                 </div>
                 <div>
                     <label class="form-label gh-s296">Min Length:</label>
-                    <input type="number" id="mq-new-min" class="form-control" min="0" max="1000" value="0">
+                    <input type="number" id="mq-new-min" class="form-control" min="0" max="1000" value="0" title="Minimum Character Length" placeholder="0">
                 </div>
                 <div>
                     <label class="form-label gh-s296">Max Length (≤1000):</label>
-                    <input type="number" id="mq-new-max" class="form-control" min="1" max="1000" value="1000">
+                    <input type="number" id="mq-new-max" class="form-control" min="1" max="1000" value="1000" title="Maximum Character Length" placeholder="1000">
                 </div>
             </div>
             <div class="d-flex justify-between items-center">
@@ -2806,9 +2815,732 @@
             <!-- Populated dynamically -->
         </div>
 
-        <div class="gh-s312">
-            <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
-            <button class="btn btn-danger" id="modal-confirm-btn" onclick="executeConfirmedModAction()">Confirm & Execute</button>
+<!-- ========================================== -->
+<!-- QC & FAULT TRACKER TAB                     -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-qc-faults">
+    <!-- Header Section -->
+    <div class="qc-header-bar">
+        <div>
+            <h2 class="qc-header-title">
+                <span>🎯</span> QC & Fault Tracker Hub
+            </h2>
+            <p class="qc-header-subtitle">
+                Comprehensive quality control logging, project-wise fault tracking, role-mapped team accountability, and staff diagnostic analytics.
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-secondary" onclick="initQCTrackerTab()" title="Sync QC data">
+                🔄 Refresh
+            </button>
+            <button class="btn btn-primary" onclick="openQCLogFaultModal()">
+                ➕ Log Fault from Dashboard
+            </button>
+        </div>
+    </div>
+
+    <!-- Subnav Navigation Bar -->
+    <div class="qc-subnav-bar">
+        <button class="qc-subnav-btn active" id="qc-subnav-btn-overview" onclick="switchQCSubTab('overview', this)">
+            📊 Overview & Analytics
+        </button>
+        <button class="qc-subnav-btn" id="qc-subnav-btn-faults" onclick="switchQCSubTab('faults', this)">
+            📋 Fault Logs Explorer
+        </button>
+        <button class="qc-subnav-btn" id="qc-subnav-btn-projects" onclick="switchQCSubTab('projects', this)">
+            📁 Projects Management
+        </button>
+        <button class="qc-subnav-btn" id="qc-subnav-btn-teams" onclick="switchQCSubTab('teams', this)">
+            👥 Dynamic Teams & Roles
+        </button>
+        <button class="qc-subnav-btn" id="qc-subnav-btn-settings" onclick="switchQCSubTab('settings', this)">
+            ⚙️ QC Settings
+        </button>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SUB-PANEL A: OVERVIEW & SUMMARY            -->
+    <!-- ========================================== -->
+    <div class="qc-sub-panel" id="qc-panel-overview">
+        <!-- KPI Cards Grid -->
+        <div class="qc-kpi-grid">
+            <div class="qc-kpi-card kpi-total">
+                <div class="qc-kpi-icon">📝</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-total">0</div>
+                    <div class="qc-kpi-label">Total Faults</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-critical">
+                <div class="qc-kpi-icon">🔴</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-critical">0</div>
+                    <div class="qc-kpi-label">Critical Faults</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-major">
+                <div class="qc-kpi-icon">🟡</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-major">0</div>
+                    <div class="qc-kpi-label">Major Faults</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-minor">
+                <div class="qc-kpi-icon">🟢</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-minor">0</div>
+                    <div class="qc-kpi-label">Minor Faults</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-total">
+                <div class="qc-kpi-icon">⏳</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-open">0</div>
+                    <div class="qc-kpi-label">Open Faults</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-ack">
+                <div class="qc-kpi-icon">✅</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-ack">0 (100%)</div>
+                    <div class="qc-kpi-label">Acknowledged / Fixed</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-total">
+                <div class="qc-kpi-icon">📁</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-projects">0</div>
+                    <div class="qc-kpi-label">Active Projects</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-total">
+                <div class="qc-kpi-icon">👥</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-kpi-teams">0</div>
+                    <div class="qc-kpi-label">Configured Teams</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Side-by-Side: Project Summary & Team Summary -->
+        <div class="qc-grid-2col">
+            <!-- Project-Wise Summary Table -->
+            <div class="qc-panel-card">
+                <div class="qc-panel-header">
+                    <h3 class="qc-panel-title">📁 Project-Wise Summary</h3>
+                    <button class="btn btn-secondary btn-sm" onclick="exportQCFaults('csv')" title="Export current project data">
+                        📥 Export Project CSV
+                    </button>
+                </div>
+                <div class="qc-table-responsive">
+                    <table class="qc-table">
+                        <thead>
+                            <tr>
+                                <th>Project Code</th>
+                                <th>Total</th>
+                                <th>Minor</th>
+                                <th>Major</th>
+                                <th>Critical</th>
+                                <th>Top Fault Categories</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="qc-projects-summary-tbody">
+                            <tr><td colspan="7" class="text-center py-4">⏳ Loading project analytics...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Team-Wise & Leader Summary Table -->
+            <div class="qc-panel-card">
+                <div class="qc-panel-header">
+                    <h3 class="qc-panel-title">👥 Team & Leader Performance</h3>
+                    <button class="btn btn-secondary btn-sm" onclick="switchQCSubTab('teams')" title="Manage dynamic teams">
+                        ⚙️ Configure Teams
+                    </button>
+                </div>
+                <div class="qc-table-responsive">
+                    <table class="qc-table">
+                        <thead>
+                            <tr>
+                                <th>Team Name</th>
+                                <th>Discord Role</th>
+                                <th>Team Leader</th>
+                                <th>Total</th>
+                                <th>Breakdown</th>
+                                <th>Fix Rate</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="qc-teams-summary-tbody">
+                            <tr><td colspan="7" class="text-center py-4">⏳ Loading team analytics...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Labeler-Wise Fault Diagnostic Search -->
+        <div class="qc-panel-card">
+            <div class="qc-panel-header">
+                <div>
+                    <h3 class="qc-panel-title">👤 Labeler Diagnostic Profile & Search</h3>
+                    <p class="text-xs text-muted mt-1">Search any labeler to view their full fault distribution, severity breakdown, recurring tags, and screenshot logs.</p>
+                </div>
+                <div class="qc-search-wrapper-sm">
+                    <input type="text" id="qc-labeler-search-input" class="form-control" placeholder="Search by name, ID, or team..." oninput="debounceQCLabelerSearch()">
+                </div>
+            </div>
+            <div id="qc-labelers-search-results">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SUB-PANEL B: FAULT LOGS EXPLORER           -->
+    <!-- ========================================== -->
+    <div class="qc-sub-panel" id="qc-panel-faults">
+        <!-- Filters Toolbar -->
+        <div class="qc-toolbar">
+            <div class="qc-filters-row">
+                <div class="qc-filter-item">
+                    <span class="qc-filter-label">Project:</span>
+                    <select id="qc-filter-project" class="form-control qc-filter-select" title="Filter by Project" onchange="loadQCFaults(0)">
+                        <option value="">All Projects</option>
+                    </select>
+                </div>
+                <div class="qc-filter-item">
+                    <span class="qc-filter-label">Team:</span>
+                    <select id="qc-filter-team" class="form-control qc-filter-select" title="Filter by Team" onchange="loadQCFaults(0)">
+                        <option value="">All Teams</option>
+                    </select>
+                </div>
+                <div class="qc-filter-item">
+                    <span class="qc-filter-label">Severity:</span>
+                    <select id="qc-filter-severity" class="form-control qc-filter-select" title="Filter by Severity" onchange="loadQCFaults(0)">
+                        <option value="all">All Severities</option>
+                        <option value="minor">🟢 Minor</option>
+                        <option value="major">🟡 Major</option>
+                        <option value="critical">🔴 Critical</option>
+                    </select>
+                </div>
+                <div class="qc-filter-item">
+                    <span class="qc-filter-label">Status:</span>
+                    <select id="qc-filter-status" class="form-control qc-filter-select" title="Filter by Status" onchange="loadQCFaults(0)">
+                        <option value="all">All Statuses</option>
+                        <option value="open">🔴 Open</option>
+                        <option value="acknowledged">✅ Acknowledged</option>
+                    </select>
+                </div>
+                <div class="qc-filter-item">
+                    <span class="qc-filter-label">From:</span>
+                    <input type="date" id="qc-filter-date-from" class="form-control qc-filter-date" title="Filter Date From" onchange="loadQCFaults(0)">
+                </div>
+                <div class="qc-filter-item">
+                    <span class="qc-filter-label">To:</span>
+                    <input type="date" id="qc-filter-date-to" class="form-control qc-filter-date" title="Filter Date To" onchange="loadQCFaults(0)">
+                </div>
+                <div class="qc-filter-item qc-filter-search-col">
+                    <input type="text" id="qc-filter-search" class="form-control qc-filter-search-box" placeholder="Search description, user, tag..." title="Search description, user, tag" oninput="clearTimeout(qcDebounceTimer); qcDebounceTimer = setTimeout(() => loadQCFaults(0), 300)">
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="resetQCFaultFilters()" title="Reset all filters">
+                    ⟳ Reset
+                </button>
+            </div>
+
+            <div class="qc-actions-row">
+                <button class="btn btn-secondary btn-sm" onclick="exportQCFaults('csv')" title="Export filtered records to CSV (UTF-8 BOM)">
+                    📥 Export CSV
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="exportQCFaults('xlsx')" title="Export filtered records to Excel">
+                    📊 Export Excel (.xlsx)
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="openQCLogFaultModal()">
+                    ➕ Log Fault
+                </button>
+            </div>
+        </div>
+
+        <!-- Faults Table -->
+        <div class="qc-panel-card">
+            <div class="qc-table-responsive">
+                <table class="qc-table">
+                    <thead>
+                        <tr>
+                            <th>#ID</th>
+                            <th>Project</th>
+                            <th>Severity</th>
+                            <th>Status</th>
+                            <th>Labeler</th>
+                            <th>Team</th>
+                            <th>Category</th>
+                            <th>Description / Task ID</th>
+                            <th>Screenshot</th>
+                            <th>Logged At</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qc-faults-table-tbody">
+                        <tr><td colspan="11" class="text-center py-4">⏳ Loading fault logs...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Bar -->
+            <div class="d-flex justify-between align-center mt-3 pt-3 qc-pagination-bar">
+                <div id="qc-pagination-info" class="text-xs text-muted">0 records</div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-secondary btn-sm" id="qc-prev-btn" onclick="qcPagePrev()" disabled>← Previous</button>
+                    <button class="btn btn-secondary btn-sm" id="qc-next-btn" onclick="qcPageNext()" disabled>Next →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SUB-PANEL C: PROJECTS MANAGEMENT           -->
+    <!-- ========================================== -->
+    <div class="qc-sub-panel" id="qc-panel-projects">
+        <div class="qc-panel-card">
+            <div class="qc-panel-header">
+                <div>
+                    <h3 class="qc-panel-title">📁 Project Codes Master</h3>
+                    <p class="text-xs text-muted mt-1">Configure project codes available in Discord slash command autocomplete and fault tracking.</p>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="openQCAddProjectModal()">
+                    ➕ Add Project Code
+                </button>
+            </div>
+
+            <div class="qc-table-responsive">
+                <table class="qc-table">
+                    <thead>
+                        <tr>
+                            <th>Project Code</th>
+                            <th>Project Name</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                            <th>Created At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qc-projects-table-tbody">
+                        <tr><td colspan="6" class="text-center py-4">⏳ Loading projects...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SUB-PANEL D: DYNAMIC TEAMS & ROLE MAPPING  -->
+    <!-- ========================================== -->
+    <div class="qc-sub-panel" id="qc-panel-teams">
+        <div class="qc-panel-card">
+            <div class="qc-panel-header">
+                <div>
+                    <h3 class="qc-panel-title">👥 Dynamic Role-Mapped Teams (10+ Teams Support)</h3>
+                    <p class="text-xs text-muted mt-1">
+                        Map Discord server roles directly to production teams. When a labeler is tagged in a fault, their team and Team Leader are automatically detected.
+                    </p>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="openQCAddTeamModal()">
+                    ➕ Add Dynamic Team
+                </button>
+            </div>
+
+            <div class="qc-table-responsive">
+                <table class="qc-table">
+                    <thead>
+                        <tr>
+                            <th>Team Name</th>
+                            <th>Mapped Discord Role</th>
+                            <th>Team Leader</th>
+                            <th>Channel Override</th>
+                            <th>Created At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qc-teams-table-tbody">
+                        <tr><td colspan="6" class="text-center py-4">⏳ Loading teams...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SUB-PANEL E: QC SETTINGS                   -->
+    <!-- ========================================== -->
+    <div class="qc-sub-panel" id="qc-panel-settings">
+        <div class="qc-panel-card qc-settings-card">
+            <div class="qc-panel-header">
+                <h3 class="qc-panel-title">⚙️ QC Tracker Server Settings</h3>
+            </div>
+            <form id="qc-settings-form" onsubmit="handleQCSettingsSubmit(event)">
+                <div class="form-group mb-3">
+                    <label class="form-label">
+                        Default Alert Channel <span class="text-muted">(Fallback for alerts)</span>
+                    </label>
+                    <select id="qc-settings-alert-channel" class="form-control" title="Default Alert Channel">
+                        <option value="">-- No Default Channel Selected --</option>
+                    </select>
+                    <p class="text-xs text-muted mt-1">Fault alerts are posted to this channel unless overridden by team-specific settings.</p>
+                </div>
+
+                <div class="form-group mb-4">
+                    <label class="form-label">
+                        Allowed QC Checker Roles <span class="text-muted">(Allowed to log faults via /fault log)</span>
+                    </label>
+                    <div id="qc-settings-checker-roles-container" class="qc-checker-roles-box">
+                        <!-- Populated dynamically -->
+                    </div>
+                    <p class="text-xs text-muted mt-1">Server Administrators and configured Team Leaders always have permission to log faults.</p>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    💾 Save QC Settings
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- QC MODAL 1: LOG FAULT FROM DASHBOARD       -->
+<!-- ========================================== -->
+<div id="modal-qc-log-fault" class="modal-backdrop">
+    <div class="modal-box modal-box-md">
+        <div class="modal-header">
+            <h3 class="modal-title">➕ Log QC Fault from Dashboard</h3>
+            <button onclick="closeQCModal('modal-qc-log-fault')" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form id="qc-log-fault-form" onsubmit="handleQCLogFaultSubmit(event)">
+            <!-- Labeler Search Picker -->
+            <div class="form-group mb-3 qc-labeler-picker-col">
+                <label class="form-label">
+                    Team Member / Labeler <span class="required-star">*</span>
+                </label>
+                <input type="text" id="qc-lf-labeler-search" class="form-control" placeholder="Search member name or paste 18-19 digit Discord User ID..." autocomplete="off" oninput="debounceQCMemberSearch(this, 'qc-lf-member-results', 'qc-lf-labeler-id')">
+                <input type="text" id="qc-lf-labeler-id" inputmode="numeric" pattern="\d{17,20}" class="qc-hidden-input" title="Labeler User ID" required>
+                <div id="qc-lf-member-results" class="qc-member-picker-results"></div>
+                <p class="text-xs text-muted mt-1">Pick a member from the dropdown or paste their exact 18-19 digit Discord Snowflake ID.</p>
+            </div>
+
+            <div class="gh-s282 mb-3">
+                <div>
+                    <label class="form-label">
+                        Project Code <span class="required-star">*</span>
+                    </label>
+                    <select id="qc-lf-project" class="form-control" required title="Project Code">
+                        <option value="">-- Select Active Project --</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">
+                        Severity <span class="required-star">*</span>
+                    </label>
+                    <select id="qc-lf-severity" class="form-control" required title="Severity">
+                        <option value="minor">🟢 Minor</option>
+                        <option value="major">🟡 Major</option>
+                        <option value="critical">🔴 Critical</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="gh-s282 mb-3">
+                <div>
+                    <label class="form-label">
+                        Fault Category / Tag <span class="text-muted">(Optional)</span>
+                    </label>
+                    <input type="text" id="qc-lf-fault-type" class="form-control" placeholder="e.g. Misclassification, Missed Object">
+                </div>
+                <div>
+                    <label class="form-label">
+                        Team Override <span class="text-muted">(Optional)</span>
+                    </label>
+                    <select id="qc-lf-team" class="form-control" title="Team Override">
+                        <option value="">-- Auto-Detect from Roles --</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Fault Description / Task ID Reference <span class="required-star">*</span>
+                </label>
+                <textarea id="qc-lf-description" class="form-control" rows="3" placeholder="Provide detailed instructions or task error explanation..." required></textarea>
+            </div>
+
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Screenshot Discord CDN Link <span class="text-muted">(Optional)</span>
+                </label>
+                <input type="url" id="qc-lf-image-url" class="form-control" placeholder="https://cdn.discordapp.com/attachments/...">
+                <p class="text-xs text-muted mt-1">Only valid image URL strings are stored. Binary image blobs are never saved to database.</p>
+            </div>
+
+            <div class="form-group mb-4">
+                <label class="d-flex align-center gap-2 text-sm">
+                    <input type="checkbox" id="qc-lf-dispatch-alert" checked>
+                    <span><strong>Dispatch Color-Coded Alert Embed to Discord Channel</strong> (Pings labeler with [✅ Acknowledge] button)</span>
+                </label>
+            </div>
+
+            <div class="d-flex justify-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closeQCModal('modal-qc-log-fault')">Cancel</button>
+                <button type="submit" id="qc-lf-submit-btn" class="btn btn-primary">🚀 Submit & Log Fault</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- QC MODAL 2: ADD / EDIT PROJECT             -->
+<!-- ========================================== -->
+<div id="modal-qc-project" class="modal-backdrop">
+    <div class="modal-box modal-box-sm">
+        <div class="modal-header">
+            <h3 class="modal-title" id="qc-proj-modal-title">➕ Add New Project</h3>
+            <button onclick="closeQCModal('modal-qc-project')" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form id="qc-project-form" onsubmit="handleQCProjectSubmit(event)">
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Project Code <span class="required-star">*</span>
+                </label>
+                <input type="text" id="qc-proj-code" class="form-control qc-code-input" placeholder="e.g. ARC-3D-01" required maxlength="30">
+            </div>
+
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Project Name <span class="required-star">*</span>
+                </label>
+                <input type="text" id="qc-proj-name" class="form-control" placeholder="e.g. LiDAR Point Cloud Labeling" required maxlength="100">
+            </div>
+
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Description <span class="text-muted">(Optional)</span>
+                </label>
+                <textarea id="qc-proj-desc" class="form-control" rows="2" placeholder="Brief project summary or guidelines..."></textarea>
+            </div>
+
+            <div class="form-group mb-4">
+                <label class="d-flex align-center gap-2 text-sm">
+                    <input type="checkbox" id="qc-proj-active" checked>
+                    <span><strong>Active Project</strong> (Shown in Discord /fault log autocomplete)</span>
+                </label>
+            </div>
+
+            <div class="d-flex justify-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closeQCModal('modal-qc-project')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Project</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- QC MODAL 3: ADD / EDIT DYNAMIC TEAM        -->
+<!-- ========================================== -->
+<div id="modal-qc-team" class="modal-backdrop">
+    <div class="modal-box modal-box-md">
+        <div class="modal-header">
+            <h3 class="modal-title">👥 Configure Dynamic Team</h3>
+            <button onclick="closeQCModal('modal-qc-team')" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form id="qc-team-form" onsubmit="handleQCTeamSubmit(event)">
+            <input type="hidden" id="qc-team-id" value="">
+
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Team Name <span class="required-star">*</span>
+                </label>
+                <input type="text" id="qc-team-name" class="form-control" placeholder="e.g. Delta Force, Totoro, Nano Banana" required maxlength="50">
+            </div>
+
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Discord Team Role <span class="required-star">*</span>
+                </label>
+                <select id="qc-team-role-select" class="form-control" required title="Discord Team Role">
+                    <option value="">-- Select Discord Team Role --</option>
+                </select>
+                <p class="text-xs text-muted mt-1">Members holding this role are automatically mapped to this team.</p>
+            </div>
+
+            <!-- Team Leader Search Picker (64-bit ID safe) -->
+            <div class="form-group mb-3 qc-labeler-picker-col">
+                <label class="form-label">
+                    Team Leader <span class="text-muted">(Search member or enter 18-19 digit ID)</span>
+                </label>
+                <input type="text" id="qc-team-leader-search" class="form-control" placeholder="Search leader username or paste User ID..." autocomplete="off" oninput="debounceQCMemberSearch(this, 'qc-team-leader-results', 'qc-team-leader-id')">
+                <input type="text" id="qc-team-leader-id" class="form-control mt-2" inputmode="numeric" pattern="\d{17,20}" placeholder="Exact 18-19 digit Discord User ID" title="Team Leader User ID">
+                <div id="qc-team-leader-results" class="qc-member-picker-results"></div>
+                <p class="text-xs text-muted mt-1">Team Leaders are CC-pinged in fault alerts and have permission to acknowledge faults.</p>
+            </div>
+
+            <div class="form-group mb-4">
+                <label class="form-label">
+                    Team Alert Channel Override <span class="text-muted">(Optional)</span>
+                </label>
+                <select id="qc-team-channel-select" class="form-control" title="Team Alert Channel Override">
+                    <option value="">-- Default Alert Channel --</option>
+                </select>
+                <p class="text-xs text-muted mt-1">If set, fault alerts for this team are sent directly to this channel.</p>
+            </div>
+
+            <div class="d-flex justify-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closeQCModal('modal-qc-team')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Team</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- QC MODAL 4: SCREENSHOT PREVIEW             -->
+<!-- ========================================== -->
+<div id="modal-qc-screenshot" class="modal-backdrop">
+    <div class="modal-box modal-box-md">
+        <div class="modal-header">
+            <h3 class="modal-title">🖼️ Fault Screenshot Preview</h3>
+            <button onclick="closeQCModal('modal-qc-screenshot')" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="qc-img-preview-box">
+            <img id="qc-screenshot-preview-img" src="" alt="Screenshot">
+        </div>
+
+        <div class="d-flex justify-between align-center mt-3">
+            <a id="qc-screenshot-preview-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">
+                ↗ Open Original on Discord CDN
+            </a>
+            <button class="btn btn-secondary btn-sm" onclick="closeQCModal('modal-qc-screenshot')">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- QC MODAL 5: LABELER DIAGNOSTIC PROFILE     -->
+<!-- ========================================== -->
+<div id="modal-qc-labeler-details" class="modal-backdrop">
+    <div class="modal-box qc-modal-lg">
+        <div class="modal-header">
+            <h3 class="modal-title">📊 Labeler Diagnostic Profile</h3>
+            <button onclick="closeQCModal('modal-qc-labeler-details')" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="qc-labeler-profile">
+            <img id="qc-lp-avatar" src="" class="qc-labeler-avatar qc-avatar-hidden" alt="Avatar">
+            <div id="qc-lp-avatar-ph" class="qc-labeler-avatar-placeholder">U</div>
+            <div class="qc-labeler-meta">
+                <h4 id="qc-lp-name">Labeler Name</h4>
+                <p>Discord User ID: <span id="qc-lp-id" class="font-mono">0</span> • Team: <strong id="qc-lp-team">Unassigned</strong></p>
+            </div>
+        </div>
+
+        <!-- Labeler Stats Row -->
+        <div class="qc-kpi-grid mb-4">
+            <div class="qc-kpi-card kpi-total">
+                <div class="qc-kpi-icon">📝</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-lp-total">0</div>
+                    <div class="qc-kpi-label">Total Faults</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-critical">
+                <div class="qc-kpi-icon">🔴</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-lp-critical">0</div>
+                    <div class="qc-kpi-label">Critical</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-major">
+                <div class="qc-kpi-icon">🟡</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-lp-major">0</div>
+                    <div class="qc-kpi-label">Major</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-minor">
+                <div class="qc-kpi-icon">🟢</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-lp-minor">0</div>
+                    <div class="qc-kpi-label">Minor</div>
+                </div>
+            </div>
+            <div class="qc-kpi-card kpi-ack">
+                <div class="qc-kpi-icon">✅</div>
+                <div class="qc-kpi-info">
+                    <div class="qc-kpi-value" id="qc-lp-ack-rate">100%</div>
+                    <div class="qc-kpi-label">Fix / Ack Rate</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recurring Categories & Project Breakdown -->
+        <div class="qc-grid-2col mb-4">
+            <div class="qc-panel-card">
+                <h4 class="qc-panel-title mb-2">🏷️ Recurring Fault Categories</h4>
+                <div id="qc-lp-recurring-types" class="qc-recurring-types-list">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <div class="qc-panel-card">
+                <h4 class="qc-panel-title mb-2">📁 Faults by Project</h4>
+                <div class="qc-table-responsive qc-lp-projects-scroll">
+                    <table class="qc-table">
+                        <thead>
+                            <tr>
+                                <th>Project</th>
+                                <th>Total</th>
+                                <th>Minor</th>
+                                <th>Major</th>
+                                <th>Critical</th>
+                            </tr>
+                        </thead>
+                        <tbody id="qc-lp-projects-tbody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Complete Fault History Table -->
+        <div class="qc-panel-card">
+            <h4 class="qc-panel-title mb-2">📜 Complete Fault History</h4>
+            <div class="qc-table-responsive qc-lp-history-scroll">
+                <table class="qc-table">
+                    <thead>
+                        <tr>
+                            <th>#ID</th>
+                            <th>Project</th>
+                            <th>Severity</th>
+                            <th>Status</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th>Screenshot</th>
+                            <th>Logged At</th>
+                        </tr>
+                    </thead>
+                    <tbody id="qc-lp-history-tbody">
+                        <!-- Populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="d-flex justify-end mt-3">
+            <button class="btn btn-secondary" onclick="closeQCModal('modal-qc-labeler-details')">Close Profile</button>
         </div>
     </div>
 </div>
@@ -2816,6 +3548,30 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script type="application/json" id="guild-roles-data">
+[
+    {% for r in roles %}
+    {"id": "{{ r.id }}", "name": {{ r.name|tojson }}}{{ "," if not loop.last else "" }}
+    {% endfor %}
+]
+</script>
+<script type="application/json" id="guild-channels-data">
+[
+    {% for ch in text_channels %}
+    {"id": "{{ ch.id }}", "name": {{ ch.name|tojson }}}{{ "," if not loop.last else "" }}
+    {% endfor %}
+]
+</script>
+<script type="application/json" id="cog-perm-roles-data">
+{
+    "announcement": {{ cog_permissions.get('announcement', {}).get('allowed_roles', []) | tojson }},
+    "music": {{ cog_permissions.get('music', {}).get('allowed_roles', []) | tojson }},
+    "loa": {{ cog_permissions.get('loa', {}).get('allowed_roles', []) | tojson }},
+    "labeler_tracker": {{ cog_permissions.get('labeler_tracker', {}).get('allowed_roles', []) | tojson }},
+    "logger": {{ cog_permissions.get('logger', {}).get('allowed_roles', []) | tojson }},
+    "settings": {{ cog_permissions.get('settings', {}).get('allowed_roles', []) | tojson }}
+}
+</script>
 <script>
     // Initialize music player progress from data-progress
     document.addEventListener('DOMContentLoaded', function() {
@@ -2830,17 +3586,8 @@
     const serverLogsLimit = 25;
 
     // Roles and Channels metadata for mentions and permissions
-    const guildRoles = [
-        {% for r in roles %}
-        { id: "{{ r.id }}", name: {{ r.name|tojson }} },
-        {% endfor %}
-    ];
-
-    const guildChannels = [
-        {% for ch in text_channels %}
-        { id: "{{ ch.id }}", name: {{ ch.name|tojson }} },
-        {% endfor %}
-    ];
+    const guildRoles = JSON.parse(document.getElementById('guild-roles-data')?.textContent || '[]');
+    const guildChannels = JSON.parse(document.getElementById('guild-channels-data')?.textContent || '[]');
 
     function getRoleName(roleId) {
         const r = guildRoles.find(x => String(x.id) === String(roleId));
@@ -2883,6 +3630,8 @@
             loadEmergencyStatus();
         } else if (tabName === 'forms') {
             loadGuildForms();
+        } else if (tabName === 'qc-faults') {
+            initQCTrackerTab();
         } else {
             stopMusicAutoPolling();
         }
@@ -3849,14 +4598,7 @@
     /* =========================================================
        COG PERMISSIONS & RBAC SYSTEM
        ========================================================= */
-    const cogPermRolesState = {
-        announcement: {{ cog_permissions.get('announcement', {}).get('allowed_roles', []) | tojson }},
-        music: {{ cog_permissions.get('music', {}).get('allowed_roles', []) | tojson }},
-        loa: {{ cog_permissions.get('loa', {}).get('allowed_roles', []) | tojson }},
-        labeler_tracker: {{ cog_permissions.get('labeler_tracker', {}).get('allowed_roles', []) | tojson }},
-        logger: {{ cog_permissions.get('logger', {}).get('allowed_roles', []) | tojson }},
-        settings: {{ cog_permissions.get('settings', {}).get('allowed_roles', []) | tojson }}
-    };
+    const cogPermRolesState = JSON.parse(document.getElementById('cog-perm-roles-data')?.textContent || '{}');
 
     function renderCogPermChips(cogName) {
         const container = document.getElementById(`perm-chips-${cogName}`);
@@ -5564,7 +6306,7 @@ async function loadEmergencyStatus() {
 
 async function toggleEmergencyCircuitBreaker() {
     const reason = document.getElementById('emergency-reason-input')?.value.trim() || 'Manual emergency circuit breaker toggle';
-    const isCurrentlyLocked = {{ 'true' if is_emergency_locked else 'false' }};
+    const isCurrentlyLocked = document.getElementById('btn-toggle-emergency')?.dataset.locked === 'true';
     const newState = !isCurrentlyLocked;
 
     if (!confirm(`Are you sure you want to ${newState ? 'ACTIVATE EMERGENCY STOP' : 'DISARM EMERGENCY STOP'}?`)) return;
@@ -6404,4 +7146,5 @@ async function saveCurrentTemplate() {
         initModerationSystem();
     });
 </script>
+<script src="{{ url_for('static', filename='js/qc_faults.js') }}"></script>
 {% endblock %}
