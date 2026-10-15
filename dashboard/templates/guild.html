@@ -3572,6 +3572,9 @@
     "settings": {{ cog_permissions.get('settings', {}).get('allowed_roles', []) | tojson }}
 }
 </script>
+<script type="application/json" id="allowed-self-roles-data">
+{{ (allowed_self_roles or []) | tojson }}
+</script>
 <script>
     // Initialize music player progress from data-progress
     document.addEventListener('DOMContentLoaded', function() {
@@ -3588,6 +3591,7 @@
     // Roles and Channels metadata for mentions and permissions
     const guildRoles = JSON.parse(document.getElementById('guild-roles-data')?.textContent || '[]');
     const guildChannels = JSON.parse(document.getElementById('guild-channels-data')?.textContent || '[]');
+    const initialAllowedSelfRoles = JSON.parse(document.getElementById('allowed-self-roles-data')?.textContent || '[]');
 
     function getRoleName(roleId) {
         const r = guildRoles.find(x => String(x.id) === String(roleId));
@@ -3617,6 +3621,11 @@
             loadMembersList(0);
             loadAllowedSelfRoles();
         } else if (tabName === 'role-panels') {
+            if (!cachedRolesCatalog || cachedRolesCatalog.length === 0) {
+                loadRolesCatalog();
+            } else {
+                renderPanelItemsRows();
+            }
             loadRolePanels();
         } else if (tabName === 'moderation') {
             loadBanList();
@@ -5144,8 +5153,8 @@
 // MODERATION & ROLE MANAGEMENT JAVASCRIPT LOGIC
 // =============================================================================
 
-let cachedRolesCatalog = [];
-let cachedAllowedSelfRoles = [];
+let cachedRolesCatalog = (typeof guildRoles !== 'undefined' && Array.isArray(guildRoles) && guildRoles.length > 0) ? [...guildRoles] : [];
+let cachedAllowedSelfRoles = (typeof initialAllowedSelfRoles !== 'undefined' && Array.isArray(initialAllowedSelfRoles)) ? [...initialAllowedSelfRoles] : [];
 let selectedInspectorMember = null;
 let currentMemberSearchTimeout = null;
 let currentModAuditTimeout = null;
@@ -5154,6 +5163,16 @@ let bulkJobPollInterval = null;
 let pendingModActionData = null;
 let currentModAuditOffset = 0;
 const modAuditLimit = 25;
+
+function getAvailableRoles() {
+    if (cachedRolesCatalog && cachedRolesCatalog.length > 0) {
+        return cachedRolesCatalog;
+    }
+    if (typeof guildRoles !== 'undefined' && Array.isArray(guildRoles) && guildRoles.length > 0) {
+        return guildRoles;
+    }
+    return [];
+}
 
 // Duration Presets for Timeout & Tempban
 const timeoutPresets = [
@@ -5198,12 +5217,15 @@ function initModerationSystem() {
 
 async function loadRolesCatalog() {
     const tbody = document.getElementById('roles-catalog-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Loading roles...</td></tr>';
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">Loading roles...</td></tr>';
+    }
 
     const data = await apiRequest(`/api/guild/${guildId}/roles/catalog`, 'GET');
     if (!data || !data.roles) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--accent-rose); padding: 20px;">Failed to load roles</td></tr>';
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--accent-rose); padding: 20px;">Failed to load roles</td></tr>';
+        }
         return;
     }
 
@@ -5211,12 +5233,14 @@ async function loadRolesCatalog() {
     await loadAllowedSelfRoles();
     renderRolesCatalogTable();
     populateRoleDropdowns();
+    renderPanelItemsRows();
 }
 
 async function loadAllowedSelfRoles() {
     const data = await apiRequest(`/api/guild/${guildId}/roles/allowed_self`, 'GET');
     if (data && data.allowed_roles) {
         cachedAllowedSelfRoles = data.allowed_roles;
+        renderPanelItemsRows();
     }
 }
 
@@ -5267,6 +5291,7 @@ async function toggleRoleSelfService(roleId, isCurrentlyAllowed) {
     if (res && res.success) {
         cachedAllowedSelfRoles = res.allowed_roles;
         renderRolesCatalogTable();
+        renderPanelItemsRows();
     } else {
         alert(res?.error || 'Failed to update role allowlist');
     }
@@ -5279,21 +5304,24 @@ function populateRoleDropdowns() {
     const bulkLacksSelect = document.getElementById('bulk-filter-lacks-roles');
     const bulkTargetRoleSelect = document.getElementById('bulk-target-role-select');
 
+    const rolesList = getAvailableRoles();
+
     if (filterSelect) {
         filterSelect.innerHTML = '<option value="">All Roles</option>' +
-            cachedRolesCatalog.map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+            rolesList.map(r => `<option value="${r.id}">@${escapeHtml(r.name ? r.name.replace(/^@/, '') : r.id)}</option>`).join('');
     }
     if (bulkHasSelect) {
-        bulkHasSelect.innerHTML = cachedRolesCatalog.map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+        bulkHasSelect.innerHTML = rolesList.map(r => `<option value="${r.id}">@${escapeHtml(r.name ? r.name.replace(/^@/, '') : r.id)}</option>`).join('');
     }
     if (bulkLacksSelect) {
-        bulkLacksSelect.innerHTML = cachedRolesCatalog.map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+        bulkLacksSelect.innerHTML = rolesList.map(r => `<option value="${r.id}">@${escapeHtml(r.name ? r.name.replace(/^@/, '') : r.id)}</option>`).join('');
     }
     if (bulkTargetRoleSelect) {
         bulkTargetRoleSelect.innerHTML = '<option value="" disabled selected>-- Choose Role --</option>' +
-            cachedRolesCatalog.filter(r => r.can_bot_manage).map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+            rolesList.filter(r => r.can_bot_manage !== false).map(r => `<option value="${r.id}">@${escapeHtml(r.name ? r.name.replace(/^@/, '') : r.id)}</option>`).join('');
     }
     toggleBulkActionOptions();
+    renderPanelItemsRows();
 }
 
 function debounceMemberSearch() {
@@ -5454,6 +5482,10 @@ function resetPanelBuilderForm() {
     document.getElementById('panel-thumb-url').value = '';
     document.getElementById('panel-image-url').value = '';
 
+    if ((!cachedRolesCatalog || cachedRolesCatalog.length === 0) && typeof guildRoles !== 'undefined' && guildRoles.length > 0) {
+        cachedRolesCatalog = [...guildRoles];
+    }
+
     panelItemsState = [
         { item_type: 'button', role_id: '', label: 'Member Role', style: 'primary', emoji: '⭐', toggle: true }
     ];
@@ -5465,6 +5497,9 @@ function addPanelItemRow() {
     if (panelItemsState.length >= 25) {
         alert('Discord allows a maximum of 25 interactive items per panel.');
         return;
+    }
+    if ((!cachedRolesCatalog || cachedRolesCatalog.length === 0) && typeof guildRoles !== 'undefined' && guildRoles.length > 0) {
+        cachedRolesCatalog = [...guildRoles];
     }
     panelItemsState.push({
         item_type: 'button',
@@ -5484,6 +5519,21 @@ function removePanelItemRow(idx) {
     updatePanelLivePreview();
 }
 
+function onPanelItemRoleChange(idx, roleId) {
+    if (!panelItemsState[idx]) return;
+    panelItemsState[idx].role_id = String(roleId);
+    if (roleId && (!panelItemsState[idx].label || panelItemsState[idx].label === 'Role Button' || panelItemsState[idx].label === 'Member Role')) {
+        const roles = getAvailableRoles();
+        const role = roles.find(r => String(r.id) === String(roleId));
+        if (role && role.name) {
+            panelItemsState[idx].label = role.name.replace(/^@/, '');
+            const input = document.getElementById(`panel-item-label-${idx}`);
+            if (input) input.value = panelItemsState[idx].label;
+        }
+    }
+    updatePanelLivePreview();
+}
+
 function renderPanelItemsRows() {
     const container = document.getElementById('panel-items-container');
     if (!container) return;
@@ -5493,25 +5543,27 @@ function renderPanelItemsRows() {
         return;
     }
 
+    const availableRoles = getAvailableRoles().filter(r => !r.is_default && r.name !== '@everyone');
+
     container.innerHTML = panelItemsState.map((item, idx) => `
         <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px; display: grid; grid-template-columns: 120px 1fr 140px 110px 90px 32px; gap: 8px; align-items: center;">
-            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].item_type = this.value; renderPanelItemsRows(); updatePanelLivePreview();">
+            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].item_type = this.value; renderPanelItemsRows(); updatePanelLivePreview();" title="Item Type">
                 <option value="button" ${item.item_type === 'button' ? 'selected' : ''}>🔘 Button</option>
                 <option value="reaction" ${item.item_type === 'reaction' ? 'selected' : ''}>😀 Reaction</option>
             </select>
 
-            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].role_id = String(this.value); updatePanelLivePreview();">
+            <select class="form-select" style="font-size:12px;" onchange="onPanelItemRoleChange(${idx}, this.value)" title="Select Role">
                 <option value="">Select Role...</option>
-                ${cachedRolesCatalog.map(r => `
+                ${availableRoles.map(r => `
                     <option value="${r.id}" ${String(item.role_id) === String(r.id) ? 'selected' : ''}>
-                        @${escapeHtml(r.name)} ${cachedAllowedSelfRoles.map(String).includes(String(r.id)) ? '⭐' : '(Not Whitelisted)'}
+                        @${escapeHtml(r.name ? r.name.replace(/^@/, '') : ('Role #' + r.id))} ${cachedAllowedSelfRoles.map(String).includes(String(r.id)) ? '⭐' : '(Not Whitelisted)'}
                     </option>
                 `).join('')}
             </select>
 
-            <input type="text" class="form-input" style="font-size:12px;" placeholder="${item.item_type === 'button' ? 'Label...' : 'Emoji name...'}" value="${escapeHtml(item.label || '')}" oninput="panelItemsState[${idx}].label = this.value; updatePanelLivePreview();" ${item.item_type === 'reaction' ? 'disabled' : ''}>
+            <input type="text" id="panel-item-label-${idx}" class="form-input" style="font-size:12px;" placeholder="${item.item_type === 'button' ? 'Label...' : 'Emoji name...'}" value="${escapeHtml(item.label || '')}" oninput="panelItemsState[${idx}].label = this.value; updatePanelLivePreview();" ${item.item_type === 'reaction' ? 'disabled' : ''}>
 
-            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].style = this.value; updatePanelLivePreview();" ${item.item_type === 'reaction' ? 'disabled' : ''}>
+            <select class="form-select" style="font-size:12px;" onchange="panelItemsState[${idx}].style = this.value; updatePanelLivePreview();" ${item.item_type === 'reaction' ? 'disabled' : ''} title="Button Style">
                 <option value="primary" ${item.style === 'primary' ? 'selected' : ''}>Primary (Blurple)</option>
                 <option value="secondary" ${item.style === 'secondary' ? 'selected' : ''}>Secondary (Grey)</option>
                 <option value="success" ${item.style === 'success' ? 'selected' : ''}>Success (Green)</option>
