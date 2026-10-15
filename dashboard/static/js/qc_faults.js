@@ -551,36 +551,56 @@ function exportQCFaults(format) {
 // =============================================================================
 
 function openQCLogFaultModal() {
-    // Populate projects dropdown
-    populateQCModalDropdowns();
+    console.log('[QC] openQCLogFaultModal called');
+    // Open modal immediately for instant user responsiveness
     openQCModal('modal-qc-log-fault');
+
+    // Reset form & state safely
+    const form = document.getElementById('qc-log-fault-form');
+    if (form) form.reset();
+    const labelerId = document.getElementById('qc-lf-labeler-id');
+    if (labelerId) labelerId.value = '';
+    const results = document.getElementById('qc-lf-member-results');
+    if (results) results.style.display = 'none';
+
+    // Populate dropdowns in background
+    populateQCModalDropdowns().catch(err => {
+        console.error('[QC] Error loading dropdowns for log fault modal:', err);
+    });
 }
 
 async function populateQCModalDropdowns() {
+    const gId = window.guildId || (typeof guildId !== 'undefined' ? guildId : '');
     const projSelect = document.getElementById('qc-lf-project');
     const teamSelect = document.getElementById('qc-lf-team');
 
-    // Load projects
-    const pData = await apiRequest(`/api/guild/${guildId}/qc/projects`, 'GET');
-    if (pData && pData.success && projSelect) {
-        const activeProjects = (pData.projects || []).filter(p => p.is_active);
-        if (activeProjects.length === 0) {
-            projSelect.innerHTML = '<option value="">⚠️ No active projects found! Add a project in Projects tab first.</option>';
-        } else {
-            projSelect.innerHTML = '<option value="">-- Select Active Project --</option>' +
-                activeProjects.map(p =>
-                    `<option value="${escapeHTML(p.project_code)}">${escapeHTML(p.project_code)} — ${escapeHTML(p.project_name)}</option>`
-                ).join('');
+    try {
+        const pData = await apiRequest(`/api/guild/${gId}/qc/projects`, 'GET');
+        if (pData && pData.success && projSelect) {
+            const activeProjects = (pData.projects || []).filter(p => p.is_active);
+            if (activeProjects.length === 0) {
+                projSelect.innerHTML = '<option value="">⚠️ No active projects found! Add a project in Projects tab first.</option>';
+            } else {
+                projSelect.innerHTML = '<option value="">-- Select Active Project --</option>' +
+                    activeProjects.map(p =>
+                        `<option value="${escapeHTML(p.project_code)}">${escapeHTML(p.project_code)} — ${escapeHTML(p.project_name)}</option>`
+                    ).join('');
+            }
         }
+    } catch (e) {
+        console.error('[QC] Failed to fetch projects:', e);
     }
 
-    // Load teams
-    const tData = await apiRequest(`/api/guild/${guildId}/qc/teams`, 'GET');
-    if (tData && tData.success && teamSelect) {
-        teamSelect.innerHTML = '<option value="">-- Auto-Detect from Labeler Roles --</option>' +
-            (tData.teams || []).map(t =>
-                `<option value="${t.id}">${escapeHTML(t.team_name)} (Role: ${escapeHTML(t.role_name || '')})</option>`
-            ).join('');
+    try {
+        const tData = await apiRequest(`/api/guild/${gId}/qc/teams`, 'GET');
+        if (tData && tData.success && teamSelect) {
+            teamSelect.innerHTML = '<option value="">-- Auto-Detect from Labeler Roles --</option>' +
+                (tData.teams || []).map(t =>
+                    `<option value="${t.id}">${escapeHTML(t.team_name)} (Role: ${escapeHTML(t.role_name || '')})</option>`
+                ).join('');
+        }
+    } catch (e) {
+        console.error('[QC] Failed to fetch teams:', e);
     }
 }
 
@@ -731,9 +751,13 @@ async function loadQCProjects() {
 }
 
 function openQCAddProjectModal() {
-    document.getElementById('qc-proj-modal-title').textContent = '➕ Add New Project';
-    document.getElementById('qc-project-form').reset();
-    document.getElementById('qc-proj-code').readOnly = false;
+    console.log('[QC] openQCAddProjectModal called');
+    const title = document.getElementById('qc-proj-modal-title');
+    if (title) title.textContent = '➕ Add New Project';
+    const form = document.getElementById('qc-project-form');
+    if (form) form.reset();
+    const code = document.getElementById('qc-proj-code');
+    if (code) code.readOnly = false;
     openQCModal('modal-qc-project');
 }
 
@@ -856,8 +880,11 @@ async function loadQCTeams() {
 }
 
 function openQCAddTeamModal() {
-    document.getElementById('qc-team-form').reset();
-    document.getElementById('qc-team-id').value = '';
+    console.log('[QC] openQCAddTeamModal called');
+    const form = document.getElementById('qc-team-form');
+    if (form) form.reset();
+    const teamId = document.getElementById('qc-team-id');
+    if (teamId) teamId.value = '';
     populateQCTeamRoleOptions();
     openQCModal('modal-qc-team');
 }
@@ -865,15 +892,17 @@ function openQCAddTeamModal() {
 function populateQCTeamRoleOptions() {
     const roleSelect = document.getElementById('qc-team-role-select');
     const chSelect = document.getElementById('qc-team-channel-select');
+    const roles = window.guildRoles || (typeof guildRoles !== 'undefined' ? guildRoles : []);
+    const channels = window.guildChannels || (typeof guildChannels !== 'undefined' ? guildChannels : []);
 
     if (roleSelect) {
         roleSelect.innerHTML = '<option value="">-- Select Discord Team Role --</option>' +
-            guildRoles.map(r => `<option value="${escapeHTML(String(r.id))}">${escapeHTML(r.name)}</option>`).join('');
+            roles.map(r => `<option value="${escapeHTML(String(r.id))}">${escapeHTML(r.name)}</option>`).join('');
     }
 
     if (chSelect) {
         chSelect.innerHTML = '<option value="">-- Default Alert Channel (from QC Settings) --</option>' +
-            guildChannels.map(c => `<option value="${escapeHTML(String(c.id))}">#${escapeHTML(c.name)}</option>`).join('');
+            channels.map(c => `<option value="${escapeHTML(String(c.id))}">#${escapeHTML(c.name)}</option>`).join('');
     }
 }
 
@@ -1051,18 +1080,25 @@ function selectQCMember(memberId, memberDisplayName, inputElId, targetIdInputId,
 // =============================================================================
 
 function openQCModal(modalId) {
+    console.log('[QC] Opening modal:', modalId);
     const el = document.getElementById(modalId);
     if (el) {
         el.classList.add('active');
-        el.style.display = 'flex';
+        el.style.setProperty('display', 'flex', 'important');
+        el.style.setProperty('z-index', '10000', 'important');
+        el.style.setProperty('visibility', 'visible', 'important');
+        el.style.setProperty('opacity', '1', 'important');
+    } else {
+        console.error('[QC] Modal element not found:', modalId);
     }
 }
 
 function closeQCModal(modalId) {
+    console.log('[QC] Closing modal:', modalId);
     const el = document.getElementById(modalId);
     if (el) {
         el.classList.remove('active');
-        el.style.display = 'none';
+        el.style.setProperty('display', 'none', 'important');
     }
 }
 
@@ -1083,3 +1119,31 @@ function escapeHTML(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+
+// =============================================================================
+// Global Window Function Bindings (Safe for inline HTML onclick handlers)
+// =============================================================================
+window.openQCLogFaultModal = openQCLogFaultModal;
+window.openQCAddProjectModal = openQCAddProjectModal;
+window.openQCAddTeamModal = openQCAddTeamModal;
+window.openQCModal = openQCModal;
+window.closeQCModal = closeQCModal;
+window.switchQCSubTab = switchQCSubTab;
+window.initQCTrackerTab = initQCTrackerTab;
+window.handleQCLogFaultSubmit = handleQCLogFaultSubmit;
+window.handleQCProjectSubmit = handleQCProjectSubmit;
+window.handleQCTeamSubmit = handleQCTeamSubmit;
+window.handleQCSettingsSubmit = handleQCSettingsSubmit;
+window.exportQCFaults = exportQCFaults;
+window.openQCScreenshotPreview = openQCScreenshotPreview;
+window.openQCLabelerProfile = openQCLabelerProfile;
+window.deleteQCProject = deleteQCProject;
+window.toggleQCProjectStatus = toggleQCProjectStatus;
+window.deleteQCTeam = deleteQCTeam;
+window.debounceQCMemberSearch = debounceQCMemberSearch;
+window.selectQCMember = selectQCMember;
+window.qcPagePrev = qcPagePrev;
+window.qcPageNext = qcPageNext;
+window.applyQCFaultFilter = applyQCFaultFilter;
+window.resetQCFaultFilter = resetQCFaultFilter;
+

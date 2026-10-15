@@ -3,9 +3,9 @@
 {% block title %}{{ guild.name }} — Control Hub{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.2">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.2">
 {% endblock %}
 
 {% block content %}
@@ -3595,10 +3595,13 @@
     let currentServerLogsOffset = 0;
     const serverLogsLimit = 25;
 
-    // Roles and Channels metadata for mentions and permissions
     const guildRoles = JSON.parse(document.getElementById('guild-roles-data')?.textContent || '[]');
     const guildChannels = JSON.parse(document.getElementById('guild-channels-data')?.textContent || '[]');
     const initialAllowedSelfRoles = JSON.parse(document.getElementById('allowed-self-roles-data')?.textContent || '[]');
+
+    window.guildId = guildId;
+    window.guildRoles = guildRoles;
+    window.guildChannels = guildChannels;
 
     function getRoleName(roleId) {
         const r = guildRoles.find(x => String(x.id) === String(roleId));
@@ -7205,5 +7208,5 @@ async function saveCurrentTemplate() {
         initModerationSystem();
     });
 </script>
-<script src="{{ url_for('static', filename='js/qc_faults.js') }}"></script>
+<script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.2"></script>
 {% endblock %}

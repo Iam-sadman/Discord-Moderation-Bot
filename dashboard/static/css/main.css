@@ -501,6 +501,11 @@ input:checked + .slider:before {
     overflow-y: auto;
 }
 
+.modal-backdrop.active {
+    display: flex !important;
+    z-index: 10000 !important;
+}
+
 .modal-box {
     background: var(--bg-card);
     border: 1px solid var(--border-hover);

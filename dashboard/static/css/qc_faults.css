@@ -510,5 +510,8 @@
 /* Modals Display & Backdrop Activation */
 .modal-backdrop.active {
     display: flex !important;
+    z-index: 10000 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
