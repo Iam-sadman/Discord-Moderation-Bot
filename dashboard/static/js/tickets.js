@@ -5,6 +5,8 @@
  */
 
 // Module state
+let currentPanels = [];
+let activePanelId = null;
 let currentTicketSettings = null;
 let currentTicketCategories = [];
 let currentTicketsList = [];
@@ -20,55 +22,269 @@ let selectedCatMembers = new Set();
 let currentViewingTicketId = null;
 let currentEditingCategoryId = null;
 
+// Safe HTML escape helper
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const str = String(text);
+    const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+    return str.replace(/[&<>"']/g, m => map[m]);
+}
+
 // =============================================================================
-// 1. Initialization & Core Data Loading
+// 1. Initialization & Core Data Loading (Multiple Panels Support)
 // =============================================================================
 
 async function initTicketsTab() {
     console.log("[Tickets] Initializing Support Tickets tab for guild:", window.guildId);
-    await loadTicketSettingsAndMeta();
-    await loadTicketCategories();
-    await loadTicketsList();
+    try {
+        await loadTicketPanels();
+    } catch (e) {
+        console.error("[Tickets] Error loading panels:", e);
+    }
+    try {
+        await loadTicketsList();
+    } catch (e) {
+        console.error("[Tickets] Error loading tickets list:", e);
+    }
 }
 
-async function loadTicketSettingsAndMeta() {
-    const res = await apiRequest(`/api/guild/${window.guildId}/tickets/settings`, 'GET');
-    if (!res || !res.success) {
-        console.error("[Tickets] Failed to load settings:", res);
-        return;
+async function loadTicketPanels() {
+    try {
+        const res = await apiRequest(`/api/guild/${window.guildId}/tickets/panels`, 'GET');
+        if (!res || !res.success) {
+            console.error("[Tickets] Failed to load panels:", res);
+            const catContainer = document.getElementById('ticket-categories-list');
+            if (catContainer) {
+                catContainer.innerHTML = '<div class="text-muted text-center p-3">Failed to load panels. Click "Refresh" above to retry.</div>';
+            }
+            return;
+        }
+
+        currentPanels = res.panels || [];
+        serverChannels = res.channels || [];
+        serverRoles = res.roles || [];
+        serverMembers = res.members || [];
+
+        // Ensure we have an active panel selected
+        if (!activePanelId || !currentPanels.some(p => p.id === activePanelId)) {
+            activePanelId = currentPanels.length > 0 ? currentPanels[0].id : null;
+        }
+
+        // Render Panel switcher tabs
+        renderPanelSwitcher();
+        populatePanelFilterDropdown();
+
+        // Populate active panel config form
+        if (activePanelId) {
+            populateActivePanelForm();
+            await loadTicketCategories(activePanelId);
+        } else {
+            const catContainer = document.getElementById('ticket-categories-list');
+            if (catContainer) {
+                catContainer.innerHTML = '<div class="text-muted text-center p-3">No panels configured. Click "➕ New Panel" to create your first ticket desk.</div>';
+            }
+        }
+
+        // Update Statistics
+        updateTicketStats(res.counts || {});
+
+        // Initialize Searchable Pickers
+        initSearchablePickers();
+    } catch (err) {
+        console.error("[Tickets] Error in loadTicketPanels:", err);
+        const catContainer = document.getElementById('ticket-categories-list');
+        if (catContainer) {
+            catContainer.innerHTML = '<div class="text-muted text-center p-3">Failed to load panels. Click "Refresh" to retry.</div>';
+        }
+    }
+}
+
+function renderPanelSwitcher() {
+    const nav = document.getElementById('ticket-panels-nav');
+    if (!nav) return;
+    nav.innerHTML = '';
+
+    currentPanels.forEach(p => {
+        const isActive = p.id === activePanelId;
+        const pill = document.createElement('div');
+        pill.className = `tickets-panel-pill ${isActive ? 'active' : ''}`;
+        const isPublished = Boolean(p.message_id);
+        const pubIcon = isPublished ? '🟢' : '⚪';
+        pill.innerHTML = `
+            <span>${pubIcon}</span>
+            <span>${escapeHtml(p.name)}</span>
+            <span class="badge-count" title="${p.category_count || 0} category button(s)">${p.category_count || 0}</span>
+        `;
+        pill.onclick = () => switchActivePanel(p.id);
+        nav.appendChild(pill);
+    });
+
+    const delBtn = document.getElementById('btn-delete-active-panel');
+    if (delBtn) {
+        delBtn.style.display = currentPanels.length > 1 ? 'inline-flex' : 'none';
+    }
+}
+
+async function switchActivePanel(panelId) {
+    if (activePanelId === panelId) return;
+    activePanelId = panelId;
+    renderPanelSwitcher();
+    populateActivePanelForm();
+    await loadTicketCategories(activePanelId);
+    updateDiscordPreview();
+}
+
+function populateActivePanelForm() {
+    const panel = currentPanels.find(p => p.id === activePanelId);
+    if (!panel) return;
+
+    // Header updates
+    const nameHeader = document.getElementById('active-panel-name-header');
+    if (nameHeader) nameHeader.innerText = panel.name;
+    const catTitle = document.getElementById('active-panel-cat-title');
+    if (catTitle) catTitle.innerText = panel.name;
+
+    // Status badge
+    const badge = document.getElementById('active-panel-status-badge');
+    if (badge) {
+        if (panel.message_id) {
+            badge.innerHTML = `<span class="tickets-panel-status-tag published" title="Message ID: ${panel.message_id}">🟢 Live on Discord (Msg #${panel.message_id})</span>`;
+        } else {
+            badge.innerHTML = `<span class="tickets-panel-status-tag">⚪ Not Published to Discord</span>`;
+        }
     }
 
-    currentTicketSettings = res.settings || {};
-    serverChannels = res.channels || [];
-    serverRoles = res.roles || [];
-    serverMembers = res.members || [];
+    // Form inputs
+    const nameInput = document.getElementById('ticket-config-panel-name');
+    if (nameInput) nameInput.value = panel.name;
 
-    // Populate Channel Selectors
-    populateChannelDropdown('ticket-config-panel-channel', currentTicketSettings.panel_channel_id);
-    populateChannelDropdown('ticket-config-transcript-channel', currentTicketSettings.transcript_channel_id, true);
+    populateChannelDropdown('ticket-config-panel-channel', panel.channel_id);
+    populateChannelDropdown('ticket-config-transcript-channel', panel.transcript_channel_id, true);
 
-    // Populate Settings Inputs
-    document.getElementById('ticket-config-panel-title').value = currentTicketSettings.panel_title || '🛡️ Official Support & Issue Desk';
-    document.getElementById('ticket-config-panel-desc').value = currentTicketSettings.panel_description || 'Click a category button below to open a secure Private Thread.';
-    const color = currentTicketSettings.panel_color || '#5865F2';
-    document.getElementById('ticket-config-panel-color').value = color;
-    document.getElementById('ticket-config-panel-color-hex').value = color;
-    document.getElementById('ticket-config-max-open').value = currentTicketSettings.max_open_per_user || 2;
+    const titleInput = document.getElementById('ticket-config-panel-title');
+    if (titleInput) titleInput.value = panel.panel_title || '🛡️ Official Support & Issue Desk';
 
-    // Initialize Global Support Tag Pickers
-    selectedGlobalRoles = new Set((currentTicketSettings.support_role_ids || []).map(String));
-    selectedGlobalMembers = new Set((currentTicketSettings.support_member_ids || []).map(String));
+    const descInput = document.getElementById('ticket-config-panel-desc');
+    if (descInput) descInput.value = panel.panel_description || 'Click a category button below to open a secure Private Thread.';
+
+    const color = panel.panel_color || '#5865F2';
+    const colorInput = document.getElementById('ticket-config-panel-color');
+    const colorHexInput = document.getElementById('ticket-config-panel-color-hex');
+    if (colorInput) colorInput.value = color;
+    if (colorHexInput) colorHexInput.value = color;
+
+    const maxOpenInput = document.getElementById('ticket-config-max-open');
+    if (maxOpenInput) maxOpenInput.value = panel.max_open_per_user || 2;
+
+    // Support Roles & Members
+    selectedGlobalRoles = new Set((panel.support_role_ids || []).map(String));
+    selectedGlobalMembers = new Set((panel.support_member_ids || []).map(String));
     renderGlobalRolesTags();
     renderGlobalMembersTags();
 
-    // Update Statistics
-    updateTicketStats(res.counts || {});
-
-    // Update Live Preview
     updateDiscordPreview();
+}
 
-    // Initialize Searchable Pickers
-    initSearchablePickers();
+function handleActivePanelNameInput(val) {
+    const clean = val.trim() || 'Ticket Panel';
+    const nameHeader = document.getElementById('active-panel-name-header');
+    if (nameHeader) nameHeader.innerText = clean;
+    const catTitle = document.getElementById('active-panel-cat-title');
+    if (catTitle) catTitle.innerText = clean;
+}
+
+function populatePanelFilterDropdown() {
+    const select = document.getElementById('tickets-filter-panel');
+    if (!select) return;
+    const curVal = select.value;
+    select.innerHTML = '<option value="">All Panels</option>';
+    currentPanels.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = String(p.id);
+        opt.textContent = `🎫 ${p.name}`;
+        if (curVal && curVal === String(p.id)) opt.selected = true;
+        select.appendChild(opt);
+    });
+}
+
+// Modal: Create New Panel
+function openCreatePanelModal() {
+    document.getElementById('new-panel-name').value = '';
+    populateChannelDropdown('new-panel-channel', '');
+    populateChannelDropdown('new-panel-transcript-channel', '', true);
+    document.getElementById('new-panel-title').value = '🛡️ Support Desk';
+    document.getElementById('new-panel-desc').value = 'Click a category button below to open a secure Private Thread.';
+    document.getElementById('new-panel-color').value = '#5865F2';
+    document.getElementById('new-panel-color-hex').value = '#5865F2';
+    document.getElementById('new-panel-max-open').value = 2;
+
+    document.getElementById('modal-ticket-panel').style.display = 'flex';
+}
+
+function closeCreatePanelModal() {
+    document.getElementById('modal-ticket-panel').style.display = 'none';
+}
+
+async function submitCreatePanelModal(event) {
+    if (event) event.preventDefault();
+    const name = document.getElementById('new-panel-name').value.trim();
+    const chId = document.getElementById('new-panel-channel').value;
+    const trId = document.getElementById('new-panel-transcript-channel').value;
+    const title = document.getElementById('new-panel-title').value.trim();
+    const desc = document.getElementById('new-panel-desc').value.trim();
+    const color = document.getElementById('new-panel-color-hex').value.trim();
+    const maxOpen = parseInt(document.getElementById('new-panel-max-open').value, 10) || 2;
+
+    if (!name) {
+        alert('Please specify a panel name.');
+        return;
+    }
+    if (!chId) {
+        alert('Please choose a designated Discord panel channel.');
+        return;
+    }
+
+    const payload = {
+        name: name,
+        channel_id: chId,
+        transcript_channel_id: trId || null,
+        panel_title: title || '🛡️ Support Desk',
+        panel_description: desc || 'Click a category button below to open a secure Private Thread.',
+        panel_color: color || '#5865F2',
+        max_open_per_user: maxOpen
+    };
+
+    const res = await apiRequest(`/api/guild/${window.guildId}/tickets/panels`, 'POST', payload);
+    if (res && res.success) {
+        closeCreatePanelModal();
+        activePanelId = res.panel.id;
+        await loadTicketPanels();
+        alert(`✅ Ticket panel "${name}" created successfully! You can now add category buttons and publish it to Discord.`);
+    } else {
+        alert(res?.error || 'Failed to create ticket panel.');
+    }
+}
+
+async function deleteActivePanelPrompt() {
+    if (currentPanels.length <= 1) {
+        alert('⚠️ Cannot delete the only ticket panel in the server.');
+        return;
+    }
+    const panel = currentPanels.find(p => p.id === activePanelId);
+    if (!panel) return;
+
+    if (!confirm(`🗑️ Are you sure you want to delete panel "${panel.name}"?\n\n- All associated category buttons will be removed.\n- If published on Discord, the message embed will be deleted.`)) {
+        return;
+    }
+
+    const res = await apiRequest(`/api/guild/${window.guildId}/tickets/panels/${activePanelId}`, 'DELETE');
+    if (res && res.success) {
+        activePanelId = null;
+        await loadTicketPanels();
+        alert('✅ Ticket panel deleted successfully.');
+    } else {
+        alert(res?.error || 'Failed to delete panel.');
+    }
 }
 
 function updateTicketStats(counts) {
@@ -105,6 +321,7 @@ function populateChannelDropdown(elemId, selectedId, allowNone = false) {
         select.appendChild(opt);
     });
 }
+
 
 // =============================================================================
 // 2. Multi-Select Role & Member Tag Pickers
@@ -302,10 +519,11 @@ function handleTicketColorChange(val) {
 }
 
 // =============================================================================
-// 3. Save Settings & Publish Panel
+// 3. Save Settings & Publish Panel (Active Panel Support)
 // =============================================================================
 
 async function saveTicketSettings() {
+    const name = document.getElementById('ticket-config-panel-name')?.value.trim() || 'Support Desk';
     const panelCh = document.getElementById('ticket-config-panel-channel').value;
     const transCh = document.getElementById('ticket-config-transcript-channel').value;
     const title = document.getElementById('ticket-config-panel-title').value.trim();
@@ -314,7 +532,8 @@ async function saveTicketSettings() {
     const maxOpen = parseInt(document.getElementById('ticket-config-max-open').value, 10) || 2;
 
     const payload = {
-        panel_channel_id: panelCh || null,
+        name: name,
+        channel_id: panelCh || null,
         transcript_channel_id: transCh || null,
         support_role_ids: Array.from(selectedGlobalRoles),
         support_member_ids: Array.from(selectedGlobalMembers),
@@ -324,14 +543,29 @@ async function saveTicketSettings() {
         max_open_per_user: maxOpen
     };
 
-    const res = await apiRequest(`/api/guild/${window.guildId}/tickets/settings`, 'POST', payload);
-    if (res && res.success) {
-        currentTicketSettings = res.settings;
-        updateDiscordPreview();
-        alert('✅ Ticket configuration saved successfully!');
+    let res;
+    if (activePanelId) {
+        res = await apiRequest(`/api/guild/${window.guildId}/tickets/panels/${activePanelId}`, 'PUT', payload);
+        if (res && res.success) {
+            const idx = currentPanels.findIndex(p => p.id === activePanelId);
+            if (idx !== -1) {
+                currentPanels[idx] = res.panel;
+            }
+            renderPanelSwitcher();
+            populateActivePanelForm();
+            alert('✅ Ticket panel configuration saved successfully!');
+            return;
+        }
     } else {
-        alert(res?.error || 'Failed to save ticket settings.');
+        res = await apiRequest(`/api/guild/${window.guildId}/tickets/settings`, 'POST', payload);
+        if (res && res.success) {
+            currentTicketSettings = res.settings;
+            updateDiscordPreview();
+            alert('✅ Ticket configuration saved successfully!');
+            return;
+        }
     }
+    alert(res?.error || 'Failed to save ticket settings.');
 }
 
 async function publishTicketPanel() {
@@ -341,19 +575,36 @@ async function publishTicketPanel() {
         return;
     }
 
-    if (!confirm('🚀 Publish / Update live Ticket Panel embed & category buttons to Discord now?')) {
+    const panel = currentPanels.find(p => p.id === activePanelId);
+    const panelName = panel ? panel.name : 'Ticket Panel';
+
+    if (!confirm(`🚀 Publish / Update live Ticket Panel "${panelName}" embed & category buttons to Discord now?`)) {
         return;
     }
 
     // Save first to ensure Discord receives latest changes
     await saveTicketSettings();
 
-    const res = await apiRequest(`/api/guild/${window.guildId}/tickets/publish`, 'POST', {});
-    if (res && res.success) {
-        alert(`✅ ${res.message || 'Ticket panel successfully updated on Discord!'}`);
+    let res;
+    if (activePanelId) {
+        res = await apiRequest(`/api/guild/${window.guildId}/tickets/panels/${activePanelId}/publish`, 'POST', {});
+        if (res && res.success) {
+            if (panel) {
+                panel.message_id = res.panel_message_id;
+            }
+            renderPanelSwitcher();
+            populateActivePanelForm();
+            alert(`✅ ${res.message || 'Ticket panel successfully updated on Discord!'}`);
+            return;
+        }
     } else {
-        alert(`❌ Failed to publish panel: ${res?.error || 'Unknown error'}`);
+        res = await apiRequest(`/api/guild/${window.guildId}/tickets/publish`, 'POST', {});
+        if (res && res.success) {
+            alert(`✅ ${res.message || 'Ticket panel successfully updated on Discord!'}`);
+            return;
+        }
     }
+    alert(`❌ Failed to publish panel: ${res?.error || 'Unknown error'}`);
 }
 
 // =============================================================================
@@ -395,16 +646,38 @@ function updateDiscordPreview() {
 // 5. Category Buttons Builder
 // =============================================================================
 
-async function loadTicketCategories() {
-    const res = await apiRequest(`/api/guild/${window.guildId}/tickets/categories`, 'GET');
-    if (!res || !res.success) {
-        console.error("[Tickets] Failed to load categories:", res);
-        return;
+async function loadTicketCategories(panelId = null) {
+    const container = document.getElementById('ticket-categories-list');
+    try {
+        const pId = panelId || activePanelId;
+        const url = pId ? `/api/guild/${window.guildId}/tickets/categories?panel_id=${pId}` : `/api/guild/${window.guildId}/tickets/categories`;
+        const res = await apiRequest(url, 'GET');
+        if (!res || !res.success) {
+            console.error("[Tickets] Failed to load categories:", res);
+            if (container) {
+                container.innerHTML = '<div class="text-muted text-center p-3">No categories found or failed to load. Click "➕ Add Category Button" to create one.</div>';
+            }
+            return;
+        }
+        currentTicketCategories = res.categories || [];
+        renderCategoriesList();
+        updateDiscordPreview();
+        populateCategoryFilterDropdown();
+
+        // Update active panel category count badge in switcher
+        if (pId) {
+            const panel = currentPanels.find(p => p.id === pId);
+            if (panel) {
+                panel.category_count = currentTicketCategories.length;
+                renderPanelSwitcher();
+            }
+        }
+    } catch (err) {
+        console.error("[Tickets] Error in loadTicketCategories:", err);
+        if (container) {
+            container.innerHTML = '<div class="text-muted text-center p-3">No categories available. Click "➕ Add Category Button" to create one.</div>';
+        }
     }
-    currentTicketCategories = res.categories || [];
-    renderCategoriesList();
-    updateDiscordPreview();
-    populateCategoryFilterDropdown();
 }
 
 function renderCategoriesList() {
@@ -610,7 +883,8 @@ async function saveCategorySubmit(event) {
         button_style: style,
         description: desc,
         assigned_role_ids: Array.from(selectedCatRoles),
-        assigned_member_ids: Array.from(selectedCatMembers)
+        assigned_member_ids: Array.from(selectedCatMembers),
+        panel_id: activePanelId
     };
 
     let res;
@@ -622,7 +896,7 @@ async function saveCategorySubmit(event) {
 
     if (res && res.success) {
         closeCategoryModal();
-        await loadTicketCategories();
+        await loadTicketCategories(activePanelId);
     } else {
         alert(res?.error || 'Failed to save category button.');
     }
@@ -632,7 +906,7 @@ async function deleteCategory(catId) {
     if (!confirm('Are you sure you want to delete this ticket category button?')) return;
     const res = await apiRequest(`/api/guild/${window.guildId}/tickets/categories/${catId}`, 'DELETE');
     if (res && res.success) {
-        await loadTicketCategories();
+        await loadTicketCategories(activePanelId);
     } else {
         alert(res?.error || 'Failed to delete category.');
     }
@@ -652,7 +926,7 @@ async function moveCategory(catId, delta) {
     const orderedIds = copy.map(c => c.id);
     const res = await apiRequest(`/api/guild/${window.guildId}/tickets/categories/reorder`, 'POST', { category_ids: orderedIds });
     if (res && res.success) {
-        await loadTicketCategories();
+        await loadTicketCategories(activePanelId);
     }
 }
 
@@ -675,24 +949,37 @@ function populateCategoryFilterDropdown() {
 // =============================================================================
 
 async function loadTicketsList() {
-    const status = document.getElementById('tickets-filter-status')?.value || 'all';
-    const categoryId = document.getElementById('tickets-filter-category')?.value || '';
-    const search = document.getElementById('tickets-search-input')?.value || '';
+    const tbody = document.getElementById('tickets-table-body');
+    try {
+        const status = document.getElementById('tickets-filter-status')?.value || 'all';
+        const categoryId = document.getElementById('tickets-filter-category')?.value || '';
+        const panelId = document.getElementById('tickets-filter-panel')?.value || '';
+        const search = document.getElementById('tickets-search-input')?.value || '';
 
-    const params = new URLSearchParams();
-    if (status) params.append('status', status);
-    if (categoryId) params.append('category_id', categoryId);
-    if (search) params.append('search', search);
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        if (categoryId) params.append('category_id', categoryId);
+        if (panelId) params.append('panel_id', panelId);
+        if (search) params.append('search', search);
 
-    const res = await apiRequest(`/api/guild/${window.guildId}/tickets?${params.toString()}`, 'GET');
-    if (!res || !res.success) {
-        console.error("[Tickets] Failed to load tickets:", res);
-        return;
+        const res = await apiRequest(`/api/guild/${window.guildId}/tickets?${params.toString()}`, 'GET');
+        if (!res || !res.success) {
+            console.error("[Tickets] Failed to load tickets:", res);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">No tickets recorded or unable to load tickets.</td></tr>';
+            }
+            return;
+        }
+
+        currentTicketsList = res.tickets || [];
+        renderTicketsTable();
+        updateTicketStats(res.counts || {});
+    } catch (err) {
+        console.error("[Tickets] Error in loadTicketsList:", err);
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">No tickets recorded.</td></tr>';
+        }
     }
-
-    currentTicketsList = res.tickets || [];
-    renderTicketsTable();
-    updateTicketStats(res.counts || {});
 }
 
 function renderTicketsTable() {
@@ -701,7 +988,7 @@ function renderTicketsTable() {
 
     tbody.innerHTML = '';
     if (currentTicketsList.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-4">No tickets matching the filter criteria.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-4">No tickets matching the filter criteria.</td></tr>';
         return;
     }
 
@@ -715,6 +1002,10 @@ function renderTicketsTable() {
         } else if (t.status === 'closed') {
             statusBadge = '<span class="ticket-status-badge status-badge-closed">🔴 Closed</span>';
         }
+
+        // Panel label
+        const matchedPanel = currentPanels.find(p => p.id === t.panel_id);
+        const panelName = matchedPanel ? matchedPanel.name : (t.panel_id ? `Panel #${t.panel_id}` : 'Main Desk');
 
         // Actions
         let actionButtons = `
@@ -746,10 +1037,15 @@ function renderTicketsTable() {
                     </div>
                 </div>
             </td>
+            <td>
+                <span class="badge" style="background: rgba(88,101,242,0.15); color: #5865F2; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+                    🎫 ${escapeHtml(panelName)}
+                </span>
+            </td>
             <td><span class="tag-badge">${escapeHtml(t.category_name)}</span></td>
             <td>
                 <div class="font-semibold">${escapeHtml(t.subject)}</div>
-                <div class="text-xs text-muted text-truncate" style="max-width: 260px;">${escapeHtml(t.initial_details || '')}</div>
+                <div class="text-xs text-muted text-truncate" style="max-width: 240px;">${escapeHtml(t.initial_details || '')}</div>
             </td>
             <td>${statusBadge}</td>
             <td class="text-xs text-muted">${escapeHtml(t.created_at || 'N/A')}</td>

@@ -306,20 +306,26 @@ class TicketsCog(commands.Cog):
             await interaction.response.send_message("❌ Tickets can only be created within a server.", ephemeral=True)
             return
 
+        category = await self.db.get_category(cat_id)
+        panel = None
+        if category and category.get("panel_id"):
+            panel = await self.db.get_panel(category["panel_id"])
+
         settings = await self.db.get_settings(interaction.guild.id)
-        max_open = settings.get("max_open_per_user", 2)
-        open_count = await self.db.count_open_tickets_for_user(interaction.guild.id, interaction.user.id)
+        max_open = (panel.get("max_open_per_user") if panel else None) or settings.get("max_open_per_user", 2)
+        panel_id = panel["id"] if panel else None
+        open_count = await self.db.count_open_tickets_for_user(interaction.guild.id, interaction.user.id, panel_id=panel_id)
 
         if open_count >= max_open:
+            panel_desc = f" for **{panel['name']}**" if panel else ""
             await interaction.response.send_message(
-                f"❌ You currently have **{open_count}** open ticket(s). "
+                f"❌ You currently have **{open_count}** open ticket(s){panel_desc}. "
                 f"The maximum allowed per member is **{max_open}**. "
                 f"Please close an existing ticket before opening a new one.",
                 ephemeral=True
             )
             return
 
-        category = await self.db.get_category(cat_id)
         cat_name = category["name"] if category else "General Support"
         modal = TicketOpenModal(cat_id=cat_id, category_name=cat_name, cog=self)
         await interaction.response.send_modal(modal)
@@ -341,8 +347,16 @@ class TicketsCog(commands.Cog):
             await interaction.followup.send("❌ Discord server not found.", ephemeral=True)
             return
 
+        category = await self.db.get_category(cat_id)
+        cat_name = category["name"] if category else "General Support"
+        panel = None
+        if category and category.get("panel_id"):
+            panel = await self.db.get_panel(category["panel_id"])
+
         settings = await self.db.get_settings(guild.id)
-        panel_channel_id = int(settings.get("panel_channel_id") or 0)
+
+        # Panel channel resolution: Panel-specific channel takes precedence over global setting
+        panel_channel_id = int((panel.get("channel_id") if panel else None) or settings.get("panel_channel_id") or 0)
         panel_channel = guild.get_channel(panel_channel_id) if panel_channel_id else None
 
         if not panel_channel or not isinstance(panel_channel, discord.TextChannel):
@@ -353,15 +367,16 @@ class TicketsCog(commands.Cog):
             )
             return
 
-        category = await self.db.get_category(cat_id)
-        cat_name = category["name"] if category else "General Support"
-
-        # Combine global and per-category role/member routing
+        # Combine global, panel, and per-category role/member routing
         assigned_roles = list(set(
-            settings.get("support_role_ids", []) + (category.get("assigned_role_ids", []) if category else [])
+            settings.get("support_role_ids", []) +
+            (panel.get("support_role_ids", []) if panel else []) +
+            (category.get("assigned_role_ids", []) if category else [])
         ))
         assigned_members = list(set(
-            settings.get("support_member_ids", []) + (category.get("assigned_member_ids", []) if category else [])
+            settings.get("support_member_ids", []) +
+            (panel.get("support_member_ids", []) if panel else []) +
+            (category.get("assigned_member_ids", []) if category else [])
         ))
 
         # Insert placeholder ticket to obtain unique auto-increment ticket_id
@@ -376,7 +391,8 @@ class TicketsCog(commands.Cog):
             subject=subject,
             initial_details=initial_details,
             assigned_roles=assigned_roles,
-            assigned_users=assigned_members
+            assigned_users=assigned_members,
+            panel_id=panel["id"] if panel else None
         )
 
         clean_user_name = re.sub(r"[^a-zA-Z0-9_-]", "", interaction.user.name)[:14] or "user"
@@ -423,7 +439,7 @@ class TicketsCog(commands.Cog):
         role_pings = " ".join([f"<@&{rid}>" for rid in assigned_roles if guild.get_role(int(rid))])
 
         # 4. Construct Opening Control Embed & Buttons
-        panel_color = parse_hex_color(settings.get("panel_color"))
+        panel_color = parse_hex_color((panel.get("panel_color") if panel else None) or settings.get("panel_color"))
         embed = discord.Embed(
             title=f"🎫 Ticket #{ticket_id:04d} — {cat_name}",
             color=panel_color,
@@ -614,7 +630,11 @@ class TicketsCog(commands.Cog):
         txt_content = await asyncio.to_thread(generate_txt_transcript, ticket_for_export, msg_records)
 
         # 5. Post to Transcript Channel if configured
-        transcript_ch_id = int(settings.get("transcript_channel_id") or 0)
+        panel = None
+        if ticket.get("panel_id"):
+            panel = await self.db.get_panel(ticket["panel_id"])
+
+        transcript_ch_id = int((panel.get("transcript_channel_id") if panel else None) or settings.get("transcript_channel_id") or 0)
         if transcript_ch_id and guild:
             transcript_channel = guild.get_channel(transcript_ch_id)
             if transcript_channel and isinstance(transcript_channel, discord.TextChannel):
@@ -627,6 +647,8 @@ class TicketsCog(commands.Cog):
                     embed.add_field(name="Subject", value=ticket["subject"], inline=False)
                     embed.add_field(name="Opener", value=f"{ticket['user_name']} (`{ticket['user_id']}`)", inline=True)
                     embed.add_field(name="Category", value=ticket["category_name"], inline=True)
+                    if panel:
+                        embed.add_field(name="Panel", value=panel["name"], inline=True)
                     embed.add_field(name="Closed By", value=closed_by_name, inline=True)
                     embed.add_field(name="Resolution Note", value=reason, inline=False)
 
@@ -718,71 +740,149 @@ class TicketsCog(commands.Cog):
     # Publish & Sync Public Ticket Panel
     # =========================================================================
 
-    async def publish_or_update_panel(self, guild_id: int) -> Tuple[bool, str, Optional[str]]:
+    async def publish_or_update_panel(self, guild_id: int, panel_id: Optional[int] = None) -> Tuple[bool, str, Optional[str]]:
         """
         Publishes or updates the live ticket panel embed and category buttons on Discord.
+        Supports specific panel_id or falls back to global settings for backward compatibility.
         Returns: (success: bool, message: str, panel_message_id: Optional[str])
         """
         guild = self.bot.get_guild(guild_id)
         if not guild:
             return False, "Guild not found on bot instance.", None
 
-        settings = await self.db.get_settings(guild_id)
-        panel_ch_id = int(settings.get("panel_channel_id") or 0)
-        if not panel_ch_id:
-            return False, "Ticket panel channel is not configured.", None
+        if panel_id is not None:
+            panel = await self.db.get_panel(panel_id)
+            if not panel or int(panel["guild_id"]) != guild_id:
+                return False, "Ticket panel not found.", None
 
-        channel = guild.get_channel(panel_ch_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
-            return False, "Target panel channel is not a valid text channel.", None
+            panel_ch_id = int(panel.get("channel_id") or 0)
+            if not panel_ch_id:
+                return False, f"Ticket channel is not configured for panel '{panel['name']}'.", None
 
-        categories = await self.db.get_categories(guild_id)
-        if not categories:
-            return False, "No ticket categories configured.", None
+            channel = guild.get_channel(panel_ch_id)
+            if not channel or not isinstance(channel, discord.TextChannel):
+                return False, "Target panel channel is not a valid text channel.", None
 
-        # Build Discord Embed
-        panel_color = parse_hex_color(settings.get("panel_color"))
-        embed = discord.Embed(
-            title=settings.get("panel_title") or "🛡️ Official Support & Issue Desk",
-            description=settings.get("panel_description") or "Click a category button below to open a secure Private Thread.",
-            color=panel_color
-        )
-        embed.set_footer(text="Private Threads • Only assigned staff & ticket creator have access")
+            categories = await self.db.get_categories(guild_id, panel_id=panel_id)
+            if not categories:
+                return False, f"No ticket categories configured for panel '{panel['name']}'.", None
 
-        # Build Dynamic Action View
-        view = discord.ui.View(timeout=None)
-        for cat in categories[:25]:  # Discord 25 buttons limit per view
-            style = button_style_from_str(cat.get("button_style"))
-            btn = DynamicTicketCategoryButton(
-                cat_id=cat["id"],
-                label=cat["name"][:80],
-                emoji=cat.get("emoji") or "🎫",
-                style=style
+            panel_color = parse_hex_color(panel.get("panel_color"))
+            embed = discord.Embed(
+                title=panel.get("panel_title") or "🛡️ Official Support & Issue Desk",
+                description=panel.get("panel_description") or "Click a category button below to open a secure Private Thread.",
+                color=panel_color
             )
-            view.add_item(btn)
+            embed.set_footer(text=f"{panel['name']} • Private Threads • Only assigned staff & ticket creator have access")
 
-        # Edit existing or send new message
-        existing_msg_id = int(settings.get("panel_message_id") or 0)
-        sent_msg: Optional[discord.Message] = None
+            view = discord.ui.View(timeout=None)
+            for cat in categories[:25]:  # Discord 25 buttons limit per view
+                style = button_style_from_str(cat.get("button_style"))
+                btn = DynamicTicketCategoryButton(
+                    cat_id=cat["id"],
+                    label=cat["name"][:80],
+                    emoji=cat.get("emoji") or "🎫",
+                    style=style
+                )
+                view.add_item(btn)
 
-        if existing_msg_id:
-            try:
-                msg = await channel.fetch_message(existing_msg_id)
-                await msg.edit(embed=embed, view=view)
-                sent_msg = msg
-            except Exception:
-                sent_msg = None
+            existing_msg_id = int(panel.get("message_id") or 0)
+            sent_msg: Optional[discord.Message] = None
 
-        if not sent_msg:
-            try:
-                sent_msg = await channel.send(embed=embed, view=view)
-            except discord.Forbidden:
-                return False, "Bot lacks permission to send messages in the panel channel.", None
-            except Exception as e:
-                return False, f"Failed to send panel message: {e}", None
+            if existing_msg_id:
+                try:
+                    msg = await channel.fetch_message(existing_msg_id)
+                    await msg.edit(embed=embed, view=view)
+                    sent_msg = msg
+                except Exception:
+                    sent_msg = None
 
-        await self.db.update_panel_message_id(guild_id, sent_msg.id)
-        return True, "Ticket panel successfully published to Discord.", str(sent_msg.id)
+            if not sent_msg:
+                try:
+                    sent_msg = await channel.send(embed=embed, view=view)
+                except discord.Forbidden:
+                    return False, "Bot lacks permission to send messages in the panel channel.", None
+                except Exception as e:
+                    return False, f"Failed to send panel message: {e}", None
+
+            await self.db.update_panel(panel_id, message_id=sent_msg.id)
+            return True, f"Panel '{panel['name']}' successfully published to Discord.", str(sent_msg.id)
+
+        else:
+            settings = await self.db.get_settings(guild_id)
+            panel_ch_id = int(settings.get("panel_channel_id") or 0)
+            if not panel_ch_id:
+                return False, "Ticket panel channel is not configured.", None
+
+            channel = guild.get_channel(panel_ch_id)
+            if not channel or not isinstance(channel, discord.TextChannel):
+                return False, "Target panel channel is not a valid text channel.", None
+
+            categories = await self.db.get_categories(guild_id)
+            if not categories:
+                return False, "No ticket categories configured.", None
+
+            # Build Discord Embed
+            panel_color = parse_hex_color(settings.get("panel_color"))
+            embed = discord.Embed(
+                title=settings.get("panel_title") or "🛡️ Official Support & Issue Desk",
+                description=settings.get("panel_description") or "Click a category button below to open a secure Private Thread.",
+                color=panel_color
+            )
+            embed.set_footer(text="Private Threads • Only assigned staff & ticket creator have access")
+
+            # Build Dynamic Action View
+            view = discord.ui.View(timeout=None)
+            for cat in categories[:25]:  # Discord 25 buttons limit per view
+                style = button_style_from_str(cat.get("button_style"))
+                btn = DynamicTicketCategoryButton(
+                    cat_id=cat["id"],
+                    label=cat["name"][:80],
+                    emoji=cat.get("emoji") or "🎫",
+                    style=style
+                )
+                view.add_item(btn)
+
+            # Edit existing or send new message
+            existing_msg_id = int(settings.get("panel_message_id") or 0)
+            sent_msg: Optional[discord.Message] = None
+
+            if existing_msg_id:
+                try:
+                    msg = await channel.fetch_message(existing_msg_id)
+                    await msg.edit(embed=embed, view=view)
+                    sent_msg = msg
+                except Exception:
+                    sent_msg = None
+
+            if not sent_msg:
+                try:
+                    sent_msg = await channel.send(embed=embed, view=view)
+                except discord.Forbidden:
+                    return False, "Bot lacks permission to send messages in the panel channel.", None
+                except Exception as e:
+                    return False, f"Failed to send panel message: {e}", None
+
+            await self.db.update_panel_message_id(guild_id, sent_msg.id)
+            return True, "Ticket panel successfully published to Discord.", str(sent_msg.id)
+
+    async def delete_panel_message(self, guild_id: int, channel_id: int, message_id: int) -> bool:
+        """Deletes a published panel message from Discord."""
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            return False
+        channel = guild.get_channel(channel_id)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return False
+        try:
+            msg = await channel.fetch_message(message_id)
+            await msg.delete()
+            return True
+        except Exception as e:
+            logger.warning(f"Could not delete panel message {message_id} in channel {channel_id}: {e}")
+            return False
+
+
 
 
 async def setup(bot: commands.Bot):

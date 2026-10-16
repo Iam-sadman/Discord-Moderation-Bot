@@ -76,7 +76,151 @@ def _get_server_channels_and_roles(guild: Optional[discord.Guild]):
 
 
 # =============================================================================
-# 1. Global Ticket Settings & Discord Panel Publishing
+# 1. Ticket Panels Management & Discord Panel Publishing
+# =============================================================================
+
+@tickets_bp.route("/api/guild/<int:guild_id>/tickets/panels", methods=["GET"])
+async def api_get_ticket_panels(guild_id: int):
+    """Retrieves all ticket panels for a guild, channels, roles, members, and counts."""
+    db = TicketsDB.get_instance()
+    panels = await db.get_panels(guild_id)
+
+    bot = get_bot()
+    guild = bot.get_guild(guild_id) if bot else None
+    channels, roles, members = _get_server_channels_and_roles(guild)
+
+    counts = await db.get_ticket_counts(guild_id)
+
+    return jsonify({
+        "success": True,
+        "panels": panels,
+        "channels": channels,
+        "roles": roles,
+        "members": members,
+        "counts": counts
+    })
+
+
+@tickets_bp.route("/api/guild/<int:guild_id>/tickets/panels", methods=["POST"])
+async def api_create_ticket_panel(guild_id: int):
+    """Creates a new ticket panel for a guild."""
+    data = await request.get_json() or {}
+    name = str(data.get("name", "")).strip() or "Support Desk"
+    ch_id = int(data["channel_id"]) if data.get("channel_id") else None
+    tr_id = int(data["transcript_channel_id"]) if data.get("transcript_channel_id") else None
+    s_roles = [str(r).strip() for r in data.get("support_role_ids", []) if str(r).strip()]
+    s_members = [str(m).strip() for m in data.get("support_member_ids", []) if str(m).strip()]
+    max_open = max(1, min(int(data.get("max_open_per_user", 2)), 20))
+    title = str(data.get("panel_title", "")).strip() or "🛡️ Official Support & Issue Desk"
+    desc = str(data.get("panel_description", "")).strip() or "Click a category button below to open a secure Private Thread."
+    color = str(data.get("panel_color", "")).strip() or "#5865F2"
+
+    db = TicketsDB.get_instance()
+    panel_id = await db.create_panel(
+        guild_id=guild_id,
+        name=name,
+        channel_id=ch_id,
+        transcript_channel_id=tr_id,
+        support_role_ids=s_roles,
+        support_member_ids=s_members,
+        max_open_per_user=max_open,
+        panel_title=title,
+        panel_description=desc,
+        panel_color=color
+    )
+
+    created = await db.get_panel(panel_id)
+    return jsonify({
+        "success": True,
+        "message": f"Panel '{name}' created successfully.",
+        "panel": created
+    })
+
+
+@tickets_bp.route("/api/guild/<int:guild_id>/tickets/panels/<int:panel_id>", methods=["GET"])
+async def api_get_ticket_panel(guild_id: int, panel_id: int):
+    """Retrieves a single ticket panel."""
+    db = TicketsDB.get_instance()
+    panel = await db.get_panel(panel_id)
+    if not panel or panel["guild_id"] != str(guild_id):
+        return jsonify({"error": "Panel not found."}), 404
+    return jsonify({"success": True, "panel": panel})
+
+
+@tickets_bp.route("/api/guild/<int:guild_id>/tickets/panels/<int:panel_id>", methods=["PUT"])
+async def api_update_ticket_panel(guild_id: int, panel_id: int):
+    """Updates a ticket panel's configuration."""
+    data = await request.get_json() or {}
+    db = TicketsDB.get_instance()
+    panel = await db.get_panel(panel_id)
+    if not panel or panel["guild_id"] != str(guild_id):
+        return jsonify({"error": "Panel not found."}), 404
+
+    kwargs_to_update = {}
+    for field in (
+        "name", "channel_id", "transcript_channel_id", "support_role_ids",
+        "support_member_ids", "max_open_per_user", "panel_title",
+        "panel_description", "panel_color"
+    ):
+        if field in data:
+            kwargs_to_update[field] = data[field]
+
+    updated = await db.update_panel(panel_id=panel_id, **kwargs_to_update)
+
+    return jsonify({
+        "success": True,
+        "message": "Panel updated successfully.",
+        "panel": updated
+    })
+
+
+@tickets_bp.route("/api/guild/<int:guild_id>/tickets/panels/<int:panel_id>", methods=["DELETE"])
+async def api_delete_ticket_panel(guild_id: int, panel_id: int):
+    """Deletes a ticket panel and removes its Discord message if published."""
+    db = TicketsDB.get_instance()
+    panel = await db.get_panel(panel_id)
+    if not panel or panel["guild_id"] != str(guild_id):
+        return jsonify({"error": "Panel not found."}), 404
+
+    cog = get_tickets_cog()
+    ch_id = int(panel["channel_id"]) if panel.get("channel_id") else None
+    msg_id = int(panel["message_id"]) if panel.get("message_id") else None
+    if cog and ch_id and msg_id:
+        try:
+            await cog.delete_panel_message(guild_id, ch_id, msg_id)
+        except Exception as e:
+            logger.warning(f"Could not delete message for panel {panel_id}: {e}")
+
+    ok, _, _ = await db.delete_panel(panel_id)
+    if not ok:
+        return jsonify({"error": "Failed to delete panel."}), 500
+
+    return jsonify({"success": True, "message": f"Panel '{panel['name']}' deleted successfully."})
+
+
+@tickets_bp.route("/api/guild/<int:guild_id>/tickets/panels/<int:panel_id>/publish", methods=["POST"])
+async def api_publish_specific_panel(guild_id: int, panel_id: int):
+    """Publishes or updates a specific ticket panel on Discord."""
+    cog = get_tickets_cog()
+    if not cog:
+        return jsonify({
+            "success": False,
+            "error": "Tickets cog is not loaded on the bot."
+        }), 503
+
+    success, message, panel_msg_id = await cog.publish_or_update_panel(guild_id, panel_id=panel_id)
+    if not success:
+        return jsonify({"success": False, "error": message}), 400
+
+    return jsonify({
+        "success": True,
+        "message": message,
+        "panel_message_id": panel_msg_id
+    })
+
+
+# =============================================================================
+# Legacy Settings Endpoints (Maintains Backward Compatibility)
 # =============================================================================
 
 @tickets_bp.route("/api/guild/<int:guild_id>/tickets/settings", methods=["GET"])
@@ -138,6 +282,10 @@ async def api_save_ticket_settings(guild_id: int):
 @tickets_bp.route("/api/guild/<int:guild_id>/tickets/publish", methods=["POST"])
 async def api_publish_ticket_panel(guild_id: int):
     """Publishes or updates the live ticket embed and buttons on Discord."""
+    data = await request.get_json() or {}
+    panel_id = data.get("panel_id") or request.args.get("panel_id")
+    p_id = int(panel_id) if panel_id and str(panel_id).isdigit() else None
+
     cog = get_tickets_cog()
     if not cog:
         return jsonify({
@@ -145,7 +293,7 @@ async def api_publish_ticket_panel(guild_id: int):
             "error": "Tickets cog is not loaded on the bot."
         }), 503
 
-    success, message, panel_msg_id = await cog.publish_or_update_panel(guild_id)
+    success, message, panel_msg_id = await cog.publish_or_update_panel(guild_id, panel_id=p_id)
     if not success:
         return jsonify({"success": False, "error": message}), 400
 
@@ -162,9 +310,12 @@ async def api_publish_ticket_panel(guild_id: int):
 
 @tickets_bp.route("/api/guild/<int:guild_id>/tickets/categories", methods=["GET"])
 async def api_list_categories(guild_id: int):
-    """Lists categories for a guild, auto-seeding defaults if none exist."""
+    """Lists categories for a guild, optionally filtered by panel_id."""
+    panel_id = request.args.get("panel_id")
+    p_id = int(panel_id) if panel_id and str(panel_id).isdigit() else None
+
     db = TicketsDB.get_instance()
-    categories = await db.get_categories(guild_id)
+    categories = await db.get_categories(guild_id, panel_id=p_id)
     return jsonify({"success": True, "categories": categories})
 
 
@@ -181,6 +332,7 @@ async def api_create_category(guild_id: int):
     description = str(data.get("description", "")).strip()
     assigned_roles = [str(r).strip() for r in data.get("assigned_role_ids", []) if str(r).strip()]
     assigned_members = [str(m).strip() for m in data.get("assigned_member_ids", []) if str(m).strip()]
+    panel_id = int(data["panel_id"]) if data.get("panel_id") and str(data["panel_id"]).isdigit() else None
 
     db = TicketsDB.get_instance()
     cat_id = await db.create_category(
@@ -190,7 +342,8 @@ async def api_create_category(guild_id: int):
         button_style=button_style,
         description=description,
         assigned_role_ids=assigned_roles,
-        assigned_member_ids=assigned_members
+        assigned_member_ids=assigned_members,
+        panel_id=panel_id
     )
 
     created = await db.get_category(cat_id)
@@ -211,6 +364,7 @@ async def api_update_category(guild_id: int, cat_id: int):
     description = str(data.get("description", "")).strip() if "description" in data else None
     assigned_roles = [str(r).strip() for r in data.get("assigned_role_ids", []) if str(r).strip()] if "assigned_role_ids" in data else None
     assigned_members = [str(m).strip() for m in data.get("assigned_member_ids", []) if str(m).strip()] if "assigned_member_ids" in data else None
+    panel_id = int(data["panel_id"]) if "panel_id" in data and str(data["panel_id"]).isdigit() else None
 
     db = TicketsDB.get_instance()
     ok = await db.update_category(
@@ -220,7 +374,8 @@ async def api_update_category(guild_id: int, cat_id: int):
         button_style=button_style,
         description=description,
         assigned_role_ids=assigned_roles,
-        assigned_member_ids=assigned_members
+        assigned_member_ids=assigned_members,
+        panel_id=panel_id
     )
     if not ok:
         return jsonify({"error": "Category not found."}), 404
@@ -263,10 +418,11 @@ async def api_reorder_categories(guild_id: int):
 
 @tickets_bp.route("/api/guild/<int:guild_id>/tickets", methods=["GET"])
 async def api_list_tickets(guild_id: int):
-    """Lists tickets for a guild with status, search, and category filters."""
+    """Lists tickets for a guild with status, search, panel, and category filters."""
     status = request.args.get("status", "all")
     search = request.args.get("search", "")
     category_id = int(request.args.get("category_id")) if request.args.get("category_id") else None
+    panel_id = int(request.args.get("panel_id")) if request.args.get("panel_id") and str(request.args.get("panel_id")).isdigit() else None
 
     db = TicketsDB.get_instance()
     tickets = await db.list_tickets(
@@ -274,15 +430,18 @@ async def api_list_tickets(guild_id: int):
         status=status,
         search=search,
         category_id=category_id,
+        panel_id=panel_id,
         limit=200
     )
-    counts = await db.get_ticket_counts(guild_id)
+    counts = await db.get_ticket_counts(guild_id, panel_id=panel_id)
 
     return jsonify({
         "success": True,
         "tickets": tickets,
         "counts": counts
     })
+
+
 
 
 @tickets_bp.route("/api/guild/<int:guild_id>/tickets/<int:ticket_id>", methods=["GET"])

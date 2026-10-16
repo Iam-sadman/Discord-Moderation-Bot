@@ -684,6 +684,122 @@ class TestTicketsSystem(unittest.IsolatedAsyncioTestCase):
         data = await res.get_json()
         self.assertEqual(data["error"], "Forbidden")
 
+    async def test_multiple_ticket_panels_db_and_api(self):
+        """Tests end-to-end multiple ticket panels support: DB isolation, rate limits, and REST API."""
+        async with self.client.session_transaction() as sess:
+            sess["role"] = "Administrator"
+            sess["user_id"] = "AdminUser"
+
+        # 1. Database Panels Auto-Seeding & Creation
+        panels = await self.db.get_panels(self.guild_id)
+        self.assertGreaterEqual(len(panels), 1)
+        panel1 = panels[0]
+        self.assertEqual(panel1["name"], "Main Support Desk")
+
+        # Create secondary panel (e.g., Billing & Payment)
+        billing_panel_id = await self.db.create_panel(
+            guild_id=self.guild_id,
+            name="Billing & Payments",
+            channel_id=self.panel_channel_id,
+            transcript_channel_id=self.transcript_channel_id,
+            panel_title="💳 Billing Support Desk",
+            panel_description="Invoicing and payment issues",
+            panel_color="#F59E0B",
+            max_open_per_user=1
+        )
+        self.assertIsNotNone(billing_panel_id)
+
+        # 2. Category Isolation per Panel
+        cat_billing_id = await self.db.create_category(
+            guild_id=self.guild_id,
+            name="Refund Request",
+            emoji="💸",
+            panel_id=billing_panel_id
+        )
+        panel1_cats = await self.db.get_categories(self.guild_id, panel_id=panel1["id"])
+        billing_cats = await self.db.get_categories(self.guild_id, panel_id=billing_panel_id)
+
+        self.assertTrue(any(c["id"] == cat_billing_id for c in billing_cats))
+        self.assertFalse(any(c["id"] == cat_billing_id for c in panel1_cats))
+
+        # 3. Ticket Spawning and Per-Panel Rate Limiting
+        # Open ticket in Billing panel
+        t_billing_id = await self.db.create_ticket(
+            guild_id=self.guild_id,
+            thread_id=98765432101,
+            panel_channel_id=self.panel_channel_id,
+            category_id=cat_billing_id,
+            category_name="Refund Request",
+            user_id=self.user_id,
+            user_name="CustomerUser",
+            subject="Accidental Double Charge",
+            initial_details="Billed twice for annual pass",
+            panel_id=billing_panel_id
+        )
+
+        billing_open_cnt = await self.db.count_open_tickets_for_user(self.guild_id, self.user_id, panel_id=billing_panel_id)
+        panel1_open_cnt = await self.db.count_open_tickets_for_user(self.guild_id, self.user_id, panel_id=panel1["id"])
+
+        self.assertEqual(billing_open_cnt, 1)
+        self.assertEqual(panel1_open_cnt, 0)  # User still has 0 open tickets on Panel 1!
+
+        # 4. REST API: GET /api/guild/<id>/tickets/panels
+        res_panels = await self.client.get(f"/api/guild/{self.guild_id}/tickets/panels")
+        self.assertEqual(res_panels.status_code, 200)
+        data_panels = (await res_panels.get_json())["panels"]
+        self.assertGreaterEqual(len(data_panels), 2)
+
+        # 5. REST API: POST /api/guild/<id>/tickets/panels
+        new_panel_payload = {
+            "name": "🐞 Bug Tracker",
+            "channel_id": str(self.panel_channel_id),
+            "transcript_channel_id": str(self.transcript_channel_id),
+            "panel_title": "🐞 Bug Reports Desk",
+            "panel_description": "Submit reproducible bugs",
+            "panel_color": "#EF4444",
+            "max_open_per_user": 3
+        }
+        res_create_panel = await self.client.post(
+            f"/api/guild/{self.guild_id}/tickets/panels",
+            json=new_panel_payload
+        )
+        self.assertEqual(res_create_panel.status_code, 200)
+        created_panel = (await res_create_panel.get_json())["panel"]
+        created_panel_id = created_panel["id"]
+        self.assertEqual(created_panel["name"], "🐞 Bug Tracker")
+
+        # 6. REST API: PUT /api/guild/<id>/tickets/panels/<id>
+        res_update_panel = await self.client.put(
+            f"/api/guild/{self.guild_id}/tickets/panels/{created_panel_id}",
+            json={"name": "🐞 Bug & Glitch Tracker", "max_open_per_user": 5}
+        )
+        self.assertEqual(res_update_panel.status_code, 200)
+        updated_panel = (await res_update_panel.get_json())["panel"]
+        self.assertEqual(updated_panel["name"], "🐞 Bug & Glitch Tracker")
+        self.assertEqual(updated_panel["max_open_per_user"], 5)
+
+        # 7. REST API: POST /api/guild/<id>/tickets/panels/<id>/publish
+        # Add a category to the new panel first so publish passes
+        await self.db.create_category(
+            guild_id=self.guild_id,
+            name="Crash Report",
+            emoji="💥",
+            panel_id=created_panel_id
+        )
+        res_publish = await self.client.post(
+            f"/api/guild/{self.guild_id}/tickets/panels/{created_panel_id}/publish"
+        )
+        self.assertEqual(res_publish.status_code, 200)
+        self.assertTrue((await res_publish.get_json())["success"])
+
+        # 8. REST API: DELETE /api/guild/<id>/tickets/panels/<id>
+        res_del_panel = await self.client.delete(
+            f"/api/guild/{self.guild_id}/tickets/panels/{created_panel_id}"
+        )
+        self.assertEqual(res_del_panel.status_code, 200)
+        self.assertTrue((await res_del_panel.get_json())["success"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -127,11 +127,32 @@ class TicketsDB:
                 );
             """)
 
+            # 1b. Multiple Ticket Panels
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS ticket_panels (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    guild_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    channel_id INTEGER,
+                    message_id INTEGER,
+                    transcript_channel_id INTEGER,
+                    support_role_ids TEXT DEFAULT '[]',
+                    support_member_ids TEXT DEFAULT '[]',
+                    max_open_per_user INTEGER DEFAULT 2,
+                    panel_title TEXT DEFAULT '🛡️ Official Support & Issue Desk',
+                    panel_description TEXT DEFAULT 'Click a category button below to open a secure Private Thread.',
+                    panel_color TEXT DEFAULT '#5865F2',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_panels_guild ON ticket_panels(guild_id);")
+
             # 2. Ticket Categories
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS ticket_categories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     guild_id INTEGER NOT NULL,
+                    panel_id INTEGER,
                     name TEXT NOT NULL,
                     emoji TEXT DEFAULT '🎫',
                     button_style TEXT DEFAULT 'primary',
@@ -142,6 +163,14 @@ class TicketsDB:
                 );
             """)
             await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_guild_pos ON ticket_categories(guild_id, position);")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_panel ON ticket_categories(panel_id);")
+
+            # Migration: Ensure panel_id exists in ticket_categories
+            cur = await db.execute("PRAGMA table_info(ticket_categories);")
+            cat_cols = [row["name"] for row in await cur.fetchall()]
+            if "panel_id" not in cat_cols:
+                await db.execute("ALTER TABLE ticket_categories ADD COLUMN panel_id INTEGER DEFAULT NULL;")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_panel ON ticket_categories(panel_id);")
 
             # 3. Tickets
             await db.execute("""
@@ -150,6 +179,7 @@ class TicketsDB:
                     guild_id INTEGER NOT NULL,
                     thread_id INTEGER NOT NULL UNIQUE,
                     panel_channel_id INTEGER NOT NULL,
+                    panel_id INTEGER,
                     category_id INTEGER,
                     category_name TEXT NOT NULL,
                     user_id INTEGER NOT NULL,
@@ -172,6 +202,14 @@ class TicketsDB:
             await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_thread ON tickets(thread_id);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_panel ON tickets(panel_id);")
+
+            # Migration: Ensure panel_id exists in tickets (for existing databases)
+            cur = await db.execute("PRAGMA table_info(tickets);")
+            t_cols = [row["name"] for row in await cur.fetchall()]
+            if "panel_id" not in t_cols:
+                await db.execute("ALTER TABLE tickets ADD COLUMN panel_id INTEGER DEFAULT NULL;")
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_panel ON tickets(panel_id);")
 
             # 4. Ticket Messages (Stores Full As-Is Transcript History)
             await db.execute("""
@@ -302,21 +340,240 @@ class TicketsDB:
             await db.commit()
 
     # =========================================================================
-    # 2. Ticket Categories Management (Buttons & Role/Member Routing)
+    # 1b. Multiple Ticket Panels Management
     # =========================================================================
 
-    async def get_categories(self, guild_id: int) -> List[Dict[str, Any]]:
-        """Returns categories ordered by position. Auto-seeds 4 default categories if none exist."""
+    async def get_panels(self, guild_id: int) -> List[Dict[str, Any]]:
+        """Returns all ticket panels for a guild. If none exist, auto-seeds default panel."""
         await self.init_db()
         guild_id = int(guild_id)
         async with self.get_connection() as db:
-            async with db.execute(
-                "SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY position ASC, id ASC;",
-                (guild_id,)
-            ) as cur:
+            async with db.execute("""
+                SELECT p.*,
+                    (SELECT COUNT(*) FROM ticket_categories c WHERE c.panel_id = p.id) AS category_count
+                FROM ticket_panels p
+                WHERE p.guild_id = ?
+                ORDER BY p.id ASC;
+            """, (guild_id,)) as cur:
                 rows = await cur.fetchall()
 
             if not rows:
+                # Check if ticket_settings exists for migration
+                async with db.execute("SELECT * FROM ticket_settings WHERE guild_id = ?;", (guild_id,)) as cur_s:
+                    s_row = await cur_s.fetchone()
+
+                p_name = "Main Support Desk"
+                p_ch = s_row["panel_channel_id"] if s_row else None
+                p_msg = s_row["panel_message_id"] if s_row else None
+                t_ch = s_row["transcript_channel_id"] if s_row else None
+                s_roles = s_row["support_role_ids"] if s_row else "[]"
+                s_members = s_row["support_member_ids"] if s_row else "[]"
+                max_open = s_row["max_open_per_user"] if s_row else 2
+                p_title = s_row["panel_title"] if s_row else "🛡️ Official Support & Issue Desk"
+                p_desc = s_row["panel_description"] if s_row else "Click a category button below to open a secure Private Thread."
+                p_color = s_row["panel_color"] if s_row else "#5865F2"
+
+                ins = await db.execute("""
+                    INSERT INTO ticket_panels (
+                        guild_id, name, channel_id, message_id, transcript_channel_id,
+                        support_role_ids, support_member_ids, max_open_per_user,
+                        panel_title, panel_description, panel_color
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """, (
+                    guild_id, p_name, p_ch, p_msg, t_ch,
+                    s_roles, s_members, max_open,
+                    p_title, p_desc, p_color
+                ))
+                new_panel_id = ins.lastrowid
+
+                # Link any orphan categories to this panel
+                await db.execute("""
+                    UPDATE ticket_categories SET panel_id = ?
+                    WHERE guild_id = ? AND (panel_id IS NULL OR panel_id = 0);
+                """, (new_panel_id, guild_id))
+
+                # If still no categories, seed defaults for this panel
+                async with db.execute("SELECT COUNT(*) as cnt FROM ticket_categories WHERE panel_id = ?;", (new_panel_id,)) as cur_c:
+                    c_row = await cur_c.fetchone()
+                    if not c_row or c_row["cnt"] == 0:
+                        for cat in DEFAULT_CATEGORIES:
+                            await db.execute("""
+                                INSERT INTO ticket_categories (
+                                    guild_id, panel_id, name, emoji, button_style, description,
+                                    assigned_role_ids, assigned_member_ids, position
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                            """, (
+                                guild_id, new_panel_id, cat["name"], cat["emoji"], cat["button_style"],
+                                cat["description"], json.dumps(cat["assigned_role_ids"]),
+                                json.dumps(cat["assigned_member_ids"]), cat["position"]
+                            ))
+
+                await db.commit()
+
+                async with db.execute("""
+                    SELECT p.*,
+                        (SELECT COUNT(*) FROM ticket_categories c WHERE c.panel_id = p.id) AS category_count
+                    FROM ticket_panels p
+                    WHERE p.guild_id = ?
+                    ORDER BY p.id ASC;
+                """, (guild_id,)) as cur_refetch:
+                    rows = await cur_refetch.fetchall()
+
+            return [
+                {
+                    "id": r["id"],
+                    "guild_id": str(r["guild_id"]),
+                    "name": r["name"],
+                    "channel_id": str(r["channel_id"]) if r["channel_id"] else None,
+                    "message_id": str(r["message_id"]) if r["message_id"] else None,
+                    "transcript_channel_id": str(r["transcript_channel_id"]) if r["transcript_channel_id"] else None,
+                    "support_role_ids": _str_id_list(r["support_role_ids"]),
+                    "support_member_ids": _str_id_list(r["support_member_ids"]),
+                    "max_open_per_user": r["max_open_per_user"] or 2,
+                    "panel_title": r["panel_title"] or "🛡️ Official Support & Issue Desk",
+                    "panel_description": r["panel_description"] or "Click a category button below to open a secure Private Thread.",
+                    "panel_color": r["panel_color"] or "#5865F2",
+                    "category_count": r["category_count"] or 0,
+                    "created_at": str(r["created_at"]) if r["created_at"] else ""
+                }
+                for r in rows
+            ]
+
+    async def get_panel(self, panel_id: int) -> Optional[Dict[str, Any]]:
+        """Retrieves a single ticket panel by ID."""
+        await self.init_db()
+        panel_id = int(panel_id)
+        async with self.get_connection() as db:
+            async with db.execute("SELECT * FROM ticket_panels WHERE id = ?;", (panel_id,)) as cur:
+                r = await cur.fetchone()
+                if not r:
+                    return None
+                return {
+                    "id": r["id"],
+                    "guild_id": str(r["guild_id"]),
+                    "name": r["name"],
+                    "channel_id": str(r["channel_id"]) if r["channel_id"] else None,
+                    "message_id": str(r["message_id"]) if r["message_id"] else None,
+                    "transcript_channel_id": str(r["transcript_channel_id"]) if r["transcript_channel_id"] else None,
+                    "support_role_ids": _str_id_list(r["support_role_ids"]),
+                    "support_member_ids": _str_id_list(r["support_member_ids"]),
+                    "max_open_per_user": r["max_open_per_user"] or 2,
+                    "panel_title": r["panel_title"] or "🛡️ Official Support & Issue Desk",
+                    "panel_description": r["panel_description"] or "Click a category button below to open a secure Private Thread.",
+                    "panel_color": r["panel_color"] or "#5865F2",
+                    "created_at": str(r["created_at"]) if r["created_at"] else ""
+                }
+
+    async def create_panel(
+        self,
+        guild_id: int,
+        name: str,
+        channel_id: Optional[int] = None,
+        transcript_channel_id: Optional[int] = None,
+        support_role_ids: Optional[List[str]] = None,
+        support_member_ids: Optional[List[str]] = None,
+        max_open_per_user: int = 2,
+        panel_title: str = "🛡️ Official Support & Issue Desk",
+        panel_description: str = "Click a category button below to open a secure Private Thread.",
+        panel_color: str = "#5865F2"
+    ) -> int:
+        """Creates a new ticket panel for a guild."""
+        await self.init_db()
+        guild_id = int(guild_id)
+        ch_val = int(channel_id) if channel_id else None
+        tr_val = int(transcript_channel_id) if transcript_channel_id else None
+        s_roles = [str(r).strip() for r in support_role_ids] if support_role_ids else []
+        s_members = [str(m).strip() for m in support_member_ids] if support_member_ids else []
+
+        async with self.get_connection() as db:
+            cur = await db.execute("""
+                INSERT INTO ticket_panels (
+                    guild_id, name, channel_id, message_id, transcript_channel_id,
+                    support_role_ids, support_member_ids, max_open_per_user,
+                    panel_title, panel_description, panel_color
+                ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?);
+            """, (
+                guild_id, name.strip() or "Support Desk", ch_val, tr_val,
+                json.dumps(s_roles), json.dumps(s_members), max_open_per_user or 2,
+                panel_title.strip() or "🛡️ Official Support & Issue Desk",
+                panel_description.strip() or "Click a category button below to open a secure Private Thread.",
+                panel_color.strip() or "#5865F2"
+            ))
+            await db.commit()
+            return cur.lastrowid
+
+    async def update_panel(self, panel_id: int, **kwargs) -> Optional[Dict[str, Any]]:
+        """Updates fields on a ticket panel."""
+        await self.init_db()
+        panel_id = int(panel_id)
+        panel = await self.get_panel(panel_id)
+        if not panel:
+            return None
+
+        allowed = {
+            "name", "channel_id", "message_id", "transcript_channel_id",
+            "support_role_ids", "support_member_ids", "max_open_per_user",
+            "panel_title", "panel_description", "panel_color"
+        }
+        updates = []
+        params = []
+        for k, v in kwargs.items():
+            if k not in allowed:
+                continue
+            if k in ("support_role_ids", "support_member_ids"):
+                v = json.dumps([str(x).strip() for x in (v or [])])
+            elif k in ("channel_id", "message_id", "transcript_channel_id"):
+                v = int(v) if v else None
+            elif k == "max_open_per_user":
+                v = int(v) if v else 2
+            updates.append(f"{k} = ?")
+            params.append(v)
+
+        if updates:
+            params.append(panel_id)
+            async with self.get_connection() as db:
+                await db.execute(f"UPDATE ticket_panels SET {', '.join(updates)} WHERE id = ?;", params)
+                await db.commit()
+
+        return await self.get_panel(panel_id)
+
+    async def delete_panel(self, panel_id: int) -> Tuple[bool, Optional[int], Optional[int]]:
+        """Deletes a ticket panel and its associated category buttons. Returns (success, channel_id, message_id)."""
+        await self.init_db()
+        panel = await self.get_panel(panel_id)
+        if not panel:
+            return False, None, None
+
+        ch_id = int(panel["channel_id"]) if panel["channel_id"] else None
+        msg_id = int(panel["message_id"]) if panel["message_id"] else None
+
+        async with self.get_connection() as db:
+            await db.execute("DELETE FROM ticket_categories WHERE panel_id = ?;", (panel_id,))
+            await db.execute("DELETE FROM ticket_panels WHERE id = ?;", (panel_id,))
+            await db.commit()
+
+        return True, ch_id, msg_id
+
+    # =========================================================================
+    # 2. Ticket Categories Management (Buttons & Role/Member Routing)
+    # =========================================================================
+
+    async def get_categories(self, guild_id: int, panel_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Returns categories ordered by position. Optionally filtered by panel_id."""
+        await self.init_db()
+        guild_id = int(guild_id)
+        async with self.get_connection() as db:
+            if panel_id is not None:
+                query = "SELECT * FROM ticket_categories WHERE guild_id = ? AND panel_id = ? ORDER BY position ASC, id ASC;"
+                params = (guild_id, int(panel_id))
+            else:
+                query = "SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY position ASC, id ASC;"
+                params = (guild_id,)
+
+            async with db.execute(query, params) as cur:
+                rows = await cur.fetchall()
+
+            if not rows and panel_id is None:
                 # Seed defaults
                 for cat in DEFAULT_CATEGORIES:
                     await db.execute("""
@@ -331,16 +588,14 @@ class TicketsDB:
                     ))
                 await db.commit()
 
-                async with db.execute(
-                    "SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY position ASC, id ASC;",
-                    (guild_id,)
-                ) as cur2:
+                async with db.execute(query, params) as cur2:
                     rows = await cur2.fetchall()
 
             return [
                 {
                     "id": r["id"],
                     "guild_id": str(r["guild_id"]),
+                    "panel_id": r["panel_id"] if "panel_id" in r.keys() else None,
                     "name": r["name"],
                     "emoji": r["emoji"] or "🎫",
                     "button_style": r["button_style"] or "primary",
@@ -364,6 +619,7 @@ class TicketsDB:
                 return {
                     "id": r["id"],
                     "guild_id": str(r["guild_id"]),
+                    "panel_id": r["panel_id"] if "panel_id" in r.keys() else None,
                     "name": r["name"],
                     "emoji": r["emoji"] or "🎫",
                     "button_style": r["button_style"] or "primary",
@@ -382,27 +638,40 @@ class TicketsDB:
         description: str = "",
         assigned_role_ids: Optional[List[str]] = None,
         assigned_member_ids: Optional[List[str]] = None,
-        position: Optional[int] = None
+        position: Optional[int] = None,
+        panel_id: Optional[int] = None
     ) -> int:
-        """Creates a new category for a guild."""
+        """Creates a new category for a guild, optionally assigned to a panel."""
         await self.init_db()
         guild_id = int(guild_id)
         s_roles = [str(r).strip() for r in (assigned_role_ids or [])]
         s_members = [str(m).strip() for m in (assigned_member_ids or [])]
+        p_id = int(panel_id) if panel_id else None
+
+        if p_id is None:
+            # Fallback to first panel if available
+            panels = await self.get_panels(guild_id)
+            if panels:
+                p_id = panels[0]["id"]
 
         async with self.get_connection() as db:
             if position is None:
-                async with db.execute("SELECT MAX(position) as max_pos FROM ticket_categories WHERE guild_id = ?;", (guild_id,)) as cur:
-                    row = await cur.fetchone()
-                    position = (row["max_pos"] or 0) + 1 if row else 1
+                if p_id is not None:
+                    async with db.execute("SELECT MAX(position) as max_pos FROM ticket_categories WHERE guild_id = ? AND panel_id = ?;", (guild_id, p_id)) as cur:
+                        row = await cur.fetchone()
+                        position = (row["max_pos"] or 0) + 1 if row else 1
+                else:
+                    async with db.execute("SELECT MAX(position) as max_pos FROM ticket_categories WHERE guild_id = ?;", (guild_id,)) as cur:
+                        row = await cur.fetchone()
+                        position = (row["max_pos"] or 0) + 1 if row else 1
 
             cursor = await db.execute("""
                 INSERT INTO ticket_categories (
-                    guild_id, name, emoji, button_style, description,
+                    guild_id, panel_id, name, emoji, button_style, description,
                     assigned_role_ids, assigned_member_ids, position
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """, (
-                guild_id, name.strip(), emoji.strip() or "🎫", button_style.strip().lower() or "primary",
+                guild_id, p_id, name.strip(), emoji.strip() or "🎫", button_style.strip().lower() or "primary",
                 description.strip() if description else "", json.dumps(s_roles),
                 json.dumps(s_members), int(position)
             ))
@@ -418,7 +687,8 @@ class TicketsDB:
         description: Optional[str] = None,
         assigned_role_ids: Optional[List[str]] = None,
         assigned_member_ids: Optional[List[str]] = None,
-        position: Optional[int] = None
+        position: Optional[int] = None,
+        panel_id: Optional[int] = None
     ) -> bool:
         """Updates category properties."""
         await self.init_db()
@@ -433,6 +703,7 @@ class TicketsDB:
         new_roles = [str(r).strip() for r in assigned_role_ids] if assigned_role_ids is not None else cat["assigned_role_ids"]
         new_members = [str(m).strip() for m in assigned_member_ids] if assigned_member_ids is not None else cat["assigned_member_ids"]
         new_pos = int(position) if position is not None else cat["position"]
+        new_panel = int(panel_id) if panel_id is not None else cat.get("panel_id")
 
         async with self.get_connection() as db:
             await db.execute("""
@@ -443,12 +714,13 @@ class TicketsDB:
                     description = ?,
                     assigned_role_ids = ?,
                     assigned_member_ids = ?,
-                    position = ?
+                    position = ?,
+                    panel_id = ?
                 WHERE id = ?;
             """, (
                 new_name, new_emoji, new_style, new_desc,
                 json.dumps(new_roles), json.dumps(new_members),
-                new_pos, int(cat_id)
+                new_pos, new_panel, int(cat_id)
             ))
             await db.commit()
         return True
@@ -489,26 +761,28 @@ class TicketsDB:
         subject: str,
         initial_details: str,
         assigned_roles: Optional[List[str]] = None,
-        assigned_users: Optional[List[str]] = None
+        assigned_users: Optional[List[str]] = None,
+        panel_id: Optional[int] = None
     ) -> int:
         """Creates an initial ticket record."""
         await self.init_db()
         roles = [str(r).strip() for r in (assigned_roles or [])]
         users = [str(u).strip() for u in (assigned_users or [])]
+        p_id = int(panel_id) if panel_id else None
 
         async with self.get_connection() as db:
             cur = await db.execute("""
                 INSERT INTO tickets (
                     guild_id, thread_id, panel_channel_id, category_id,
                     category_name, user_id, user_name, subject,
-                    initial_details, status, assigned_roles_json, assigned_users_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?);
+                    initial_details, status, assigned_roles_json, assigned_users_json, panel_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?);
             """, (
                 int(guild_id), int(thread_id), int(panel_channel_id),
                 int(category_id) if category_id else None,
                 category_name.strip(), int(user_id), user_name.strip(),
                 subject.strip(), initial_details.strip(),
-                json.dumps(roles), json.dumps(users)
+                json.dumps(roles), json.dumps(users), p_id
             ))
             await db.commit()
             return cur.lastrowid
@@ -544,14 +818,24 @@ class TicketsDB:
                     return None
                 return self._format_ticket_row(r)
 
-    async def count_open_tickets_for_user(self, guild_id: int, user_id: int) -> int:
-        """Counts how many active (open or claimed) tickets a user has."""
+    async def count_open_tickets_for_user(self, guild_id: int, user_id: int, panel_id: Optional[int] = None) -> int:
+        """Counts how many active (open or claimed) tickets a user has, optionally filtered by panel."""
         await self.init_db()
         async with self.get_connection() as db:
-            async with db.execute("""
-                SELECT COUNT(*) as cnt FROM tickets
-                WHERE guild_id = ? AND user_id = ? AND status IN ('open', 'claimed');
-            """, (int(guild_id), int(user_id))) as cur:
+            if panel_id is not None:
+                query = """
+                    SELECT COUNT(*) as cnt FROM tickets
+                    WHERE guild_id = ? AND user_id = ? AND panel_id = ? AND status IN ('open', 'claimed');
+                """
+                params = (int(guild_id), int(user_id), int(panel_id))
+            else:
+                query = """
+                    SELECT COUNT(*) as cnt FROM tickets
+                    WHERE guild_id = ? AND user_id = ? AND status IN ('open', 'claimed');
+                """
+                params = (int(guild_id), int(user_id))
+
+            async with db.execute(query, params) as cur:
                 row = await cur.fetchone()
                 return row["cnt"] if row else 0
 
@@ -561,14 +845,19 @@ class TicketsDB:
         status: Optional[str] = None,
         search: Optional[str] = None,
         category_id: Optional[int] = None,
+        panel_id: Optional[int] = None,
         limit: int = 100,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
-        """Lists tickets for a guild with optional filtering by status, category, or search query."""
+        """Lists tickets for a guild with optional filtering by status, category, panel, or search query."""
         await self.init_db()
         guild_id = int(guild_id)
         query = "SELECT * FROM tickets WHERE guild_id = ?"
         params: List[Any] = [guild_id]
+
+        if panel_id is not None:
+            query += " AND panel_id = ?"
+            params.append(int(panel_id))
 
         if status and status.lower() != "all":
             query += " AND status = ?"
@@ -591,19 +880,26 @@ class TicketsDB:
                 rows = await cur.fetchall()
                 return [self._format_ticket_row(r) for r in rows]
 
-    async def get_ticket_counts(self, guild_id: int) -> Dict[str, int]:
-        """Returns ticket count statistics for a guild."""
+    async def get_ticket_counts(self, guild_id: int, panel_id: Optional[int] = None) -> Dict[str, int]:
+        """Returns ticket count statistics for a guild, optionally filtered by panel."""
         await self.init_db()
         guild_id = int(guild_id)
+        query = """
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt,
+                SUM(CASE WHEN status = 'claimed' THEN 1 ELSE 0 END) as claimed_cnt,
+                SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed_cnt
+            FROM tickets WHERE guild_id = ?
+        """
+        params: List[Any] = [guild_id]
+        if panel_id is not None:
+            query += " AND panel_id = ?"
+            params.append(int(panel_id))
+
+        query += ";"
         async with self.get_connection() as db:
-            async with db.execute("""
-                SELECT
-                    COUNT(*) as total,
-                    SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt,
-                    SUM(CASE WHEN status = 'claimed' THEN 1 ELSE 0 END) as claimed_cnt,
-                    SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed_cnt
-                FROM tickets WHERE guild_id = ?;
-            """, (guild_id,)) as cur:
+            async with db.execute(query, tuple(params)) as cur:
                 r = await cur.fetchone()
                 if not r:
                     return {"total": 0, "open": 0, "claimed": 0, "closed": 0}
@@ -694,6 +990,7 @@ class TicketsDB:
             "guild_id": str(r["guild_id"]),
             "thread_id": str(r["thread_id"]),
             "panel_channel_id": str(r["panel_channel_id"]),
+            "panel_id": r["panel_id"] if "panel_id" in r.keys() else None,
             "category_id": r["category_id"],
             "category_name": r["category_name"],
             "user_id": str(r["user_id"]),

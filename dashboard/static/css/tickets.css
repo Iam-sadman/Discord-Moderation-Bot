@@ -43,6 +43,74 @@
 }
 
 /* ==========================================================================
+   0. Multiple Ticket Panels Switcher Navigation Bar
+   ========================================================================== */
+.tickets-panel-strip {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 12px 18px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-sm);
+}
+
+.tickets-panel-pill {
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+}
+
+.tickets-panel-pill:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+.tickets-panel-pill.active {
+    background: var(--primary-color, #5865F2);
+    border-color: var(--primary-color, #5865F2);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(88, 101, 242, 0.4);
+}
+
+.tickets-panel-pill .badge-count {
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+}
+
+.tickets-panel-status-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+    border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+.tickets-panel-status-tag.published {
+    background: rgba(46, 204, 113, 0.15);
+    color: #2ecc71;
+    border-color: rgba(46, 204, 113, 0.3);
+}
+
+/* ==========================================================================
    2. Two-Column Config Grid (Settings + Live Discord Preview)
    ========================================================================== */
 .tickets-config-grid {

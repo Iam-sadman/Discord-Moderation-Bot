@@ -5,7 +5,7 @@
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.4">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.4">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=3.5">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=4.0">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.4">
 {% endblock %}
 
@@ -3592,7 +3592,22 @@
                 🔄 Refresh
             </button>
             <button type="button" class="btn btn-primary" onclick="publishTicketPanel()">
-                🚀 Publish / Update Panel to Discord
+                🚀 Publish / Update Active Panel
+            </button>
+        </div>
+    </div>
+
+    <!-- Multiple Ticket Panels Navigation Strip -->
+    <div class="tickets-panel-strip d-flex align-center justify-between flex-wrap gap-2 mb-3">
+        <div class="d-flex align-center flex-wrap gap-2" id="ticket-panels-nav">
+            <!-- Dynamically populated panel tabs via JS -->
+        </div>
+        <div class="d-flex align-center gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-delete-active-panel" onclick="deleteActivePanelPrompt()" title="Delete active panel" style="display:none; color: #ed4245;">
+                🗑️ Delete Active Panel
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="openCreatePanelModal()">
+                ➕ New Panel
             </button>
         </div>
     </div>
@@ -3601,9 +3616,20 @@
     <div class="tickets-config-grid">
         <!-- Left: Ticket Settings & Channel Configuration -->
         <div class="tickets-card">
-            <div class="tickets-card-header">
-                <h3 class="tickets-card-title">⚙️ Ticket Panel & Routing Configuration</h3>
-                <p class="tickets-card-desc">Control where private threads are spawned, who receives global access, and how the panel appears.</p>
+            <div class="tickets-card-header d-flex justify-between align-center flex-wrap gap-2">
+                <div>
+                    <h3 class="tickets-card-title">⚙️ <span id="active-panel-name-header">Ticket Panel</span> Configuration</h3>
+                    <p class="tickets-card-desc">Control where private threads are spawned, who receives support access, and how the panel appears.</p>
+                </div>
+                <div id="active-panel-status-badge"></div>
+            </div>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="ticket-config-panel-name">
+                    Panel Name / Topic <span class="required-star">*</span>
+                    <span class="hint">(e.g. Main Support Desk, Billing Support, Bug Reports, Application Desk)</span>
+                </label>
+                <input type="text" id="ticket-config-panel-name" class="form-control" placeholder="e.g. Main Support Desk" maxlength="50" oninput="handleActivePanelNameInput(this.value)">
             </div>
 
             <div class="tickets-form-row">
@@ -3728,10 +3754,10 @@
         <div class="d-flex justify-between align-center flex-wrap gap-2">
             <div>
                 <h3 class="tickets-section-title">
-                    <span>🔘</span> Custom Category Buttons & Routing
+                    <span>🔘</span> Category Buttons for <span id="active-panel-cat-title" style="color: var(--primary-color, #5865F2);">Active Panel</span>
                 </h3>
                 <p class="text-xs text-muted">
-                    Configure custom buttons published on the ticket panel. Assign specific roles or members to auto-route issues to the appropriate team.
+                    Configure buttons published on this specific ticket panel. Assign specific roles or members to auto-route issues to the appropriate team.
                 </p>
             </div>
             <button type="button" class="btn btn-primary" onclick="openCreateCategoryModal()">
@@ -3777,6 +3803,9 @@
                 <input type="text" id="tickets-search-input" class="form-control" placeholder="Search by Ticket #, User, or Subject..." oninput="loadTicketsList()">
             </div>
             <div class="d-flex gap-2 align-center flex-wrap">
+                <select id="tickets-filter-panel" class="form-control" style="width: auto;" onchange="loadTicketsList()" title="Filter by Panel">
+                    <option value="">All Panels</option>
+                </select>
                 <select id="tickets-filter-status" class="form-control" style="width: auto;" onchange="loadTicketsList()" title="Filter by Status">
                     <option value="all">All Statuses</option>
                     <option value="open">🟢 Open</option>
@@ -3799,15 +3828,16 @@
                     <tr>
                         <th style="width: 80px;">Ticket</th>
                         <th>User (Opener)</th>
+                        <th style="width: 140px;">Panel / Desk</th>
                         <th>Category</th>
                         <th>Subject & Issue</th>
-                        <th style="width: 140px;">Status</th>
-                        <th style="width: 160px;">Created At</th>
+                        <th style="width: 130px;">Status</th>
+                        <th style="width: 150px;">Created At</th>
                         <th style="width: 240px; text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tickets-table-body">
-                    <tr><td colspan="7" class="text-center text-muted p-4">Loading tickets...</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted p-4">Loading tickets...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -3977,6 +4007,69 @@
         <div class="transcript-chat-body" id="transcript-chat-body">
             <!-- Messages rendered dynamically via JS -->
         </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: CREATE NEW TICKET PANEL             -->
+<!-- ========================================== -->
+<div id="modal-ticket-panel" class="modal-backdrop">
+    <div class="modal-box modal-box-md">
+        <div class="modal-header">
+            <h3 class="modal-title">➕ Create New Ticket Panel / Topic</h3>
+            <button type="button" onclick="closeCreatePanelModal()" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form id="form-create-panel" onsubmit="submitCreatePanelModal(event)">
+            <p class="text-xs text-muted mb-3">
+                Create a dedicated support desk in any channel for any topic (e.g. 💳 Billing & Payments, 🐞 Bug Reports, 📝 Staff Recruitment, 🏆 Tournaments/Events).
+            </p>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="new-panel-name">Panel Name / Topic <span class="required-star">*</span></label>
+                <input type="text" id="new-panel-name" class="form-control" placeholder="e.g. 💳 Billing Support, 🐞 Bug Reports" required maxlength="50">
+            </div>
+
+            <div class="tickets-form-row">
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="new-panel-channel">Panel Channel <span class="required-star">*</span></label>
+                    <select id="new-panel-channel" class="form-control" required title="Channel where panel will be posted"></select>
+                </div>
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="new-panel-transcript-channel">Transcript Log Channel</label>
+                    <select id="new-panel-transcript-channel" class="form-control" title="Channel for closed transcripts"></select>
+                </div>
+            </div>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="new-panel-title">Panel Embed Title</label>
+                <input type="text" id="new-panel-title" class="form-control" placeholder="e.g. 💳 Billing & Payment Assistance" value="🛡️ Support Desk" maxlength="100">
+            </div>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="new-panel-desc">Panel Embed Description</label>
+                <textarea id="new-panel-desc" class="form-control" rows="2" placeholder="e.g. Open a private thread with our billing team." maxlength="500">Click a category button below to open a secure Private Thread.</textarea>
+            </div>
+
+            <div class="tickets-form-row">
+                <div class="tickets-form-group">
+                    <label class="tickets-label">Panel Color</label>
+                    <div class="tickets-color-picker-group">
+                        <input type="color" id="new-panel-color" class="tickets-color-input" value="#5865F2" onchange="document.getElementById('new-panel-color-hex').value = this.value">
+                        <input type="text" id="new-panel-color-hex" class="form-control" value="#5865F2" oninput="document.getElementById('new-panel-color').value = this.value" maxlength="7">
+                    </div>
+                </div>
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="new-panel-max-open">Max Open Tickets Per User</label>
+                    <input type="number" id="new-panel-max-open" class="form-control" value="2" min="1" max="20">
+                </div>
+            </div>
+
+            <div class="d-flex justify-between align-center mt-3 pt-3" style="border-top: 1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-secondary" onclick="closeCreatePanelModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Ticket Panel</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -7639,5 +7732,5 @@ async function saveCurrentTemplate() {
     });
 </script>
 <script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.4"></script>
-<script src="{{ url_for('static', filename='js/tickets.js') }}?v=3.5"></script>
+<script src="{{ url_for('static', filename='js/tickets.js') }}?v=4.0"></script>
 {% endblock %}
