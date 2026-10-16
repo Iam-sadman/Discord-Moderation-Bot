@@ -111,8 +111,15 @@ class TestTicketsSystem(unittest.IsolatedAsyncioTestCase):
         self.mock_guild.get_role.side_effect = lambda rid: self.mock_role if int(rid) == self.support_role_id else None
         self.mock_guild.get_member.side_effect = lambda uid: self.mock_staff_member if int(uid) == self.staff_id else None
 
+        self.mock_user = MagicMock(spec=discord.User)
+        self.mock_user.id = self.user_id
+        self.mock_user.name = "Customer"
+        self.mock_user.mention = f"<@{self.user_id}>"
+        self.mock_user.send = AsyncMock()
+
         self.mock_bot.get_guild.return_value = self.mock_guild
         self.mock_bot.get_channel.side_effect = lambda cid: self.mock_guild.get_channel(cid)
+        self.mock_bot.get_user.side_effect = lambda uid: self.mock_user if int(uid) == self.user_id else None
 
         # Setup TicketsCog
         self.cog = TicketsCog(self.mock_bot)
@@ -488,13 +495,21 @@ class TestTicketsSystem(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(ok)
 
-        # Verified locked & archived
+        # Verified locked, archived, and deleted
         self.mock_thread.edit.assert_called_once_with(locked=True, archived=True)
+        self.mock_thread.delete.assert_called_once()
 
         # Transcript posted to transcript channel
         self.mock_transcript_channel.send.assert_called_once()
         files = self.mock_transcript_channel.send.call_args[1].get("files", [])
         self.assertEqual(len(files), 2)  # .html and .txt
+
+        # Verified .txt transcript DM was sent to the ticket creator
+        self.mock_user.send.assert_called_once()
+        dm_kwargs = self.mock_user.send.call_args[1]
+        self.assertIsNotNone(dm_kwargs.get("embed"))
+        self.assertIsNotNone(dm_kwargs.get("file"))
+        self.assertTrue(dm_kwargs["file"].filename.endswith(".txt"))
 
         # Verified DB record updated
         ticket = await self.db.get_ticket(ticket_id)

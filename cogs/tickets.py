@@ -637,20 +637,80 @@ class TicketsCog(commands.Cog):
                 except Exception as e:
                     logger.error(f"Failed to post transcript to transcript channel: {e}")
 
-        # 6. Post closing message inside thread and lock + archive
+        # 5b. Send .txt transcript via DM to the ticket creator
+        try:
+            creator_id = int(ticket["user_id"])
+            creator = self.bot.get_user(creator_id)
+            if not creator:
+                try:
+                    creator = await self.bot.fetch_user(creator_id)
+                except Exception as e:
+                    logger.warning(f"Could not fetch ticket creator {creator_id}: {e}")
+                    creator = None
+
+            if creator:
+                dm_embed = discord.Embed(
+                    title=f"🎫 Ticket #{ticket_id:04d} Closed — {ticket.get('category_name', 'Support')}",
+                    color=discord.Color.blue(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                dm_embed.description = (
+                    f"Hello {creator.mention}, your support ticket in **{guild_name}** has been closed.\n\n"
+                    f"📄 **A complete text transcript (.txt) of your conversation is attached below for your records.**"
+                )
+                dm_embed.add_field(name="Subject", value=ticket.get("subject", "Support Ticket"), inline=False)
+                dm_embed.add_field(name="Closed By", value=str(closed_by_name), inline=True)
+                dm_embed.add_field(name="Resolution / Reason", value=str(reason) if reason else "No resolution reason provided.", inline=False)
+
+                if guild and guild.icon:
+                    dm_embed.set_footer(text=f"{guild_name} Support Desk", icon_url=guild.icon.url)
+                else:
+                    dm_embed.set_footer(text=f"{guild_name} Support Desk")
+
+                dm_txt_file = discord.File(
+                    io.BytesIO(txt_content.encode("utf-8")),
+                    filename=f"ticket-{ticket_id:04d}-transcript.txt"
+                )
+                await creator.send(embed=dm_embed, file=dm_txt_file)
+                logger.info(f"Successfully sent .txt transcript DM to user {creator_id} for ticket #{ticket_id:04d}")
+        except discord.Forbidden:
+            logger.warning(f"Could not DM user {ticket.get('user_id')} for ticket #{ticket_id:04d}: Direct messages disabled by user.")
+        except Exception as e:
+            logger.error(f"Error sending DM transcript to user {ticket.get('user_id')}: {e}", exc_info=True)
+
+        # 6. Post closing message, send interaction response, and delete thread
+        if interaction:
+            try:
+                await interaction.followup.send(
+                    f"✅ Ticket #{ticket_id:04d} has been closed. A text transcript has been sent to the ticket creator's DMs.",
+                    ephemeral=True
+                )
+            except Exception as e:
+                logger.warning(f"Could not send close interaction followup: {e}")
+
         if thread and isinstance(thread, discord.Thread):
             try:
                 await thread.send(
                     f"🔒 **Ticket #{ticket_id:04d} was closed by {closed_by_name}**.\n"
                     f"**Resolution Note:** {reason}\n"
-                    f"*This private thread is now locked and archived.*"
+                    f"*A complete transcript has been saved and sent to the ticket creator.*\n"
+                    f"🗑️ *Deleting thread...*"
                 )
+            except Exception as e:
+                logger.warning(f"Could not send close notice to thread {thread.id}: {e}")
+
+            try:
                 await thread.edit(locked=True, archived=True)
             except Exception as e:
                 logger.warning(f"Could not lock/archive thread {thread.id}: {e}")
 
-        if interaction:
-            await interaction.followup.send(f"✅ Ticket #{ticket_id:04d} has been successfully closed and archived.", ephemeral=True)
+            try:
+                await thread.delete()
+                logger.info(f"Deleted thread {thread.id} for ticket #{ticket_id:04d}")
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                logger.warning(f"Could not delete thread {thread.id}: {e}")
 
         return True
 

@@ -71,7 +71,7 @@ def _get_server_channels_and_roles(guild: Optional[discord.Guild]):
         {"id": str(m.id), "name": str(m), "display_name": m.display_name}
         for m in guild.members
         if not m.bot
-    ][:200]
+    ][:1000]
     return channels, roles, members
 
 

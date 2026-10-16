@@ -133,8 +133,8 @@ function removeGlobalRole(roleId, evt) {
     renderGlobalRolesTags();
 }
 
-function toggleGlobalRolesDropdown() {
-    const menu = document.getElementById('ticket-global-roles-dropdown');
+function openSearchableDropdown(menuId, items, selectedSet, renderTagsCallback, placeholder, isMember = false) {
+    const menu = document.getElementById(menuId);
     if (!menu) return;
 
     if (menu.style.display === 'block') {
@@ -142,25 +142,88 @@ function toggleGlobalRolesDropdown() {
         return;
     }
 
-    menu.innerHTML = '';
-    serverRoles.forEach(r => {
-        const isSelected = selectedGlobalRoles.has(String(r.id));
-        const item = document.createElement('div');
-        item.className = 'tag-dropdown-item';
-        item.innerHTML = `<span>@${escapeHtml(r.name)}</span><span>${isSelected ? '✅' : '➕'}</span>`;
-        item.onclick = (e) => {
-            e.stopPropagation();
-            if (selectedGlobalRoles.has(String(r.id))) {
-                selectedGlobalRoles.delete(String(r.id));
+    menu.innerHTML = `
+        <div class="tag-dropdown-search-box" onclick="event.stopPropagation()">
+            <input type="text" class="tag-search-input" placeholder="${placeholder}" autocomplete="off">
+        </div>
+        <div class="tag-dropdown-list"></div>
+    `;
+
+    const listContainer = menu.querySelector('.tag-dropdown-list');
+    const searchInput = menu.querySelector('.tag-search-input');
+
+    function updateList(query = '') {
+        listContainer.innerHTML = '';
+        const q = query.trim().toLowerCase();
+
+        const filtered = items.filter(item => {
+            if (!q) return true;
+            if (isMember) {
+                const name = (item.display_name || item.name || '').toLowerCase();
+                const id = String(item.id);
+                return name.includes(q) || id.includes(q);
             } else {
-                selectedGlobalRoles.add(String(r.id));
+                return (item.name || '').toLowerCase().includes(q) || String(item.id).includes(q);
             }
-            renderGlobalRolesTags();
-            toggleGlobalRolesDropdown();
-        };
-        menu.appendChild(item);
-    });
+        });
+
+        if (isMember && /^\d{17,20}$/.test(q) && !filtered.some(i => String(i.id) === q)) {
+            filtered.unshift({
+                id: q,
+                name: `User #${q}`,
+                display_name: `Discord User (${q})`
+            });
+        }
+
+        if (filtered.length === 0) {
+            listContainer.innerHTML = '<div class="p-3 text-xs text-muted text-center">No matching results found</div>';
+            return;
+        }
+
+        filtered.forEach(item => {
+            const isSelected = selectedSet.has(String(item.id));
+            const row = document.createElement('div');
+            row.className = 'tag-dropdown-item' + (isSelected ? ' selected' : '');
+            const label = isMember ? `👤 ${escapeHtml(item.display_name || item.name)}` : `@${escapeHtml(item.name)}`;
+            row.innerHTML = `<span>${label}</span><span class="tag-check">${isSelected ? '✅' : '➕'}</span>`;
+            row.onclick = (e) => {
+                e.stopPropagation();
+                if (selectedSet.has(String(item.id))) {
+                    selectedSet.delete(String(item.id));
+                } else {
+                    selectedSet.add(String(item.id));
+                }
+                renderTagsCallback();
+                const nowSelected = selectedSet.has(String(item.id));
+                row.className = 'tag-dropdown-item' + (nowSelected ? ' selected' : '');
+                const check = row.querySelector('.tag-check');
+                if (check) check.innerText = nowSelected ? '✅' : '➕';
+            };
+            listContainer.appendChild(row);
+        });
+    }
+
+    searchInput.oninput = (e) => {
+        updateList(e.target.value);
+    };
+
+    updateList('');
     menu.style.display = 'block';
+
+    setTimeout(() => {
+        searchInput.focus();
+    }, 50);
+}
+
+function toggleGlobalRolesDropdown() {
+    openSearchableDropdown(
+        'ticket-global-roles-dropdown',
+        serverRoles,
+        selectedGlobalRoles,
+        renderGlobalRolesTags,
+        '🔍 Search roles by name...',
+        false
+    );
 }
 
 function renderGlobalMembersTags() {
@@ -190,33 +253,14 @@ function removeGlobalMember(userId, evt) {
 }
 
 function toggleGlobalMembersDropdown() {
-    const menu = document.getElementById('ticket-global-members-dropdown');
-    if (!menu) return;
-
-    if (menu.style.display === 'block') {
-        menu.style.display = 'none';
-        return;
-    }
-
-    menu.innerHTML = '';
-    serverMembers.forEach(m => {
-        const isSelected = selectedGlobalMembers.has(String(m.id));
-        const item = document.createElement('div');
-        item.className = 'tag-dropdown-item';
-        item.innerHTML = `<span>${escapeHtml(m.display_name || m.name)}</span><span>${isSelected ? '✅' : '➕'}</span>`;
-        item.onclick = (e) => {
-            e.stopPropagation();
-            if (selectedGlobalMembers.has(String(m.id))) {
-                selectedGlobalMembers.delete(String(m.id));
-            } else {
-                selectedGlobalMembers.add(String(m.id));
-            }
-            renderGlobalMembersTags();
-            toggleGlobalMembersDropdown();
-        };
-        menu.appendChild(item);
-    });
-    menu.style.display = 'block';
+    openSearchableDropdown(
+        'ticket-global-members-dropdown',
+        serverMembers,
+        selectedGlobalMembers,
+        renderGlobalMembersTags,
+        '🔍 Search members by name or ID...',
+        true
+    );
 }
 
 // Close tag dropdowns on clicking outside
@@ -474,33 +518,14 @@ function removeCatRole(roleId, evt) {
 }
 
 function toggleCatRolesDropdown() {
-    const menu = document.getElementById('cat-roles-dropdown');
-    if (!menu) return;
-
-    if (menu.style.display === 'block') {
-        menu.style.display = 'none';
-        return;
-    }
-
-    menu.innerHTML = '';
-    serverRoles.forEach(r => {
-        const isSelected = selectedCatRoles.has(String(r.id));
-        const item = document.createElement('div');
-        item.className = 'tag-dropdown-item';
-        item.innerHTML = `<span>@${escapeHtml(r.name)}</span><span>${isSelected ? '✅' : '➕'}</span>`;
-        item.onclick = (e) => {
-            e.stopPropagation();
-            if (selectedCatRoles.has(String(r.id))) {
-                selectedCatRoles.delete(String(r.id));
-            } else {
-                selectedCatRoles.add(String(r.id));
-            }
-            renderCatRolesTags();
-            toggleCatRolesDropdown();
-        };
-        menu.appendChild(item);
-    });
-    menu.style.display = 'block';
+    openSearchableDropdown(
+        'cat-roles-dropdown',
+        serverRoles,
+        selectedCatRoles,
+        renderCatRolesTags,
+        '🔍 Search roles by name...',
+        false
+    );
 }
 
 function renderCatMembersTags() {
@@ -530,33 +555,14 @@ function removeCatMember(userId, evt) {
 }
 
 function toggleCatMembersDropdown() {
-    const menu = document.getElementById('cat-members-dropdown');
-    if (!menu) return;
-
-    if (menu.style.display === 'block') {
-        menu.style.display = 'none';
-        return;
-    }
-
-    menu.innerHTML = '';
-    serverMembers.forEach(m => {
-        const isSelected = selectedCatMembers.has(String(m.id));
-        const item = document.createElement('div');
-        item.className = 'tag-dropdown-item';
-        item.innerHTML = `<span>${escapeHtml(m.display_name || m.name)}</span><span>${isSelected ? '✅' : '➕'}</span>`;
-        item.onclick = (e) => {
-            e.stopPropagation();
-            if (selectedCatMembers.has(String(m.id))) {
-                selectedCatMembers.delete(String(m.id));
-            } else {
-                selectedCatMembers.add(String(m.id));
-            }
-            renderCatMembersTags();
-            toggleCatMembersDropdown();
-        };
-        menu.appendChild(item);
-    });
-    menu.style.display = 'block';
+    openSearchableDropdown(
+        'cat-members-dropdown',
+        serverMembers,
+        selectedCatMembers,
+        renderCatMembersTags,
+        '🔍 Search members by name or ID...',
+        true
+    );
 }
 
 async function saveCategorySubmit(event) {
@@ -736,29 +742,54 @@ async function claimTicket(ticketId) {
     }
 }
 
+function filterAssignRoles(query = '') {
+    const q = query.trim().toLowerCase();
+    const rSelect = document.getElementById('assign-role-select');
+    if (!rSelect) return;
+    const curVal = rSelect.value;
+    rSelect.innerHTML = '<option value="">-- Choose Role to Assign --</option>';
+    serverRoles.forEach(r => {
+        if (!q || r.name.toLowerCase().includes(q) || String(r.id).includes(q)) {
+            const opt = document.createElement('option');
+            opt.value = String(r.id);
+            opt.textContent = `@${r.name}`;
+            if (curVal && curVal === String(r.id)) opt.selected = true;
+            rSelect.appendChild(opt);
+        }
+    });
+}
+
+function filterAssignMembers(query = '') {
+    const q = query.trim().toLowerCase();
+    const mSelect = document.getElementById('assign-member-select');
+    if (!mSelect) return;
+    const curVal = mSelect.value;
+    mSelect.innerHTML = '<option value="">-- Choose Member to Add --</option>';
+    serverMembers.forEach(m => {
+        const name = (m.display_name || m.name || '').toLowerCase();
+        const id = String(m.id);
+        if (!q || name.includes(q) || id.includes(q)) {
+            const opt = document.createElement('option');
+            opt.value = String(m.id);
+            opt.textContent = `${m.display_name || m.name} (${m.id})`;
+            if (curVal && curVal === String(m.id)) opt.selected = true;
+            mSelect.appendChild(opt);
+        }
+    });
+}
+
 // Assign Role / Member Modal
 function openAssignModal(ticketId) {
     currentViewingTicketId = ticketId;
     document.getElementById('assign-modal-ticket-id').innerText = `#${String(ticketId).padStart(4, '0')}`;
 
-    // Populate Selects
-    const rSelect = document.getElementById('assign-role-select');
-    rSelect.innerHTML = '<option value="">-- Choose Role to Assign --</option>';
-    serverRoles.forEach(r => {
-        const opt = document.createElement('option');
-        opt.value = String(r.id);
-        opt.textContent = `@${r.name}`;
-        rSelect.appendChild(opt);
-    });
+    const rSearch = document.getElementById('assign-role-search');
+    if (rSearch) rSearch.value = '';
+    const mSearch = document.getElementById('assign-member-search');
+    if (mSearch) mSearch.value = '';
 
-    const mSelect = document.getElementById('assign-member-select');
-    mSelect.innerHTML = '<option value="">-- Choose Member to Add --</option>';
-    serverMembers.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = String(m.id);
-        opt.textContent = `${m.display_name || m.name} (${m.id})`;
-        mSelect.appendChild(opt);
-    });
+    filterAssignRoles('');
+    filterAssignMembers('');
 
     document.getElementById('modal-ticket-assign').style.display = 'flex';
 }

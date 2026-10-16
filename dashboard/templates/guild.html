@@ -3624,7 +3624,7 @@
             </div>
 
             <!-- Global Support Roles Picker -->
-            <div class="tickets-form-group" style="position: relative;" id="ticket-global-roles-picker">
+            <div class="tickets-form-group" style="position: relative; z-index: 25;" id="ticket-global-roles-picker">
                 <label class="tickets-label">
                     Global Support Roles
                     <span class="hint">(Roles granted access across all tickets)</span>
@@ -3636,7 +3636,7 @@
             </div>
 
             <!-- Global Support Members Picker -->
-            <div class="tickets-form-group" style="position: relative;" id="ticket-global-members-picker">
+            <div class="tickets-form-group" style="position: relative; z-index: 20;" id="ticket-global-members-picker">
                 <label class="tickets-label">
                     Global Support Members
                     <span class="hint">(Specific users granted access across all tickets)</span>
@@ -3851,7 +3851,7 @@
             </div>
 
             <!-- Category Specific Assigned Roles -->
-            <div class="tickets-form-group" style="position: relative;" id="cat-roles-picker">
+            <div class="tickets-form-group" style="position: relative; z-index: 25;" id="cat-roles-picker">
                 <label class="tickets-label">
                     Category Assigned Roles
                     <span class="hint">(Automatically granted access when this category is opened)</span>
@@ -3863,7 +3863,7 @@
             </div>
 
             <!-- Category Specific Assigned Members -->
-            <div class="tickets-form-group" style="position: relative;" id="cat-members-picker">
+            <div class="tickets-form-group" style="position: relative; z-index: 20;" id="cat-members-picker">
                 <label class="tickets-label">
                     Category Assigned Members
                     <span class="hint">(Specific users added directly to the private thread)</span>
@@ -3899,6 +3899,7 @@
 
             <div class="tickets-form-group">
                 <label class="tickets-label" for="assign-role-select">Select Discord Role</label>
+                <input type="text" id="assign-role-search" class="form-control mb-1" style="font-size: 12px; padding: 6px 10px;" placeholder="🔍 Search roles by name..." oninput="filterAssignRoles(this.value)">
                 <select id="assign-role-select" class="form-control"></select>
             </div>
 
@@ -3906,6 +3907,7 @@
 
             <div class="tickets-form-group">
                 <label class="tickets-label" for="assign-member-select">Select Discord Member</label>
+                <input type="text" id="assign-member-search" class="form-control mb-1" style="font-size: 12px; padding: 6px 10px;" placeholder="🔍 Search members by name or ID..." oninput="filterAssignMembers(this.value)">
                 <select id="assign-member-select" class="form-control"></select>
             </div>
 
