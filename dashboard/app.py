@@ -344,6 +344,19 @@ def create_dashboard(bot):
                 }), 401
             return redirect(url_for("login"))
 
+    # ──── Global Error Handlers for API JSON Responses ────
+    @app.errorhandler(500)
+    async def handle_500(err):
+        if request.path.startswith("/api/"):
+            return jsonify({"success": False, "error": f"Internal Server Error: {err}"}), 500
+        return "Internal Server Error", 500
+
+    @app.errorhandler(404)
+    async def handle_404(err):
+        if request.path.startswith("/api/"):
+            return jsonify({"success": False, "error": f"Endpoint Not Found: {request.path}"}), 404
+        return "Not Found", 404
+
     # ──── Authentication Routes ────
     @app.route("/login", methods=["GET", "POST"])
     async def login():

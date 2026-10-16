@@ -163,14 +163,13 @@ class TicketsDB:
                 );
             """)
             await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_guild_pos ON ticket_categories(guild_id, position);")
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_panel ON ticket_categories(panel_id);")
 
             # Migration: Ensure panel_id exists in ticket_categories
             cur = await db.execute("PRAGMA table_info(ticket_categories);")
             cat_cols = [row["name"] for row in await cur.fetchall()]
             if "panel_id" not in cat_cols:
                 await db.execute("ALTER TABLE ticket_categories ADD COLUMN panel_id INTEGER DEFAULT NULL;")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_panel ON ticket_categories(panel_id);")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_panel ON ticket_categories(panel_id);")
 
             # 3. Tickets
             await db.execute("""
@@ -202,14 +201,13 @@ class TicketsDB:
             await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_thread ON tickets(thread_id);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id);")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);")
-            await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_panel ON tickets(panel_id);")
 
             # Migration: Ensure panel_id exists in tickets (for existing databases)
             cur = await db.execute("PRAGMA table_info(tickets);")
             t_cols = [row["name"] for row in await cur.fetchall()]
             if "panel_id" not in t_cols:
                 await db.execute("ALTER TABLE tickets ADD COLUMN panel_id INTEGER DEFAULT NULL;")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_panel ON tickets(panel_id);")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_tickets_panel ON tickets(panel_id);")
 
             # 4. Ticket Messages (Stores Full As-Is Transcript History)
             await db.execute("""
