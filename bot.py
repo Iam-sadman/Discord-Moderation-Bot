@@ -66,6 +66,7 @@ class ModularBot(commands.Bot):
         super().__init__(
             command_prefix=get_prefix,
             intents=intents,
+            chunk_guilds_at_startup=True,
             help_command=commands.DefaultHelpCommand()
         )
 

@@ -10,8 +10,8 @@ let activePanelId = null;
 let currentTicketSettings = null;
 let currentTicketCategories = [];
 let currentTicketsList = [];
-let serverChannels = [];
-let serverRoles = [];
+let serverChannels = (typeof window !== 'undefined' && window.guildChannels) ? window.guildChannels : [];
+let serverRoles = (typeof window !== 'undefined' && window.guildRoles) ? window.guildRoles : [];
 let serverMembers = [];
 
 let selectedGlobalRoles = new Set();
@@ -36,6 +36,7 @@ function escapeHtml(text) {
 
 async function initTicketsTab() {
     console.log("[Tickets] Initializing Support Tickets tab for guild:", window.guildId);
+    initSearchablePickers();
     try {
         await loadTicketPanels();
     } catch (e) {
@@ -61,9 +62,11 @@ async function loadTicketPanels() {
         }
 
         currentPanels = res.panels || [];
-        serverChannels = res.channels || [];
-        serverRoles = res.roles || [];
-        serverMembers = res.members || [];
+        serverChannels = (res.channels && res.channels.length > 0) ? res.channels : (window.guildChannels || []);
+        serverRoles = (res.roles && res.roles.length > 0) ? res.roles : (window.guildRoles || []);
+        if (res.members && res.members.length > 0) {
+            serverMembers = res.members;
+        }
 
         // Ensure we have an active panel selected
         if (!activePanelId || !currentPanels.some(p => p.id === activePanelId)) {
@@ -370,15 +373,20 @@ function removeGlobalMember(userId, evt) {
     }
 }
 
-function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, selectedSet, renderTagsCallback, isMember = false) {
+function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, getSelectedSetFn, renderTagsCallback, isMember = false) {
     const input = document.getElementById(inputId);
     const dropdown = document.getElementById(dropdownId);
     if (!input || !dropdown) return;
 
-    function renderList(query = '') {
-        const items = getItemsFn() || [];
+    let memberSearchTimer = null;
+
+    async function renderList(query = '') {
+        const rawItems = getItemsFn() || [];
+        const items = (!isMember && rawItems.length === 0 && window.guildRoles) ? window.guildRoles : rawItems;
         dropdown.innerHTML = '';
         const q = query.trim().toLowerCase();
+
+        const selectedSet = typeof getSelectedSetFn === 'function' ? getSelectedSetFn() : getSelectedSetFn;
 
         const filtered = items.filter(item => {
             if (!q) return true;
@@ -402,42 +410,72 @@ function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, selectedSet, 
         }
 
         if (filtered.length === 0) {
-            dropdown.innerHTML = '<div class="p-3 text-xs text-muted text-center">No matching results found</div>';
-            return;
+            dropdown.innerHTML = `<div class="p-3 text-xs text-muted text-center">${isMember && q.length > 0 ? '🔍 Searching server members...' : 'No matching results found'}</div>`;
+        } else {
+            // Render up to 50 items
+            filtered.slice(0, 50).forEach(item => {
+                const isSelected = selectedSet && selectedSet.has(String(item.id));
+                const row = document.createElement('div');
+                row.className = 'tag-dropdown-item' + (isSelected ? ' selected' : '');
+                
+                let label = '';
+                if (isMember) {
+                    const dName = item.display_name || item.name;
+                    const uName = item.name && item.name !== dName ? ` (@${escapeHtml(item.name)})` : '';
+                    label = `<span>👤 <strong>${escapeHtml(dName)}</strong>${uName} <small class="text-muted" style="font-size: 11px; margin-left: 6px;">ID: ${item.id}</small></span>`;
+                } else {
+                    label = `<span>@<strong>${escapeHtml(item.name)}</strong></span>`;
+                }
+
+                row.innerHTML = `${label}<span class="tag-check">${isSelected ? '✅' : '➕'}</span>`;
+                
+                row.onclick = (e) => {
+                    e.stopPropagation();
+                    const curSet = typeof getSelectedSetFn === 'function' ? getSelectedSetFn() : getSelectedSetFn;
+                    if (curSet.has(String(item.id))) {
+                        curSet.delete(String(item.id));
+                    } else {
+                        curSet.add(String(item.id));
+                    }
+                    renderTagsCallback();
+                    const nowSelected = curSet.has(String(item.id));
+                    row.className = 'tag-dropdown-item' + (nowSelected ? ' selected' : '');
+                    const check = row.querySelector('.tag-check');
+                    if (check) check.innerText = nowSelected ? '✅' : '➕';
+                    input.focus();
+                };
+                dropdown.appendChild(row);
+            });
         }
 
-        filtered.forEach(item => {
-            const isSelected = selectedSet.has(String(item.id));
-            const row = document.createElement('div');
-            row.className = 'tag-dropdown-item' + (isSelected ? ' selected' : '');
-            
-            let label = '';
-            if (isMember) {
-                const dName = item.display_name || item.name;
-                const uName = item.name && item.name !== dName ? ` (@${escapeHtml(item.name)})` : '';
-                label = `<span>👤 <strong>${escapeHtml(dName)}</strong>${uName} <small class="text-muted" style="font-size: 11px; margin-left: 6px;">ID: ${item.id}</small></span>`;
-            } else {
-                label = `<span>@<strong>${escapeHtml(item.name)}</strong></span>`;
-            }
-
-            row.innerHTML = `${label}<span class="tag-check">${isSelected ? '✅' : '➕'}</span>`;
-            
-            row.onclick = (e) => {
-                e.stopPropagation();
-                if (selectedSet.has(String(item.id))) {
-                    selectedSet.delete(String(item.id));
-                } else {
-                    selectedSet.add(String(item.id));
+        // Live backend member search if query is typed
+        if (isMember && q.length >= 1) {
+            clearTimeout(memberSearchTimer);
+            memberSearchTimer = setTimeout(async () => {
+                try {
+                    const data = await apiRequest(`/api/guild/${window.guildId}/roles/members?search=${encodeURIComponent(q)}&limit=30`, 'GET');
+                    if (data && data.members && data.members.length > 0) {
+                        let mergedAny = false;
+                        data.members.forEach(m => {
+                            if (!serverMembers.some(ex => String(ex.id) === String(m.id))) {
+                                serverMembers.push({
+                                    id: String(m.id),
+                                    name: m.name,
+                                    display_name: m.display_name || m.name
+                                });
+                                mergedAny = true;
+                            }
+                        });
+                        // Re-render only if current input still matches query
+                        if (mergedAny && input.value.trim().toLowerCase() === q) {
+                            renderList(input.value);
+                        }
+                    }
+                } catch (err) {
+                    console.warn("[Tickets] Member live search notice:", err);
                 }
-                renderTagsCallback();
-                const nowSelected = selectedSet.has(String(item.id));
-                row.className = 'tag-dropdown-item' + (nowSelected ? ' selected' : '');
-                const check = row.querySelector('.tag-check');
-                if (check) check.innerText = nowSelected ? '✅' : '➕';
-                input.focus();
-            };
-            dropdown.appendChild(row);
-        });
+            }, 250);
+        }
     }
 
     input.onfocus = () => {
@@ -461,8 +499,8 @@ function initSearchablePickers() {
     setupSearchableTagPicker(
         'ticket-global-roles-search-input',
         'ticket-global-roles-dropdown',
-        () => serverRoles,
-        selectedGlobalRoles,
+        () => (serverRoles && serverRoles.length > 0 ? serverRoles : (window.guildRoles || [])),
+        () => selectedGlobalRoles,
         renderGlobalRolesTags,
         false
     );
@@ -470,15 +508,15 @@ function initSearchablePickers() {
         'ticket-global-members-search-input',
         'ticket-global-members-dropdown',
         () => serverMembers,
-        selectedGlobalMembers,
+        () => selectedGlobalMembers,
         renderGlobalMembersTags,
         true
     );
     setupSearchableTagPicker(
         'cat-roles-search-input',
         'cat-roles-dropdown',
-        () => serverRoles,
-        selectedCatRoles,
+        () => (serverRoles && serverRoles.length > 0 ? serverRoles : (window.guildRoles || [])),
+        () => selectedCatRoles,
         renderCatRolesTags,
         false
     );
@@ -486,7 +524,7 @@ function initSearchablePickers() {
         'cat-members-search-input',
         'cat-members-dropdown',
         () => serverMembers,
-        selectedCatMembers,
+        () => selectedCatMembers,
         renderCatMembersTags,
         true
     );

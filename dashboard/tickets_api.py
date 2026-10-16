@@ -68,10 +68,10 @@ def _get_server_channels_and_roles(guild: Optional[discord.Guild]):
         if not r.managed and r.name != "@everyone"
     ]
     members = [
-        {"id": str(m.id), "name": str(m), "display_name": m.display_name}
+        {"id": str(m.id), "name": str(m.name), "display_name": getattr(m, "display_name", None) or str(m.name)}
         for m in guild.members
         if not m.bot
-    ][:1000]
+    ][:2000]
     return channels, roles, members
 
 
@@ -87,6 +87,12 @@ async def api_get_ticket_panels(guild_id: int):
 
     bot = get_bot()
     guild = bot.get_guild(guild_id) if bot else None
+    if guild and hasattr(guild, "chunk") and (not getattr(guild, "chunked", False) or len(guild.members) <= 1):
+        try:
+            await guild.chunk(cache=True)
+        except Exception as e:
+            logger.warning(f"Could not chunk guild {guild.id}: {e}")
+
     channels, roles, members = _get_server_channels_and_roles(guild)
 
     counts = await db.get_ticket_counts(guild_id)
