@@ -5,6 +5,7 @@
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.4">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.4">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=2.5">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.4">
 {% endblock %}
 
@@ -92,6 +93,9 @@
     </button>
     <button class="tab-btn" onclick="switchGuildTab('qc-faults', this)" id="tab-btn-qc-faults">
         🎯 QC & Fault Tracker
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('tickets', this)" id="tab-btn-tickets">
+        🎫 Support Tickets
     </button>
     <button class="tab-btn" onclick="switchGuildTab('music', this)" id="tab-btn-music">
         🎵 Music Engine
@@ -3569,6 +3573,407 @@
     </div>
 </div>
 
+<!-- ========================================== -->
+<!-- SUPPORT TICKETS TAB (PRIVATE THREADS)       -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-tickets">
+    <!-- Header Bar -->
+    <div class="tickets-header-bar">
+        <div>
+            <h2 class="tickets-header-title">
+                <span>🎫</span> Private Thread Support Ticket System
+            </h2>
+            <p class="tickets-header-subtitle">
+                Configure Discord support channels, customizable category buttons, automatic role/member routing into secure private threads, live dashboard ticket management, and full as-is conversation transcripts.
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-secondary" onclick="initTicketsTab()" title="Refresh tickets data">
+                🔄 Refresh
+            </button>
+            <button type="button" class="btn btn-primary" onclick="publishTicketPanel()">
+                🚀 Publish / Update Panel to Discord
+            </button>
+        </div>
+    </div>
+
+    <!-- Section 1: Two-Column Config Grid -->
+    <div class="tickets-config-grid">
+        <!-- Left: Ticket Settings & Channel Configuration -->
+        <div class="tickets-card">
+            <div class="tickets-card-header">
+                <h3 class="tickets-card-title">⚙️ Ticket Panel & Routing Configuration</h3>
+                <p class="tickets-card-desc">Control where private threads are spawned, who receives global access, and how the panel appears.</p>
+            </div>
+
+            <div class="tickets-form-row">
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="ticket-config-panel-channel">
+                        Panel Channel <span class="required-star">*</span>
+                        <span class="hint">(Where panel embed lives & threads spawn)</span>
+                    </label>
+                    <select id="ticket-config-panel-channel" class="form-control" title="Designated ticket panel channel"></select>
+                </div>
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="ticket-config-transcript-channel">
+                        Transcript Log Channel
+                        <span class="hint">(Where closed ticket transcripts are logged)</span>
+                    </label>
+                    <select id="ticket-config-transcript-channel" class="form-control" title="Transcript archival channel"></select>
+                </div>
+            </div>
+
+            <!-- Global Support Roles Picker -->
+            <div class="tickets-form-group" style="position: relative;" id="ticket-global-roles-picker">
+                <label class="tickets-label">
+                    Global Support Roles
+                    <span class="hint">(Roles granted access across all tickets)</span>
+                </label>
+                <div class="tag-picker-container" onclick="toggleGlobalRolesDropdown()">
+                    <div id="ticket-global-roles-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                </div>
+                <div id="ticket-global-roles-dropdown" class="tag-dropdown-menu"></div>
+            </div>
+
+            <!-- Global Support Members Picker -->
+            <div class="tickets-form-group" style="position: relative;" id="ticket-global-members-picker">
+                <label class="tickets-label">
+                    Global Support Members
+                    <span class="hint">(Specific users granted access across all tickets)</span>
+                </label>
+                <div class="tag-picker-container" onclick="toggleGlobalMembersDropdown()">
+                    <div id="ticket-global-members-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                </div>
+                <div id="ticket-global-members-dropdown" class="tag-dropdown-menu"></div>
+            </div>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="ticket-config-panel-title">Panel Embed Title</label>
+                <input type="text" id="ticket-config-panel-title" class="form-control" placeholder="e.g. 🛡️ Official Support & Issue Desk" oninput="updateDiscordPreview()" maxlength="100">
+            </div>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="ticket-config-panel-desc">Panel Embed Description</label>
+                <textarea id="ticket-config-panel-desc" class="form-control" rows="2" placeholder="e.g. Click a category button below to open a secure Private Thread." oninput="updateDiscordPreview()" maxlength="500"></textarea>
+            </div>
+
+            <div class="tickets-form-row">
+                <div class="tickets-form-group">
+                    <label class="tickets-label">Panel Accent Color</label>
+                    <div class="tickets-color-picker-group">
+                        <input type="color" id="ticket-config-panel-color" class="tickets-color-input" value="#5865F2" onchange="handleTicketColorChange(this.value)">
+                        <input type="text" id="ticket-config-panel-color-hex" class="form-control" value="#5865F2" oninput="handleTicketColorChange(this.value)" maxlength="7">
+                    </div>
+                </div>
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="ticket-config-max-open">
+                        Max Open Tickets Per User
+                    </label>
+                    <input type="number" id="ticket-config-max-open" class="form-control" value="2" min="1" max="20">
+                </div>
+            </div>
+
+            <div class="d-flex justify-between align-center mt-3 pt-3" style="border-top: 1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-secondary" onclick="publishTicketPanel()">
+                    🚀 Publish / Sync to Discord
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveTicketSettings()">
+                    💾 Save Configuration
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: Live Discord Panel Interactive Preview -->
+        <div class="tickets-card">
+            <div class="tickets-card-header">
+                <h3 class="tickets-card-title">🖥️ Live Discord Panel Preview</h3>
+                <p class="tickets-card-desc">Simulated rendering of the Discord embed and interactive category buttons.</p>
+            </div>
+
+            <div class="discord-preview-box">
+                <div class="discord-bot-info">
+                    <div class="discord-bot-avatar" style="display:flex;align-items:center;justify-content:center;color:#fff;font-weight:bold;">🤖</div>
+                    <div>
+                        <div class="discord-bot-name">
+                            {{ bot.user.name if bot and bot.user else "SupportBot" }}
+                            <span class="discord-bot-tag">BOT</span>
+                        </div>
+                        <span style="font-size: 11px; color: #949ba4;">Today at 12:00 PM</span>
+                    </div>
+                </div>
+
+                <div class="discord-preview-embed" id="discord-preview-embed">
+                    <div class="discord-embed-title" id="discord-preview-title">🛡️ Official Support & Issue Desk</div>
+                    <div class="discord-embed-desc" id="discord-preview-desc">Click a category button below to open a secure Private Thread.</div>
+                    <div class="discord-embed-footer">
+                        <span>🔒</span> Private Threads • Only assigned staff & ticket creator have access
+                    </div>
+                </div>
+
+                <div class="discord-preview-buttons-grid" id="discord-preview-buttons">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </div>
+
+            <div class="text-xs text-muted mt-3">
+                💡 <em>Note:</em> In Discord, clicking any button opens a secure modal, validates the user's open ticket limit, and spawns an invitable=False Private Thread.
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: Custom Category Button Builder -->
+    <div class="categories-container">
+        <div class="d-flex justify-between align-center flex-wrap gap-2">
+            <div>
+                <h3 class="tickets-section-title">
+                    <span>🔘</span> Custom Category Buttons & Routing
+                </h3>
+                <p class="text-xs text-muted">
+                    Configure custom buttons published on the ticket panel. Assign specific roles or members to auto-route issues to the appropriate team.
+                </p>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="openCreateCategoryModal()">
+                ➕ Add Category Button
+            </button>
+        </div>
+
+        <div class="categories-list" id="ticket-categories-list">
+            <!-- Populated via JS -->
+            <div class="text-muted text-center p-3">Loading categories...</div>
+        </div>
+    </div>
+
+    <!-- Section 3: Active & Closed Tickets Manager -->
+    <div>
+        <h3 class="tickets-section-title">
+            <span>📋</span> Server Tickets & Archival Transcripts
+        </h3>
+
+        <!-- Stats Chips -->
+        <div class="tickets-stats-row">
+            <div class="ticket-stat-card">
+                <span class="ticket-stat-label">Total Tickets</span>
+                <span class="ticket-stat-val" id="stat-tickets-total">0</span>
+            </div>
+            <div class="ticket-stat-card">
+                <span class="ticket-stat-label">Active / Open</span>
+                <span class="ticket-stat-val text-success" id="stat-tickets-open">0</span>
+            </div>
+            <div class="ticket-stat-card">
+                <span class="ticket-stat-label">Claimed</span>
+                <span class="ticket-stat-val text-warning" id="stat-tickets-claimed">0</span>
+            </div>
+            <div class="ticket-stat-card">
+                <span class="ticket-stat-label">Closed & Archived</span>
+                <span class="ticket-stat-val text-muted" id="stat-tickets-closed">0</span>
+            </div>
+        </div>
+
+        <!-- Filter & Search Toolbar -->
+        <div class="tickets-filter-bar">
+            <div class="d-flex gap-2 align-center flex-1" style="max-width: 480px;">
+                <input type="text" id="tickets-search-input" class="form-control" placeholder="Search by Ticket #, User, or Subject..." oninput="loadTicketsList()">
+            </div>
+            <div class="d-flex gap-2 align-center flex-wrap">
+                <select id="tickets-filter-status" class="form-control" style="width: auto;" onchange="loadTicketsList()" title="Filter by Status">
+                    <option value="all">All Statuses</option>
+                    <option value="open">🟢 Open</option>
+                    <option value="claimed">🟡 Claimed</option>
+                    <option value="closed">🔴 Closed</option>
+                </select>
+                <select id="tickets-filter-category" class="form-control" style="width: auto;" onchange="loadTicketsList()" title="Filter by Category">
+                    <option value="">All Categories</option>
+                </select>
+                <button type="button" class="btn btn-secondary" onclick="loadTicketsList()" title="Refresh table">
+                    🔄
+                </button>
+            </div>
+        </div>
+
+        <!-- Tickets Table -->
+        <div class="tickets-table-container">
+            <table class="data-table" id="tickets-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">Ticket</th>
+                        <th>User (Opener)</th>
+                        <th>Category</th>
+                        <th>Subject & Issue</th>
+                        <th style="width: 140px;">Status</th>
+                        <th style="width: 160px;">Created At</th>
+                        <th style="width: 240px; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tickets-table-body">
+                    <tr><td colspan="7" class="text-center text-muted p-4">Loading tickets...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: ADD / EDIT TICKET CATEGORY          -->
+<!-- ========================================== -->
+<div id="modal-ticket-category" class="modal-backdrop">
+    <div class="modal-box modal-box-md">
+        <div class="modal-header">
+            <h3 id="cat-modal-title" class="modal-title">Create Ticket Category Button</h3>
+            <button type="button" onclick="closeCategoryModal()" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form id="form-ticket-category" onsubmit="saveCategorySubmit(event)">
+            <div class="tickets-form-row">
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="cat-name">Button Label <span class="required-star">*</span></label>
+                    <input type="text" id="cat-name" class="form-control" placeholder="e.g. Credential Issue, Payment Support" required maxlength="50">
+                </div>
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="cat-emoji">Emoji Icon</label>
+                    <input type="text" id="cat-emoji" class="form-control" placeholder="e.g. 🔑, 💳, 🛠️, 🎫" value="🎫" maxlength="10">
+                </div>
+            </div>
+
+            <div class="tickets-form-row">
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="cat-style">Button Color / Style</label>
+                    <select id="cat-style" class="form-control">
+                        <option value="primary">Primary (Blurple / Blue)</option>
+                        <option value="secondary">Secondary (Dark Grey)</option>
+                        <option value="success">Success (Green)</option>
+                        <option value="danger">Danger (Red)</option>
+                    </select>
+                </div>
+                <div class="tickets-form-group">
+                    <label class="tickets-label" for="cat-desc">Description</label>
+                    <input type="text" id="cat-desc" class="form-control" placeholder="Helper description shown on panel" maxlength="150">
+                </div>
+            </div>
+
+            <!-- Category Specific Assigned Roles -->
+            <div class="tickets-form-group" style="position: relative;" id="cat-roles-picker">
+                <label class="tickets-label">
+                    Category Assigned Roles
+                    <span class="hint">(Automatically granted access when this category is opened)</span>
+                </label>
+                <div class="tag-picker-container" onclick="toggleCatRolesDropdown()">
+                    <div id="cat-roles-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                </div>
+                <div id="cat-roles-dropdown" class="tag-dropdown-menu"></div>
+            </div>
+
+            <!-- Category Specific Assigned Members -->
+            <div class="tickets-form-group" style="position: relative;" id="cat-members-picker">
+                <label class="tickets-label">
+                    Category Assigned Members
+                    <span class="hint">(Specific users added directly to the private thread)</span>
+                </label>
+                <div class="tag-picker-container" onclick="toggleCatMembersDropdown()">
+                    <div id="cat-members-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                </div>
+                <div id="cat-members-dropdown" class="tag-dropdown-menu"></div>
+            </div>
+
+            <div class="d-flex justify-between align-center mt-3 pt-3" style="border-top: 1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-secondary" onclick="closeCategoryModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Category Button</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: DYNAMIC ASSIGN ROLE / MEMBER        -->
+<!-- ========================================== -->
+<div id="modal-ticket-assign" class="modal-backdrop">
+    <div class="modal-box modal-box-sm">
+        <div class="modal-header">
+            <h3 class="modal-title">👥 Assign Role / Member (<span id="assign-modal-ticket-id"></span>)</h3>
+            <button type="button" onclick="closeAssignModal()" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form onsubmit="submitAssignModal(event)">
+            <p class="text-xs text-muted mb-3">
+                Assigned roles and members are immediately granted access to the private thread on Discord.
+            </p>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="assign-role-select">Select Discord Role</label>
+                <select id="assign-role-select" class="form-control"></select>
+            </div>
+
+            <div class="text-center text-xs text-muted my-2">— OR —</div>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="assign-member-select">Select Discord Member</label>
+                <select id="assign-member-select" class="form-control"></select>
+            </div>
+
+            <div class="d-flex justify-between align-center mt-3 pt-3" style="border-top: 1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-secondary" onclick="closeAssignModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add to Ticket Thread</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: CLOSE TICKET                        -->
+<!-- ========================================== -->
+<div id="modal-ticket-close" class="modal-backdrop">
+    <div class="modal-box modal-box-sm">
+        <div class="modal-header">
+            <h3 class="modal-title">🔒 Close Ticket (<span id="close-modal-ticket-id"></span>)</h3>
+            <button type="button" onclick="closeCloseModal()" class="modal-close-btn">&times;</button>
+        </div>
+
+        <form onsubmit="submitCloseModal(event)">
+            <p class="text-xs text-muted mb-3">
+                Closing this ticket will harvest the complete <strong>as-is message history</strong>, save the transcript to SQLite, post transcript files to the log channel (if configured), and lock + archive the Discord private thread.
+            </p>
+
+            <div class="tickets-form-group">
+                <label class="tickets-label" for="ticket-close-reason">Resolution Note / Close Reason</label>
+                <textarea id="ticket-close-reason" class="form-control" rows="3" placeholder="Optional resolution summary or closing remarks..." maxlength="500"></textarea>
+            </div>
+
+            <div class="d-flex justify-between align-center mt-3 pt-3" style="border-top: 1px solid var(--border-subtle);">
+                <button type="button" class="btn btn-secondary" onclick="closeCloseModal()">Cancel</button>
+                <button type="submit" class="btn btn-danger">Confirm Close & Archive</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: FULL CONVERSATION TRANSCRIPT VIEWER -->
+<!-- ========================================== -->
+<div id="modal-ticket-transcript" class="modal-backdrop">
+    <div class="modal-box modal-transcript-box">
+        <div class="modal-header">
+            <div>
+                <h3 class="modal-title">📜 Conversation Transcript (<span id="transcript-modal-ticket-id"></span>)</h3>
+                <div class="d-flex gap-2 text-xs text-muted mt-1">
+                    <span><strong>Subject:</strong> <span id="transcript-meta-subject"></span></span>
+                    <span>• <strong>Opener:</strong> <span id="transcript-meta-opener"></span></span>
+                    <span>• <strong>Status:</strong> <span id="transcript-meta-status"></span></span>
+                    <span>• <strong>Category:</strong> <span id="transcript-meta-category"></span></span>
+                </div>
+            </div>
+            <div class="d-flex align-center gap-2">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="downloadTranscript(null, 'html')">📥 HTML</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="downloadTranscript(null, 'txt')">📥 TXT</button>
+                <button type="button" onclick="closeTranscriptModal()" class="modal-close-btn">&times;</button>
+            </div>
+        </div>
+
+        <!-- Chat Scroll Body -->
+        <div class="transcript-chat-body" id="transcript-chat-body">
+            <!-- Messages rendered dynamically via JS -->
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -3668,6 +4073,8 @@
             loadGuildForms();
         } else if (tabName === 'qc-faults') {
             initQCTrackerTab();
+        } else if (tabName === 'tickets') {
+            initTicketsTab();
         } else {
             stopMusicAutoPolling();
         }
@@ -7226,4 +7633,5 @@ async function saveCurrentTemplate() {
     });
 </script>
 <script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.4"></script>
+<script src="{{ url_for('static', filename='js/tickets.js') }}?v=2.5"></script>
 {% endblock %}

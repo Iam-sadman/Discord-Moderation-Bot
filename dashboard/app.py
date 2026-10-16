@@ -302,6 +302,9 @@ def create_dashboard(bot):
     from dashboard.qc_faults_api import qc_faults_bp
     app.register_blueprint(qc_faults_bp)
 
+    from dashboard.tickets_api import tickets_bp
+    app.register_blueprint(tickets_bp)
+
     # ──── Helper: Record Security Event ────
     async def record_audit_event(action: str, target: str, details: str):
         user_id = session.get("user_id", "anonymous")

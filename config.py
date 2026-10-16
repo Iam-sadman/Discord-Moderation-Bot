@@ -20,6 +20,7 @@ class Config:
     DB_PATH = os.path.join(os.path.dirname(__file__), "data", "settings.db")
     FORMS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "forms.db")
     QC_FAULTS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "qc_faults.db")
+    TICKETS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "tickets.db")
     INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", os.getenv("WEB_SECRET_KEY", "forms_internal_bridge_secret"))
 
     # Optional fallbacks from environment
