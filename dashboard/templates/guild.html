@@ -5,7 +5,7 @@
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.4">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.4">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=2.5">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=3.5">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.4">
 {% endblock %}
 
@@ -3629,10 +3629,11 @@
                     Global Support Roles
                     <span class="hint">(Roles granted access across all tickets)</span>
                 </label>
-                <div class="tag-picker-container" onclick="toggleGlobalRolesDropdown()">
-                    <div id="ticket-global-roles-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                <div class="search-picker-box">
+                    <input type="text" id="ticket-global-roles-search-input" class="form-control search-picker-input" placeholder="🔍 Type to search and assign global support roles..." autocomplete="off">
+                    <div id="ticket-global-roles-dropdown" class="tag-dropdown-menu"></div>
                 </div>
-                <div id="ticket-global-roles-dropdown" class="tag-dropdown-menu"></div>
+                <div id="ticket-global-roles-tags" class="d-flex flex-wrap gap-1 align-center mt-2"></div>
             </div>
 
             <!-- Global Support Members Picker -->
@@ -3641,10 +3642,11 @@
                     Global Support Members
                     <span class="hint">(Specific users granted access across all tickets)</span>
                 </label>
-                <div class="tag-picker-container" onclick="toggleGlobalMembersDropdown()">
-                    <div id="ticket-global-members-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                <div class="search-picker-box">
+                    <input type="text" id="ticket-global-members-search-input" class="form-control search-picker-input" placeholder="🔍 Type to search members by name or Discord User ID..." autocomplete="off">
+                    <div id="ticket-global-members-dropdown" class="tag-dropdown-menu"></div>
                 </div>
-                <div id="ticket-global-members-dropdown" class="tag-dropdown-menu"></div>
+                <div id="ticket-global-members-tags" class="d-flex flex-wrap gap-1 align-center mt-2"></div>
             </div>
 
             <div class="tickets-form-group">
@@ -3856,10 +3858,11 @@
                     Category Assigned Roles
                     <span class="hint">(Automatically granted access when this category is opened)</span>
                 </label>
-                <div class="tag-picker-container" onclick="toggleCatRolesDropdown()">
-                    <div id="cat-roles-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                <div class="search-picker-box">
+                    <input type="text" id="cat-roles-search-input" class="form-control search-picker-input" placeholder="🔍 Type to search and assign specific roles..." autocomplete="off">
+                    <div id="cat-roles-dropdown" class="tag-dropdown-menu"></div>
                 </div>
-                <div id="cat-roles-dropdown" class="tag-dropdown-menu"></div>
+                <div id="cat-roles-tags" class="d-flex flex-wrap gap-1 align-center mt-2"></div>
             </div>
 
             <!-- Category Specific Assigned Members -->
@@ -3868,10 +3871,11 @@
                     Category Assigned Members
                     <span class="hint">(Specific users added directly to the private thread)</span>
                 </label>
-                <div class="tag-picker-container" onclick="toggleCatMembersDropdown()">
-                    <div id="cat-members-tags" class="d-flex flex-wrap gap-1 align-center"></div>
+                <div class="search-picker-box">
+                    <input type="text" id="cat-members-search-input" class="form-control search-picker-input" placeholder="🔍 Type to search members by name, display name, or Discord User ID..." autocomplete="off">
+                    <div id="cat-members-dropdown" class="tag-dropdown-menu"></div>
                 </div>
-                <div id="cat-members-dropdown" class="tag-dropdown-menu"></div>
+                <div id="cat-members-tags" class="d-flex flex-wrap gap-1 align-center mt-2"></div>
             </div>
 
             <div class="d-flex justify-between align-center mt-3 pt-3" style="border-top: 1px solid var(--border-subtle);">
@@ -7635,5 +7639,5 @@ async function saveCurrentTemplate() {
     });
 </script>
 <script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.4"></script>
-<script src="{{ url_for('static', filename='js/tickets.js') }}?v=2.5"></script>
+<script src="{{ url_for('static', filename='js/tickets.js') }}?v=3.5"></script>
 {% endblock %}

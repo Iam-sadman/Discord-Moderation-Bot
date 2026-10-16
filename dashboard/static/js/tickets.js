@@ -66,6 +66,9 @@ async function loadTicketSettingsAndMeta() {
 
     // Update Live Preview
     updateDiscordPreview();
+
+    // Initialize Searchable Pickers
+    initSearchablePickers();
 }
 
 function updateTicketStats(counts) {
@@ -131,52 +134,57 @@ function removeGlobalRole(roleId, evt) {
     if (evt) evt.stopPropagation();
     selectedGlobalRoles.delete(String(roleId));
     renderGlobalRolesTags();
+    const drop = document.getElementById('ticket-global-roles-dropdown');
+    if (drop && drop.style.display === 'block') {
+        const input = document.getElementById('ticket-global-roles-search-input');
+        if (input) input.dispatchEvent(new Event('input'));
+    }
 }
 
-function openSearchableDropdown(menuId, items, selectedSet, renderTagsCallback, placeholder, isMember = false) {
-    const menu = document.getElementById(menuId);
-    if (!menu) return;
-
-    if (menu.style.display === 'block') {
-        menu.style.display = 'none';
-        return;
+function removeGlobalMember(userId, evt) {
+    if (evt) evt.stopPropagation();
+    selectedGlobalMembers.delete(String(userId));
+    renderGlobalMembersTags();
+    const drop = document.getElementById('ticket-global-members-dropdown');
+    if (drop && drop.style.display === 'block') {
+        const input = document.getElementById('ticket-global-members-search-input');
+        if (input) input.dispatchEvent(new Event('input'));
     }
+}
 
-    menu.innerHTML = `
-        <div class="tag-dropdown-search-box" onclick="event.stopPropagation()">
-            <input type="text" class="tag-search-input" placeholder="${placeholder}" autocomplete="off">
-        </div>
-        <div class="tag-dropdown-list"></div>
-    `;
+function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, selectedSet, renderTagsCallback, isMember = false) {
+    const input = document.getElementById(inputId);
+    const dropdown = document.getElementById(dropdownId);
+    if (!input || !dropdown) return;
 
-    const listContainer = menu.querySelector('.tag-dropdown-list');
-    const searchInput = menu.querySelector('.tag-search-input');
-
-    function updateList(query = '') {
-        listContainer.innerHTML = '';
+    function renderList(query = '') {
+        const items = getItemsFn() || [];
+        dropdown.innerHTML = '';
         const q = query.trim().toLowerCase();
 
         const filtered = items.filter(item => {
             if (!q) return true;
             if (isMember) {
-                const name = (item.display_name || item.name || '').toLowerCase();
+                const name = (item.name || '').toLowerCase();
+                const dName = (item.display_name || '').toLowerCase();
                 const id = String(item.id);
-                return name.includes(q) || id.includes(q);
+                return dName.includes(q) || name.includes(q) || id.includes(q);
             } else {
                 return (item.name || '').toLowerCase().includes(q) || String(item.id).includes(q);
             }
         });
 
-        if (isMember && /^\d{17,20}$/.test(q) && !filtered.some(i => String(i.id) === q)) {
+        // Direct snowflake ID support for members
+        if (isMember && /^\d{17,20}$/.test(query.trim()) && !filtered.some(i => String(i.id) === query.trim())) {
             filtered.unshift({
-                id: q,
-                name: `User #${q}`,
-                display_name: `Discord User (${q})`
+                id: query.trim(),
+                name: `User #${query.trim()}`,
+                display_name: `Discord User (${query.trim()})`
             });
         }
 
         if (filtered.length === 0) {
-            listContainer.innerHTML = '<div class="p-3 text-xs text-muted text-center">No matching results found</div>';
+            dropdown.innerHTML = '<div class="p-3 text-xs text-muted text-center">No matching results found</div>';
             return;
         }
 
@@ -184,8 +192,18 @@ function openSearchableDropdown(menuId, items, selectedSet, renderTagsCallback, 
             const isSelected = selectedSet.has(String(item.id));
             const row = document.createElement('div');
             row.className = 'tag-dropdown-item' + (isSelected ? ' selected' : '');
-            const label = isMember ? `👤 ${escapeHtml(item.display_name || item.name)}` : `@${escapeHtml(item.name)}`;
-            row.innerHTML = `<span>${label}</span><span class="tag-check">${isSelected ? '✅' : '➕'}</span>`;
+            
+            let label = '';
+            if (isMember) {
+                const dName = item.display_name || item.name;
+                const uName = item.name && item.name !== dName ? ` (@${escapeHtml(item.name)})` : '';
+                label = `<span>👤 <strong>${escapeHtml(dName)}</strong>${uName} <small class="text-muted" style="font-size: 11px; margin-left: 6px;">ID: ${item.id}</small></span>`;
+            } else {
+                label = `<span>@<strong>${escapeHtml(item.name)}</strong></span>`;
+            }
+
+            row.innerHTML = `${label}<span class="tag-check">${isSelected ? '✅' : '➕'}</span>`;
+            
             row.onclick = (e) => {
                 e.stopPropagation();
                 if (selectedSet.has(String(item.id))) {
@@ -198,88 +216,81 @@ function openSearchableDropdown(menuId, items, selectedSet, renderTagsCallback, 
                 row.className = 'tag-dropdown-item' + (nowSelected ? ' selected' : '');
                 const check = row.querySelector('.tag-check');
                 if (check) check.innerText = nowSelected ? '✅' : '➕';
+                input.focus();
             };
-            listContainer.appendChild(row);
+            dropdown.appendChild(row);
         });
     }
 
-    searchInput.oninput = (e) => {
-        updateList(e.target.value);
+    input.onfocus = () => {
+        renderList(input.value);
+        dropdown.style.display = 'block';
     };
 
-    updateList('');
-    menu.style.display = 'block';
+    input.oninput = (e) => {
+        renderList(e.target.value);
+        dropdown.style.display = 'block';
+    };
 
-    setTimeout(() => {
-        searchInput.focus();
-    }, 50);
+    input.onclick = (e) => {
+        e.stopPropagation();
+        renderList(input.value);
+        dropdown.style.display = 'block';
+    };
 }
 
-function toggleGlobalRolesDropdown() {
-    openSearchableDropdown(
+function initSearchablePickers() {
+    setupSearchableTagPicker(
+        'ticket-global-roles-search-input',
         'ticket-global-roles-dropdown',
-        serverRoles,
+        () => serverRoles,
         selectedGlobalRoles,
         renderGlobalRolesTags,
-        '🔍 Search roles by name...',
         false
     );
-}
-
-function renderGlobalMembersTags() {
-    const container = document.getElementById('ticket-global-members-tags');
-    if (!container) return;
-    container.innerHTML = '';
-
-    if (selectedGlobalMembers.size === 0) {
-        container.innerHTML = '<span class="text-xs text-muted">No individual members assigned (Click to add)</span>';
-        return;
-    }
-
-    selectedGlobalMembers.forEach(userId => {
-        const member = serverMembers.find(m => String(m.id) === String(userId));
-        const memberName = member ? (member.display_name || member.name) : `User #${userId}`;
-        const badge = document.createElement('span');
-        badge.className = 'tag-badge tag-badge-member';
-        badge.innerHTML = `👤 ${escapeHtml(memberName)} <span class="tag-remove" onclick="removeGlobalMember('${userId}', event)">&times;</span>`;
-        container.appendChild(badge);
-    });
-}
-
-function removeGlobalMember(userId, evt) {
-    if (evt) evt.stopPropagation();
-    selectedGlobalMembers.delete(String(userId));
-    renderGlobalMembersTags();
-}
-
-function toggleGlobalMembersDropdown() {
-    openSearchableDropdown(
+    setupSearchableTagPicker(
+        'ticket-global-members-search-input',
         'ticket-global-members-dropdown',
-        serverMembers,
+        () => serverMembers,
         selectedGlobalMembers,
         renderGlobalMembersTags,
-        '🔍 Search members by name or ID...',
+        true
+    );
+    setupSearchableTagPicker(
+        'cat-roles-search-input',
+        'cat-roles-dropdown',
+        () => serverRoles,
+        selectedCatRoles,
+        renderCatRolesTags,
+        false
+    );
+    setupSearchableTagPicker(
+        'cat-members-search-input',
+        'cat-members-dropdown',
+        () => serverMembers,
+        selectedCatMembers,
+        renderCatMembersTags,
         true
     );
 }
 
 // Close tag dropdowns on clicking outside
 document.addEventListener('click', (e) => {
-    const rDrop = document.getElementById('ticket-global-roles-dropdown');
-    if (rDrop && !e.target.closest('#ticket-global-roles-picker')) {
-        rDrop.style.display = 'none';
+    if (!e.target.closest('#ticket-global-roles-picker')) {
+        const drop = document.getElementById('ticket-global-roles-dropdown');
+        if (drop) drop.style.display = 'none';
     }
-    const mDrop = document.getElementById('ticket-global-members-dropdown');
-    if (mDrop && !e.target.closest('#ticket-global-members-picker')) {
-        mDrop.style.display = 'none';
+    if (!e.target.closest('#ticket-global-members-picker')) {
+        const drop = document.getElementById('ticket-global-members-dropdown');
+        if (drop) drop.style.display = 'none';
     }
-    const catRDrop = document.getElementById('cat-roles-dropdown');
-    if (catRDrop && !e.target.closest('#cat-roles-picker')) {
-        catRDrop.style.display = 'none';
+    if (!e.target.closest('#cat-roles-picker')) {
+        const drop = document.getElementById('cat-roles-dropdown');
+        if (drop) drop.style.display = 'none';
     }
-    const catMDrop = document.getElementById('cat-members-dropdown');
-    if (catMDrop && !e.target.closest('#cat-members-picker')) {
-        catMDrop.style.display = 'none';
+    if (!e.target.closest('#cat-members-picker')) {
+        const drop = document.getElementById('cat-members-dropdown');
+        if (drop) drop.style.display = 'none';
     }
 });
 
@@ -460,6 +471,15 @@ function openCreateCategoryModal() {
     document.getElementById('cat-style').value = 'primary';
     document.getElementById('cat-desc').value = '';
 
+    const rSearch = document.getElementById('cat-roles-search-input');
+    if (rSearch) rSearch.value = '';
+    const mSearch = document.getElementById('cat-members-search-input');
+    if (mSearch) mSearch.value = '';
+    const rDrop = document.getElementById('cat-roles-dropdown');
+    if (rDrop) rDrop.style.display = 'none';
+    const mDrop = document.getElementById('cat-members-dropdown');
+    if (mDrop) mDrop.style.display = 'none';
+
     selectedCatRoles = new Set();
     selectedCatMembers = new Set();
     renderCatRolesTags();
@@ -479,6 +499,15 @@ function openEditCategoryModal(catId) {
     document.getElementById('cat-style').value = cat.button_style || 'primary';
     document.getElementById('cat-desc').value = cat.description || '';
 
+    const rSearch = document.getElementById('cat-roles-search-input');
+    if (rSearch) rSearch.value = '';
+    const mSearch = document.getElementById('cat-members-search-input');
+    if (mSearch) mSearch.value = '';
+    const rDrop = document.getElementById('cat-roles-dropdown');
+    if (rDrop) rDrop.style.display = 'none';
+    const mDrop = document.getElementById('cat-members-dropdown');
+    if (mDrop) mDrop.style.display = 'none';
+
     selectedCatRoles = new Set((cat.assigned_role_ids || []).map(String));
     selectedCatMembers = new Set((cat.assigned_member_ids || []).map(String));
     renderCatRolesTags();
@@ -497,7 +526,7 @@ function renderCatRolesTags() {
     container.innerHTML = '';
 
     if (selectedCatRoles.size === 0) {
-        container.innerHTML = '<span class="text-xs text-muted">Click to assign specific roles for this category...</span>';
+        container.innerHTML = '<span class="text-xs text-muted">No roles assigned (Inherits global support roles)</span>';
         return;
     }
 
@@ -515,17 +544,16 @@ function removeCatRole(roleId, evt) {
     if (evt) evt.stopPropagation();
     selectedCatRoles.delete(String(roleId));
     renderCatRolesTags();
+    const drop = document.getElementById('cat-roles-dropdown');
+    if (drop && drop.style.display === 'block') {
+        const input = document.getElementById('cat-roles-search-input');
+        if (input) input.dispatchEvent(new Event('input'));
+    }
 }
 
 function toggleCatRolesDropdown() {
-    openSearchableDropdown(
-        'cat-roles-dropdown',
-        serverRoles,
-        selectedCatRoles,
-        renderCatRolesTags,
-        '🔍 Search roles by name...',
-        false
-    );
+    const input = document.getElementById('cat-roles-search-input');
+    if (input) input.focus();
 }
 
 function renderCatMembersTags() {
@@ -534,7 +562,7 @@ function renderCatMembersTags() {
     container.innerHTML = '';
 
     if (selectedCatMembers.size === 0) {
-        container.innerHTML = '<span class="text-xs text-muted">Click to assign specific members for this category...</span>';
+        container.innerHTML = '<span class="text-xs text-muted">No specific members assigned</span>';
         return;
     }
 
@@ -552,17 +580,16 @@ function removeCatMember(userId, evt) {
     if (evt) evt.stopPropagation();
     selectedCatMembers.delete(String(userId));
     renderCatMembersTags();
+    const drop = document.getElementById('cat-members-dropdown');
+    if (drop && drop.style.display === 'block') {
+        const input = document.getElementById('cat-members-search-input');
+        if (input) input.dispatchEvent(new Event('input'));
+    }
 }
 
 function toggleCatMembersDropdown() {
-    openSearchableDropdown(
-        'cat-members-dropdown',
-        serverMembers,
-        selectedCatMembers,
-        renderCatMembersTags,
-        '🔍 Search members by name or ID...',
-        true
-    );
+    const input = document.getElementById('cat-members-search-input');
+    if (input) input.focus();
 }
 
 async function saveCategorySubmit(event) {
