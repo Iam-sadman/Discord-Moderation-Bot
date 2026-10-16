@@ -171,6 +171,20 @@ class TicketsDB:
                 await db.execute("ALTER TABLE ticket_categories ADD COLUMN panel_id INTEGER DEFAULT NULL;")
             await db.execute("CREATE INDEX IF NOT EXISTS idx_ticket_cat_panel ON ticket_categories(panel_id);")
 
+            # Migration: Link any orphan categories with NULL or 0 panel_id to the earliest panel of that guild
+            await db.execute("""
+                UPDATE ticket_categories
+                SET panel_id = (
+                    SELECT id FROM ticket_panels
+                    WHERE ticket_panels.guild_id = ticket_categories.guild_id
+                    ORDER BY id ASC LIMIT 1
+                )
+                WHERE (panel_id IS NULL OR panel_id = 0) AND EXISTS (
+                    SELECT 1 FROM ticket_panels
+                    WHERE ticket_panels.guild_id = ticket_categories.guild_id
+                );
+            """)
+
             # 3. Tickets
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tickets (
@@ -562,8 +576,17 @@ class TicketsDB:
         guild_id = int(guild_id)
         async with self.get_connection() as db:
             if panel_id is not None:
+                p_id = int(panel_id)
+                # Link any orphan categories for this guild to this active panel
+                await db.execute("""
+                    UPDATE ticket_categories
+                    SET panel_id = ?
+                    WHERE guild_id = ? AND (panel_id IS NULL OR panel_id = 0);
+                """, (p_id, guild_id))
+                await db.commit()
+
                 query = "SELECT * FROM ticket_categories WHERE guild_id = ? AND panel_id = ? ORDER BY position ASC, id ASC;"
-                params = (guild_id, int(panel_id))
+                params = (guild_id, p_id)
             else:
                 query = "SELECT * FROM ticket_categories WHERE guild_id = ? ORDER BY position ASC, id ASC;"
                 params = (guild_id,)
@@ -571,16 +594,16 @@ class TicketsDB:
             async with db.execute(query, params) as cur:
                 rows = await cur.fetchall()
 
-            if not rows and panel_id is None:
-                # Seed defaults
+            if not rows:
+                # Seed defaults for this panel
                 for cat in DEFAULT_CATEGORIES:
                     await db.execute("""
                         INSERT INTO ticket_categories (
-                            guild_id, name, emoji, button_style, description,
+                            guild_id, panel_id, name, emoji, button_style, description,
                             assigned_role_ids, assigned_member_ids, position
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """, (
-                        guild_id, cat["name"], cat["emoji"], cat["button_style"],
+                        guild_id, panel_id, cat["name"], cat["emoji"], cat["button_style"],
                         cat["description"], json.dumps(cat["assigned_role_ids"]),
                         json.dumps(cat["assigned_member_ids"]), cat["position"]
                     ))

@@ -5,7 +5,7 @@
 {% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.4">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.4">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=4.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=4.2">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.4">
 {% endblock %}
 
@@ -3689,7 +3689,7 @@
                 <div class="tickets-form-group">
                     <label class="tickets-label">Panel Accent Color</label>
                     <div class="tickets-color-picker-group">
-                        <input type="color" id="ticket-config-panel-color" class="tickets-color-input" value="#5865F2" onchange="handleTicketColorChange(this.value)">
+                        <input type="color" id="ticket-config-panel-color" class="tickets-color-input" value="#5865F2" oninput="handleTicketColorChange(this.value)" onchange="handleTicketColorChange(this.value)">
                         <input type="text" id="ticket-config-panel-color-hex" class="form-control" value="#5865F2" oninput="handleTicketColorChange(this.value)" maxlength="7">
                     </div>
                 </div>
@@ -3734,7 +3734,7 @@
                     <div class="discord-embed-title" id="discord-preview-title">🛡️ Official Support & Issue Desk</div>
                     <div class="discord-embed-desc" id="discord-preview-desc">Click a category button below to open a secure Private Thread.</div>
                     <div class="discord-embed-footer">
-                        <span>🔒</span> Private Threads • Only assigned staff & ticket creator have access
+                        <span>🔒</span> <span id="discord-preview-footer-text">Main Support Desk • Private Threads • Only assigned staff & ticket creator have access</span>
                     </div>
                 </div>
 
@@ -3858,18 +3858,18 @@
             <div class="tickets-form-row">
                 <div class="tickets-form-group">
                     <label class="tickets-label" for="cat-name">Button Label <span class="required-star">*</span></label>
-                    <input type="text" id="cat-name" class="form-control" placeholder="e.g. Credential Issue, Payment Support" required maxlength="50">
+                    <input type="text" id="cat-name" class="form-control" placeholder="e.g. Credential Issue, Payment Support" required maxlength="50" oninput="updateCatModalPreview()">
                 </div>
                 <div class="tickets-form-group">
                     <label class="tickets-label" for="cat-emoji">Emoji Icon</label>
-                    <input type="text" id="cat-emoji" class="form-control" placeholder="e.g. 🔑, 💳, 🛠️, 🎫" value="🎫" maxlength="10">
+                    <input type="text" id="cat-emoji" class="form-control" placeholder="e.g. 🔑, 💳, 🛠️, 🎫" value="🎫" maxlength="10" oninput="updateCatModalPreview()">
                 </div>
             </div>
 
             <div class="tickets-form-row">
                 <div class="tickets-form-group">
                     <label class="tickets-label" for="cat-style">Button Color / Style</label>
-                    <select id="cat-style" class="form-control">
+                    <select id="cat-style" class="form-control" onchange="updateCatModalPreview()">
                         <option value="primary">Primary (Blurple / Blue)</option>
                         <option value="secondary">Secondary (Dark Grey)</option>
                         <option value="success">Success (Green)</option>
@@ -3879,6 +3879,17 @@
                 <div class="tickets-form-group">
                     <label class="tickets-label" for="cat-desc">Description</label>
                     <input type="text" id="cat-desc" class="form-control" placeholder="Helper description shown on panel" maxlength="150">
+                </div>
+            </div>
+
+            <!-- Category Button Live Preview -->
+            <div class="tickets-form-group" style="margin-bottom: 14px;">
+                <label class="tickets-label">Live Button Preview</label>
+                <div style="background: #1e1f22; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px; display: flex; align-items: center; justify-content: center;">
+                    <div id="modal-cat-preview-btn" class="discord-btn-mock discord-btn-primary">
+                        <span id="modal-cat-preview-emoji">🎫</span>
+                        <span id="modal-cat-preview-label">Category Button</span>
+                    </div>
                 </div>
             </div>
 
@@ -7737,5 +7748,5 @@ async function saveCurrentTemplate() {
     });
 </script>
 <script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.4"></script>
-<script src="{{ url_for('static', filename='js/tickets.js') }}?v=4.0"></script>
+<script src="{{ url_for('static', filename='js/tickets.js') }}?v=4.2"></script>
 {% endblock %}

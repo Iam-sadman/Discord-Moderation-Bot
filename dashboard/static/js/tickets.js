@@ -191,6 +191,7 @@ function handleActivePanelNameInput(val) {
     if (nameHeader) nameHeader.innerText = clean;
     const catTitle = document.getElementById('active-panel-cat-title');
     if (catTitle) catTitle.innerText = clean;
+    updateDiscordPreview();
 }
 
 function populatePanelFilterDropdown() {
@@ -513,8 +514,21 @@ document.addEventListener('click', (e) => {
 
 // Color Picker synchronization
 function handleTicketColorChange(val) {
-    document.getElementById('ticket-config-panel-color').value = val;
-    document.getElementById('ticket-config-panel-color-hex').value = val;
+    let raw = String(val || '').trim();
+    let safeHex = raw;
+    if (!safeHex.startsWith('#') && /^[0-9a-fA-F]{3,8}$/.test(safeHex)) {
+        safeHex = '#' + safeHex;
+    }
+
+    const hexInput = document.getElementById('ticket-config-panel-color-hex');
+    const colorInput = document.getElementById('ticket-config-panel-color');
+
+    if (hexInput && hexInput.value !== raw) {
+        hexInput.value = raw;
+    }
+    if (colorInput && /^#[0-9a-fA-F]{6}$/i.test(safeHex)) {
+        colorInput.value = safeHex;
+    }
     updateDiscordPreview();
 }
 
@@ -612,31 +626,60 @@ async function publishTicketPanel() {
 // =============================================================================
 
 function updateDiscordPreview() {
-    const title = document.getElementById('ticket-config-panel-title')?.value || '🛡️ Official Support & Issue Desk';
-    const desc = document.getElementById('ticket-config-panel-desc')?.value || 'Click a category button below to open a secure Private Thread.';
-    const color = document.getElementById('ticket-config-panel-color-hex')?.value || '#5865F2';
+    const titleInput = document.getElementById('ticket-config-panel-title');
+    const descInput = document.getElementById('ticket-config-panel-desc');
+    const colorHexInput = document.getElementById('ticket-config-panel-color-hex');
+    const nameInput = document.getElementById('ticket-config-panel-name');
+
+    const title = titleInput?.value || '🛡️ Official Support & Issue Desk';
+    const desc = descInput?.value || 'Click a category button below to open a secure Private Thread.';
+    const panelName = nameInput?.value?.trim() || 'Main Support Desk';
+
+    let color = colorHexInput?.value?.trim() || '#5865F2';
+    if (!color.startsWith('#') && /^[0-9a-fA-F]{3,8}$/.test(color)) {
+        color = '#' + color;
+    }
+    if (!/^#[0-9a-fA-F]{3,8}$/i.test(color)) {
+        color = '#5865F2';
+    }
 
     const pTitle = document.getElementById('discord-preview-title');
     const pDesc = document.getElementById('discord-preview-desc');
     const pEmbed = document.getElementById('discord-preview-embed');
     const pButtons = document.getElementById('discord-preview-buttons');
+    const pFooterText = document.getElementById('discord-preview-footer-text');
 
     if (pTitle) pTitle.innerText = title;
     if (pDesc) pDesc.innerText = desc;
-    if (pEmbed) pEmbed.style.borderLeftColor = color;
+    if (pEmbed) {
+        pEmbed.style.borderLeft = `4px solid ${color}`;
+        pEmbed.style.borderLeftColor = color;
+    }
+    if (pFooterText) {
+        pFooterText.innerText = `${panelName} • Private Threads • Only assigned staff & ticket creator have access`;
+    }
 
     if (pButtons) {
         pButtons.innerHTML = '';
-        if (currentTicketCategories.length === 0) {
-            pButtons.innerHTML = '<span class="text-xs text-muted">No categories configured.</span>';
+        const cats = Array.isArray(currentTicketCategories) ? currentTicketCategories : [];
+        if (cats.length === 0) {
+            pButtons.innerHTML = '<span class="text-xs text-muted" style="grid-column: 1 / -1; padding: 6px 0;">No category buttons configured for this panel yet. Add buttons below.</span>';
             return;
         }
 
-        currentTicketCategories.forEach(cat => {
+        cats.forEach(cat => {
+            if (!cat) return;
             const btn = document.createElement('div');
             const style = (cat.button_style || 'primary').toLowerCase();
             btn.className = `discord-btn-mock discord-btn-${style}`;
-            btn.innerHTML = `<span>${cat.emoji || '🎫'}</span> <span>${escapeHtml(cat.name)}</span>`;
+            btn.style.cursor = 'pointer';
+            btn.title = `Simulate click: ${cat.name}`;
+            btn.innerHTML = `<span>${cat.emoji || '🎫'}</span> <span>${escapeHtml(cat.name || 'Support')}</span>`;
+            btn.onclick = () => {
+                if (typeof showToast === 'function') {
+                    showToast(`Simulated click: In Discord, "${cat.name}" opens a modal to launch a Private Thread.`, 'info');
+                }
+            };
             pButtons.appendChild(btn);
         });
     }
@@ -758,6 +801,7 @@ function openCreateCategoryModal() {
     renderCatRolesTags();
     renderCatMembersTags();
 
+    updateCatModalPreview();
     document.getElementById('modal-ticket-category').style.display = 'flex';
 }
 
@@ -786,7 +830,24 @@ function openEditCategoryModal(catId) {
     renderCatRolesTags();
     renderCatMembersTags();
 
+    updateCatModalPreview();
     document.getElementById('modal-ticket-category').style.display = 'flex';
+}
+
+function updateCatModalPreview() {
+    const label = document.getElementById('cat-name')?.value?.trim() || 'Category Button';
+    const emoji = document.getElementById('cat-emoji')?.value?.trim() || '🎫';
+    const style = (document.getElementById('cat-style')?.value || 'primary').toLowerCase();
+
+    const btn = document.getElementById('modal-cat-preview-btn');
+    const pEmoji = document.getElementById('modal-cat-preview-emoji');
+    const pLabel = document.getElementById('modal-cat-preview-label');
+
+    if (btn) {
+        btn.className = `discord-btn-mock discord-btn-${style}`;
+    }
+    if (pEmoji) pEmoji.innerText = emoji;
+    if (pLabel) pLabel.innerText = label;
 }
 
 function closeCategoryModal() {
