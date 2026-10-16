@@ -362,6 +362,26 @@ function removeGlobalRole(roleId, evt) {
     }
 }
 
+function renderGlobalMembersTags() {
+    const container = document.getElementById('ticket-global-members-tags');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (selectedGlobalMembers.size === 0) {
+        container.innerHTML = '<span class="text-xs text-muted">No specific members assigned (Global support roles only)</span>';
+        return;
+    }
+
+    selectedGlobalMembers.forEach(userId => {
+        const member = serverMembers.find(m => String(m.id) === String(userId));
+        const memberName = member ? (member.display_name || member.name) : `User #${userId}`;
+        const badge = document.createElement('span');
+        badge.className = 'tag-badge tag-badge-member';
+        badge.innerHTML = `👤 ${escapeHtml(memberName)} <span class="tag-remove" onclick="removeGlobalMember('${userId}', event)">&times;</span>`;
+        container.appendChild(badge);
+    });
+}
+
 function removeGlobalMember(userId, evt) {
     if (evt) evt.stopPropagation();
     selectedGlobalMembers.delete(String(userId));
@@ -379,8 +399,37 @@ function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, getSelectedSe
     if (!input || !dropdown) return;
 
     let memberSearchTimer = null;
+    let isFetchingBackend = false;
 
-    async function renderList(query = '') {
+    async function fetchBackendMembers(q) {
+        if (!isMember) return;
+        isFetchingBackend = true;
+        try {
+            const data = await apiRequest(`/api/guild/${window.guildId}/tickets/members?search=${encodeURIComponent(q)}&limit=30`, 'GET');
+            if (data && data.members) {
+                data.members.forEach(m => {
+                    const existing = serverMembers.find(ex => String(ex.id) === String(m.id));
+                    if (!existing) {
+                        serverMembers.push({
+                            id: String(m.id),
+                            name: m.name,
+                            display_name: m.display_name || m.name
+                        });
+                    } else if (m.display_name && existing.display_name !== m.display_name) {
+                        existing.display_name = m.display_name;
+                    }
+                });
+                renderDropdown(input.value);
+            }
+        } catch (err) {
+            console.warn("[Tickets] Member live search error:", err);
+            renderDropdown(input.value);
+        } finally {
+            isFetchingBackend = false;
+        }
+    }
+
+    function renderDropdown(query = '') {
         const rawItems = getItemsFn() || [];
         const items = (!isMember && rawItems.length === 0 && window.guildRoles) ? window.guildRoles : rawItems;
         dropdown.innerHTML = '';
@@ -410,9 +459,14 @@ function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, getSelectedSe
         }
 
         if (filtered.length === 0) {
-            dropdown.innerHTML = `<div class="p-3 text-xs text-muted text-center">${isMember && q.length > 0 ? '🔍 Searching server members...' : 'No matching results found'}</div>`;
+            if (isMember && isFetchingBackend) {
+                dropdown.innerHTML = `<div class="p-3 text-xs text-muted text-center">🔍 Searching Discord members for "<strong>${escapeHtml(query.trim())}</strong>"...</div>`;
+            } else if (isMember && q.length > 0) {
+                dropdown.innerHTML = `<div class="p-3 text-xs text-muted text-center">No server members found matching "<strong>${escapeHtml(query.trim())}</strong>"</div>`;
+            } else {
+                dropdown.innerHTML = `<div class="p-3 text-xs text-muted text-center">${isMember ? '🔍 Type a member name or Discord User ID...' : 'No matching roles found'}</div>`;
+            }
         } else {
-            // Render up to 50 items
             filtered.slice(0, 50).forEach(item => {
                 const isSelected = selectedSet && selectedSet.has(String(item.id));
                 const row = document.createElement('div');
@@ -437,7 +491,9 @@ function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, getSelectedSe
                     } else {
                         curSet.add(String(item.id));
                     }
-                    renderTagsCallback();
+                    if (typeof renderTagsCallback === 'function') {
+                        renderTagsCallback();
+                    }
                     const nowSelected = curSet.has(String(item.id));
                     row.className = 'tag-dropdown-item' + (nowSelected ? ' selected' : '');
                     const check = row.querySelector('.tag-check');
@@ -447,51 +503,36 @@ function setupSearchableTagPicker(inputId, dropdownId, getItemsFn, getSelectedSe
                 dropdown.appendChild(row);
             });
         }
-
-        // Live backend member search if query is typed
-        if (isMember && q.length >= 1) {
-            clearTimeout(memberSearchTimer);
-            memberSearchTimer = setTimeout(async () => {
-                try {
-                    const data = await apiRequest(`/api/guild/${window.guildId}/roles/members?search=${encodeURIComponent(q)}&limit=30`, 'GET');
-                    if (data && data.members && data.members.length > 0) {
-                        let mergedAny = false;
-                        data.members.forEach(m => {
-                            if (!serverMembers.some(ex => String(ex.id) === String(m.id))) {
-                                serverMembers.push({
-                                    id: String(m.id),
-                                    name: m.name,
-                                    display_name: m.display_name || m.name
-                                });
-                                mergedAny = true;
-                            }
-                        });
-                        // Re-render only if current input still matches query
-                        if (mergedAny && input.value.trim().toLowerCase() === q) {
-                            renderList(input.value);
-                        }
-                    }
-                } catch (err) {
-                    console.warn("[Tickets] Member live search notice:", err);
-                }
-            }, 250);
-        }
     }
 
     input.onfocus = () => {
-        renderList(input.value);
+        renderDropdown(input.value);
         dropdown.style.display = 'block';
+        if (isMember && serverMembers.length === 0) {
+            fetchBackendMembers('');
+        }
     };
 
     input.oninput = (e) => {
-        renderList(e.target.value);
+        const val = e.target.value;
+        renderDropdown(val);
         dropdown.style.display = 'block';
+
+        if (isMember && val.trim().length >= 1) {
+            clearTimeout(memberSearchTimer);
+            memberSearchTimer = setTimeout(() => {
+                fetchBackendMembers(val.trim());
+            }, 250);
+        }
     };
 
     input.onclick = (e) => {
         e.stopPropagation();
-        renderList(input.value);
+        renderDropdown(input.value);
         dropdown.style.display = 'block';
+        if (isMember && serverMembers.length === 0) {
+            fetchBackendMembers('');
+        }
     };
 }
 

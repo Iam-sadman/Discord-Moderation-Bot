@@ -117,7 +117,7 @@ async def api_roles_members(guild_id):
 
         is_timed_out = m.timed_out_until is not None and m.timed_out_until > discord.utils.utcnow()
         members.append({
-            "id": m.id,
+            "id": str(m.id),
             "name": str(m),
             "display_name": m.display_name,
             "avatar": str(m.display_avatar.url),
@@ -129,6 +129,45 @@ async def api_roles_members(guild_id):
             "timed_out_until": m.timed_out_until.isoformat() if is_timed_out else None,
             "is_protected": bool(m.id == guild.owner_id or m.guild_permissions.administrator)
         })
+
+    # Search fallback if not found in memory cache
+    if search and len(members) == 0:
+        extra_members = []
+        if search.isdigit() and len(search) >= 17:
+            try:
+                m_found = guild.get_member(int(search))
+                if not m_found and hasattr(guild, "fetch_member"):
+                    m_found = await asyncio.wait_for(guild.fetch_member(int(search)), timeout=2.0)
+                if m_found and not getattr(m_found, "bot", False):
+                    extra_members.append(m_found)
+            except Exception:
+                pass
+        elif hasattr(guild, "query_members"):
+            try:
+                q_res = await asyncio.wait_for(guild.query_members(query=search, limit=min(limit, 50), cache=True), timeout=2.0)
+                extra_members.extend(q_res)
+            except Exception:
+                pass
+
+        for m in extra_members:
+            if getattr(m, "bot", False) or any(str(ex["id"]) == str(m.id) for ex in members):
+                continue
+            if target_role_id and not any(r.id == target_role_id for r in m.roles):
+                continue
+            is_timed_out = m.timed_out_until is not None and m.timed_out_until > discord.utils.utcnow()
+            members.append({
+                "id": str(m.id),
+                "name": str(m),
+                "display_name": m.display_name,
+                "avatar": str(m.display_avatar.url),
+                "joined_at": m.joined_at.strftime("%Y-%m-%d %H:%M") if m.joined_at else "Unknown",
+                "created_at": m.created_at.strftime("%Y-%m-%d %H:%M"),
+                "top_role": m.top_role.name,
+                "roles": [{"id": r.id, "name": r.name, "color": str(r.color)} for r in m.roles if not r.is_default()],
+                "is_timed_out": is_timed_out,
+                "timed_out_until": m.timed_out_until.isoformat() if is_timed_out else None,
+                "is_protected": bool(m.id == guild.owner_id or m.guild_permissions.administrator)
+            })
 
     total = len(members)
     paginated = members[offset:offset+limit]

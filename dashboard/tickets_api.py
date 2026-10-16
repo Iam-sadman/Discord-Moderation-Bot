@@ -70,7 +70,7 @@ def _get_server_channels_and_roles(guild: Optional[discord.Guild]):
     members = [
         {"id": str(m.id), "name": str(m.name), "display_name": getattr(m, "display_name", None) or str(m.name)}
         for m in guild.members
-        if not m.bot
+        if getattr(m, "bot", None) is not True
     ][:2000]
     return channels, roles, members
 
@@ -89,9 +89,29 @@ async def api_get_ticket_panels(guild_id: int):
     guild = bot.get_guild(guild_id) if bot else None
     if guild and hasattr(guild, "chunk") and (not getattr(guild, "chunked", False) or len(guild.members) <= 1):
         try:
-            await guild.chunk(cache=True)
+            await asyncio.wait_for(guild.chunk(cache=True), timeout=2.5)
         except Exception as e:
-            logger.warning(f"Could not chunk guild {guild.id}: {e}")
+            logger.debug(f"Could not chunk guild {guild.id}: {e}")
+
+    # Fallback: if cached members are empty or only the bot, fetch initial batch via REST
+    if guild and hasattr(bot, "http") and len([m for m in guild.members if getattr(m, "bot", None) is not True]) == 0:
+        try:
+            from discord.http import Route
+            route = Route('GET', '/guilds/{guild_id}/members', guild_id=guild.id)
+            raw_members = await asyncio.wait_for(bot.http.request(route, params={'limit': 100}), timeout=2.5)
+            if isinstance(raw_members, list):
+                for rm in raw_members:
+                    u = rm.get("user") or {}
+                    uid = str(u.get("id", ""))
+                    if uid and not u.get("bot", False):
+                        try:
+                            m_obj = discord.Member(data=rm, guild=guild, state=guild._state)
+                            if hasattr(guild, "_members"):
+                                guild._members[int(uid)] = m_obj
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.debug(f"Initial REST member populate notice: {e}")
 
     channels, roles, members = _get_server_channels_and_roles(guild)
 
@@ -105,6 +125,138 @@ async def api_get_ticket_panels(guild_id: int):
         "members": members,
         "counts": counts
     })
+
+
+@tickets_bp.route("/api/guild/<int:guild_id>/tickets/members", methods=["GET"])
+async def api_tickets_search_members(guild_id: int):
+    """Searches server members for ticket role/member assignments with multi-tier fallback."""
+    bot = get_bot()
+    guild = bot.get_guild(guild_id) if bot else None
+    if not guild:
+        return jsonify({"success": False, "error": "Guild not found", "members": []}), 404
+
+    search = (request.args.get("search") or "").strip()
+    limit = min(max(1, int(request.args.get("limit", 30))), 100)
+    search_lower = search.lower()
+
+    results = []
+    seen_ids = set()
+
+    def add_member(uid: str, name: str, display_name: str, avatar: str = ""):
+        if uid in seen_ids:
+            return
+        seen_ids.add(uid)
+        results.append({
+            "id": str(uid),
+            "name": str(name),
+            "display_name": str(display_name or name),
+            "avatar": avatar or "https://cdn.discordapp.com/embed/avatars/0.png"
+        })
+
+    # Tier 1: Search cached guild.members in memory
+    for m in guild.members:
+        if getattr(m, "bot", None) is True:
+            continue
+        uid = str(m.id)
+        name = str(m.name)
+        disp = getattr(m, "display_name", name) or name
+        if not search_lower or search_lower in name.lower() or search_lower in disp.lower() or search == uid:
+            av = str(m.display_avatar.url) if hasattr(m, "display_avatar") else ""
+            add_member(uid, name, disp, av)
+            if len(results) >= limit:
+                break
+
+    # Tier 2: Snowflake User ID direct lookup
+    if search.isdigit() and len(search) >= 17 and len(results) < limit:
+        target_uid = int(search)
+        m = guild.get_member(target_uid) if hasattr(guild, "get_member") else None
+        if not m and hasattr(guild, "fetch_member"):
+            try:
+                m = await asyncio.wait_for(guild.fetch_member(target_uid), timeout=2.0)
+            except Exception:
+                m = None
+        if m and getattr(m, "bot", None) is not True:
+            disp = getattr(m, "display_name", str(m.name)) or str(m.name)
+            av = str(m.display_avatar.url) if hasattr(m, "display_avatar") else ""
+            add_member(str(m.id), str(m.name), disp, av)
+        elif not m and hasattr(bot, "fetch_user"):
+            try:
+                u = await asyncio.wait_for(bot.fetch_user(target_uid), timeout=2.0)
+                if u and getattr(u, "bot", None) is not True:
+                    disp = getattr(u, "display_name", str(u.name)) or str(u.name)
+                    av = str(u.display_avatar.url) if hasattr(u, "display_avatar") else ""
+                    add_member(str(u.id), str(u.name), disp, av)
+            except Exception:
+                pass
+
+    # Tier 3: Search Discord Gateway (guild.query_members)
+    if search and len(results) < limit and hasattr(guild, "query_members"):
+        try:
+            gateway_members = await asyncio.wait_for(
+                guild.query_members(query=search, limit=min(limit, 50), cache=True),
+                timeout=2.0
+            )
+            for m in gateway_members:
+                if getattr(m, "bot", None) is not True:
+                    disp = getattr(m, "display_name", str(m.name)) or str(m.name)
+                    av = str(m.display_avatar.url) if hasattr(m, "display_avatar") else ""
+                    add_member(str(m.id), str(m.name), disp, av)
+                if len(results) >= limit:
+                    break
+        except Exception as e:
+            logger.debug(f"[Tickets] query_members notice: {e}")
+
+    # Tier 4: Search Discord REST API (GET /guilds/{guild_id}/members/search)
+    if search and len(results) < limit and hasattr(bot, "http"):
+        try:
+            from discord.http import Route
+            route = Route('GET', '/guilds/{guild_id}/members/search', guild_id=guild.id)
+            rest_items = await asyncio.wait_for(
+                bot.http.request(route, params={'query': search, 'limit': min(limit, 50)}),
+                timeout=2.5
+            )
+            if isinstance(rest_items, list):
+                for item in rest_items:
+                    u = item.get("user") or {}
+                    uid = str(u.get("id", ""))
+                    if not uid or u.get("bot", False):
+                        continue
+                    nick = item.get("nick")
+                    uname = u.get("username", f"User #{uid}")
+                    dname = nick or u.get("global_name") or uname
+                    av = f"https://cdn.discordapp.com/avatars/{uid}/{u.get('avatar')}.png" if u.get("avatar") else ""
+                    add_member(uid, uname, dname, av)
+                    if len(results) >= limit:
+                        break
+        except Exception as e:
+            logger.debug(f"[Tickets] REST search notice: {e}")
+
+    # Tier 5: If query is empty and cached members were empty, fetch initial members via REST
+    if not search and len(results) == 0 and hasattr(bot, "http"):
+        try:
+            from discord.http import Route
+            route = Route('GET', '/guilds/{guild_id}/members', guild_id=guild.id)
+            initial_items = await asyncio.wait_for(
+                bot.http.request(route, params={'limit': min(limit, 100)}),
+                timeout=3.0
+            )
+            if isinstance(initial_items, list):
+                for item in initial_items:
+                    u = item.get("user") or {}
+                    uid = str(u.get("id", ""))
+                    if not uid or u.get("bot", False):
+                        continue
+                    nick = item.get("nick")
+                    uname = u.get("username", f"User #{uid}")
+                    dname = nick or u.get("global_name") or uname
+                    av = f"https://cdn.discordapp.com/avatars/{uid}/{u.get('avatar')}.png" if u.get("avatar") else ""
+                    add_member(uid, uname, dname, av)
+                    if len(results) >= limit:
+                        break
+        except Exception as e:
+            logger.debug(f"[Tickets] REST get_members notice: {e}")
+
+    return jsonify({"success": True, "members": results})
 
 
 @tickets_bp.route("/api/guild/<int:guild_id>/tickets/panels", methods=["POST"])

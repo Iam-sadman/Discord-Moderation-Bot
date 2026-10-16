@@ -96,6 +96,8 @@ class TestTicketsSystem(unittest.IsolatedAsyncioTestCase):
         self.mock_staff_member = MagicMock(spec=discord.Member)
         self.mock_staff_member.id = self.staff_id
         self.mock_staff_member.name = "StaffUser"
+        self.mock_staff_member.display_name = "StaffUser"
+        self.mock_staff_member.bot = False
         self.mock_staff_member.display_avatar.url = "https://cdn.discordapp.com/avatars/staff.png"
         self.mock_staff_member.roles = [self.mock_role]
         self.mock_staff_member.guild_permissions = discord.Permissions(administrator=True)
@@ -798,6 +800,12 @@ class TestTicketsSystem(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(res_del_panel.status_code, 200)
         self.assertTrue((await res_del_panel.get_json())["success"])
+
+        # 9. REST API: GET /api/guild/<id>/tickets/members
+        res_members = await self.client.get(f"/api/guild/{self.guild_id}/tickets/members?search=StaffUser")
+        self.assertEqual(res_members.status_code, 200)
+        members_data = (await res_members.get_json())["members"]
+        self.assertTrue(any(str(m["id"]) == str(self.staff_id) for m in members_data))
 
 
 if __name__ == "__main__":
