@@ -1263,7 +1263,6 @@ def create_dashboard(bot):
             uploaded_thumb = req_files.get("thumb_file")
             extra_files_raw = req_files.getlist("extra_files")
             heading_color = (form.get("heading_color") or "").strip()
-            footer_color = (form.get("footer_color") or "").strip()
             show_author = form.get("show_author", "false").lower() in ("true", "1", "yes")
             author_name_field = (form.get("author_name") or "").strip()
             justify_text = form.get("justify_text", "false").lower() in ("true", "1", "yes")
@@ -1283,7 +1282,6 @@ def create_dashboard(bot):
             uploaded_thumb = None
             extra_files_raw = []
             heading_color = (data.get("heading_color") or "").strip()
-            footer_color = (data.get("footer_color") or "").strip()
             show_author = str(data.get("show_author", "false")).lower() in ("true", "1", "yes")
             author_name_field = (data.get("author_name") or "").strip()
             justify_text = str(data.get("justify_text", "false")).lower() in ("true", "1", "yes")
@@ -1384,22 +1382,6 @@ def create_dashboard(bot):
                 h_code = resolve_ansi_code(heading_color)
                 colored_title_ansi = f"```ansi\n\x1b[1;{h_code}m{clean_title}\x1b[0m\n```"
 
-        # Build colored footer block if custom footer color is selected or footer text has color tags
-        is_custom_footer = bool(
-            footer_text and (
-                (footer_color and footer_color.lower() not in ("#949ba4", "default", "")) or
-                ("[color=" in footer_text.lower())
-            )
-        )
-        colored_footer_ansi = None
-        if is_custom_footer:
-            if "[color=" in footer_text.lower():
-                colored_footer_ansi = convert_color_tags_to_discord(footer_text)
-            else:
-                clean_footer = re.sub(r"^#{1,3}\s+", "", footer_text).strip().replace("**", "").replace("__", "")
-                f_code = resolve_ansi_code(footer_color)
-                colored_footer_ansi = f"```ansi\n\x1b[1;{f_code}m{clean_footer}\x1b[0m\n```"
-
         # Build AllowedMentions — Discord ONLY sends push notifications to roles
         # if the role object is listed explicitly in allowed_mentions.roles.
         if mention_type == "everyone":
@@ -1442,11 +1424,6 @@ def create_dashboard(bot):
                 if justify_text and discord_content and "━━━━━━━━━━━━━━━━━━━━━━━━━━━━" not in discord_content:
                     embed_desc_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-                if colored_footer_ansi:
-                    if justify_text and embed_desc_parts and not embed_desc_parts[-1].startswith("━"):
-                        embed_desc_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                    embed_desc_parts.append(colored_footer_ansi)
-
                 final_description = "\n".join(embed_desc_parts) if embed_desc_parts else None
 
                 embed = discord.Embed(
@@ -1458,10 +1435,7 @@ def create_dashboard(bot):
                     embed.set_thumbnail(url=f"attachment://{thumb_filename}")
                 if banner_filename:
                     embed.set_image(url=f"attachment://{banner_filename}")
-                if is_custom_footer:
-                    if footer_icon_url:
-                        embed.set_footer(text="•", icon_url=footer_icon_url)
-                elif footer_text:
+                if footer_text:
                     embed.set_footer(text=footer_text, icon_url=footer_icon_url if footer_icon_url else None)
 
                 # Author attribution — resolve User ID / server member display name + avatar
@@ -1504,9 +1478,7 @@ def create_dashboard(bot):
                 if justify_text and discord_content and "━━━━━━━━━━━━━━━━━━━━━━━━━━━━" not in discord_content:
                     full_body += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-                if colored_footer_ansi:
-                    full_body += f"\n\n{colored_footer_ansi}"
-                elif footer_text:
+                if footer_text:
                     full_body += f"\n\n{footer_text}"
 
                 # Author attribution for plain text (appended as bold signature)
