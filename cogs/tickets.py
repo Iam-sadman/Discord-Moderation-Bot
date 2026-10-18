@@ -367,17 +367,19 @@ class TicketsCog(commands.Cog):
             )
             return
 
-        # Combine global, panel, and per-category role/member routing
-        assigned_roles = list(set(
-            settings.get("support_role_ids", []) +
-            (panel.get("support_role_ids", []) if panel else []) +
-            (category.get("assigned_role_ids", []) if category else [])
-        ))
-        assigned_members = list(set(
-            settings.get("support_member_ids", []) +
-            (panel.get("support_member_ids", []) if panel else []) +
-            (category.get("assigned_member_ids", []) if category else [])
-        ))
+        # Resolve panel-specific support roles and members (panel takes precedence over legacy global settings)
+        if panel:
+            panel_roles = panel.get("support_role_ids", [])
+            panel_members = panel.get("support_member_ids", [])
+        else:
+            panel_roles = settings.get("support_role_ids", [])
+            panel_members = settings.get("support_member_ids", [])
+
+        category_roles = category.get("assigned_role_ids", []) if category else []
+        category_members = category.get("assigned_member_ids", []) if category else []
+
+        assigned_roles = list(set(panel_roles + category_roles))
+        assigned_members = list(set(panel_members + category_members))
 
         # Insert placeholder ticket to obtain unique auto-increment ticket_id
         ticket_id = await self.db.create_ticket(
