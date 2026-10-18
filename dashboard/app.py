@@ -1253,6 +1253,7 @@ def create_dashboard(bot):
             mention_role_id = form.get("mention_role_id")
             color_hex = (form.get("embed_color", form.get("color", "#5865F2")) or "#5865F2").strip()
             footer_text = (form.get("footer_text") or "").strip()
+            footer_icon_url = (form.get("footer_icon_url") or "").strip()
             buttons_raw_str = form.get("buttons", "[]")
             try:
                 buttons_raw = json.loads(buttons_raw_str) if isinstance(buttons_raw_str, str) else buttons_raw_str
@@ -1276,6 +1277,7 @@ def create_dashboard(bot):
             mention_role_id = data.get("mention_role_id")
             color_hex = (data.get("embed_color", data.get("color", "#5865F2")) or "#5865F2").strip()
             footer_text = (data.get("footer_text") or "").strip()
+            footer_icon_url = (data.get("footer_icon_url") or "").strip()
             buttons_raw = data.get("buttons", [])
             uploaded_banner = None
             uploaded_thumb = None
@@ -1436,7 +1438,7 @@ def create_dashboard(bot):
                 if banner_filename:
                     embed.set_image(url=f"attachment://{banner_filename}")
                 if footer_text:
-                    embed.set_footer(text=footer_text)
+                    embed.set_footer(text=footer_text, icon_url=footer_icon_url if footer_icon_url else None)
 
                 # Author attribution — resolve User ID / server member display name + avatar
                 if show_author:

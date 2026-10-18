@@ -797,6 +797,61 @@
         cursor: default;
     }
 
+    /* Discord Live Preview Extra Attachments */
+    .discord-attachments-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+        max-width: 520px;
+    }
+
+    .discord-attachment-file-card {
+        background: #2b2d31;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .discord-attachment-file-icon {
+        font-size: 24px;
+        flex-shrink: 0;
+    }
+
+    .discord-attachment-file-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .discord-attachment-filename {
+        font-size: 13px;
+        font-weight: 500;
+        color: #00a8fc;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .discord-attachment-filesize {
+        font-size: 11px;
+        color: #949ba4;
+        margin-top: 2px;
+    }
+
+    .discord-attachment-image-card {
+        border-radius: 8px;
+        overflow: hidden;
+        max-width: 100%;
+        max-height: 260px;
+        display: block;
+        object-fit: cover;
+        margin-top: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
     .color-swatches-row {
         display: flex;
         align-items: center;
@@ -1050,7 +1105,7 @@
 .gh-s92 { flex: 1.5 !important; min-width: 240px !important; }
 .gh-s93 { font-size: 12px !important; font-weight: 600 !important; color: var(--text-dim) !important; display: flex !important; justify-content: space-between !important; align-items: center !important; margin-bottom: 6px !important; }
 .gh-s94 { font-size: 11px !important; color: var(--accent-cyan) !important; font-weight: normal !important; }
-.gh-s95 { display: none !important; }
+.gh-s95 { display: none; }
 .gh-s96 { padding: 12px 8px !important; }
 .gh-s97 { font-size: 26px !important; margin-bottom: 4px !important; }
 .gh-s98 { font-size: 11px !important; color: var(--text-dim) !important; margin-top: 2px !important; }

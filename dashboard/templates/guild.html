@@ -563,6 +563,25 @@
                             <input type="hidden" id="ann-footer-color" value="#949ba4">
                         </div>
                     </div>
+
+                    <!-- Footer Icon Option -->
+                    <div class="mt-3 pt-3" style="border-top: 1px solid var(--border-subtle);">
+                        <label class="d-flex justify-between align-center mb-1">
+                            <span style="font-size: 12px; font-weight: 600; color: var(--text-dim);">🖼️ Footer Icon / Image</span>
+                            <span style="font-size: 11px; color: var(--text-muted);">Optional 18×18 round icon</span>
+                        </label>
+                        <div class="d-flex gap-2 flex-wrap align-center">
+                            <select id="ann-footer-icon-source" onchange="handleFooterIconSourceChange()" class="gh-s27" style="max-width: 180px;" title="Footer Icon Source">
+                                <option value="none">🚫 No Icon</option>
+                                <option value="server" {% if guild.icon %}selected{% endif %}>🏰 Server Icon</option>
+                                <option value="bot">🤖 Bot Avatar</option>
+                                <option value="custom">🔗 Custom Icon URL</option>
+                            </select>
+                            <input type="url" id="ann-footer-icon-url" placeholder="https://... (Direct image URL)" 
+                                   oninput="updateAnnouncementPreview()" 
+                                   style="flex: 1; min-width: 200px; display: none; font-size: 12px; padding: 6px 10px;" class="form-control" title="Custom Footer Icon URL">
+                        </div>
+                    </div>
                 </div>
 
                 <!-- ============================================== -->
@@ -750,11 +769,11 @@
                     </div>
 
                     <!-- Mentions Preview Pill -->
-                    <div id="preview-mention-pill" class="gh-s95"></div>
+                    <div id="preview-mention-pill" style="display: none;"></div>
 
                     <!-- Plain Text Preview -->
                     <div id="preview-plain-text" class="gh-s118"></div>
-                    <img id="preview-plain-image" class="discord-embed-banner gh-s95" src="" alt="Attachment Image">
+                    <img id="preview-plain-image" class="discord-embed-banner" src="" alt="Attachment Image" style="display: none;">
 
                     <!-- Rich Embed Card Preview -->
                     <div class="discord-embed-card" id="preview-embed-card">
@@ -769,19 +788,22 @@
                                 <div class="discord-embed-title" id="preview-embed-title">Announcement Title Preview</div>
                                 <div class="discord-embed-desc" id="preview-embed-desc">Your announcement content will be rendered here with live Discord formatting.</div>
                             </div>
-                            <img id="preview-embed-thumb" class="discord-embed-thumb gh-s95" src="" alt="Thumbnail">
+                            <img id="preview-embed-thumb" class="discord-embed-thumb" src="" alt="Thumbnail" style="display: none;">
                         </div>
 
-                        <img id="preview-embed-banner" class="discord-embed-banner gh-s95" src="" alt="Banner">
+                        <img id="preview-embed-banner" class="discord-embed-banner" src="" alt="Banner" style="display: none;">
 
-                        <div class="discord-embed-footer gh-s95" id="preview-embed-footer">
-                            <img id="preview-embed-footer-icon" class="gh-s95" src="" alt="Icon">
+                        <div class="discord-embed-footer" id="preview-embed-footer" style="display: none;">
+                            <img id="preview-embed-footer-icon" src="" alt="Icon" style="display: none;">
                             <span id="preview-embed-footer-text">Footer Preview</span>
                         </div>
                     </div>
 
+                    <!-- Extra Attachments Live Preview -->
+                    <div id="preview-attachments-container" class="discord-attachments-grid" style="display: none;"></div>
+
                     <!-- Link Buttons Preview -->
-                    <div class="discord-btn-row gh-s95" id="preview-buttons-row"></div>
+                    <div class="discord-btn-row" id="preview-buttons-row" style="display: none;"></div>
                 </div>
             </div>
         </div>
@@ -4614,6 +4636,15 @@
         updateAnnouncementPreview();
     }
 
+    function handleFooterIconSourceChange() {
+        const src = document.getElementById('ann-footer-icon-source')?.value;
+        const urlInput = document.getElementById('ann-footer-icon-url');
+        if (urlInput) {
+            urlInput.style.display = (src === 'custom') ? 'block' : 'none';
+        }
+        updateAnnouncementPreview();
+    }
+
     // ──── Panel 4: Embed Accent Color Helper ────
     function selectEmbedColor(hex, el) {
         const input = document.getElementById('ann-embed-color');
@@ -4828,10 +4859,16 @@
             }
             // Avoid duplicates by name+size
             if (extraAttachments.find(a => a.name === file.name && a.size === file.size)) continue;
+            if (file.type && file.type.startsWith('image/')) {
+                file._previewUrl = URL.createObjectURL(file);
+            }
             extraAttachments.push(file);
             added++;
         }
-        if (added > 0) renderExtraAttachmentList();
+        if (added > 0) {
+            renderExtraAttachmentList();
+            updateAnnouncementPreview();
+        }
         // Reset file input so same file can be re-added after removal
         const inp = document.getElementById('ann-extra-files');
         if (inp) inp.value = '';
@@ -4845,8 +4882,12 @@
     }
 
     function removeExtraAttachment(idx) {
-        extraAttachments.splice(idx, 1);
+        const removed = extraAttachments.splice(idx, 1);
+        if (removed && removed[0] && removed[0]._previewUrl) {
+            URL.revokeObjectURL(removed[0]._previewUrl);
+        }
         renderExtraAttachmentList();
+        updateAnnouncementPreview();
     }
 
     function renderExtraAttachmentList() {
@@ -5023,16 +5064,73 @@
                 const footerElem = document.getElementById('preview-embed-footer');
                 const footerTextElem = document.getElementById('preview-embed-footer-text');
                 const footerIconElem = document.getElementById('preview-embed-footer-icon');
+                const footerIconSource = document.getElementById('ann-footer-icon-source')?.value || 'none';
+                const customFooterIconUrl = document.getElementById('ann-footer-icon-url')?.value.trim() || '';
+                let footerIconUrl = '';
+                if (footerIconSource === 'server') {
+                    footerIconUrl = '{{ guild.icon.url if guild.icon else "" }}';
+                } else if (footerIconSource === 'bot') {
+                    footerIconUrl = '{{ bot.user.display_avatar.url if bot and bot.user else "" }}';
+                } else if (footerIconSource === 'custom') {
+                    footerIconUrl = customFooterIconUrl;
+                }
+
                 if (footerElem && footerTextElem) {
                     if (footerText) {
                         footerElem.style.display = 'flex';
                         footerTextElem.style.color = footerColor;
                         footerTextElem.innerHTML = renderDiscordMarkdown(footerText);
-                        if (footerIconElem) footerIconElem.style.display = 'none';
+                        if (footerIconElem) {
+                            if (footerIconUrl) {
+                                footerIconElem.src = footerIconUrl;
+                                footerIconElem.style.display = 'inline-block';
+                            } else {
+                                footerIconElem.style.display = 'none';
+                                footerIconElem.src = '';
+                            }
+                        }
                     } else {
                         footerElem.style.display = 'none';
                     }
                 }
+            }
+        }
+
+        // Render Extra Attachments Preview
+        const attachmentsContainer = document.getElementById('preview-attachments-container');
+        if (attachmentsContainer) {
+            if (extraAttachments.length > 0) {
+                attachmentsContainer.style.display = 'flex';
+                let attachHtml = '';
+                extraAttachments.forEach(file => {
+                    const isImage = file.type && file.type.startsWith('image/');
+                    if (isImage && file._previewUrl) {
+                        attachHtml += `<img src="${file._previewUrl}" alt="${escapeHtml(file.name)}" class="discord-attachment-image-card" title="${escapeHtml(file.name)}">`;
+                    } else {
+                        const sizeStr = file.size < 1024 * 1024
+                            ? `${(file.size / 1024).toFixed(1)} KB`
+                            : `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+                        const icon = isImage ? '🖼️' : (file.name.endsWith('.pdf') ? '📄' :
+                            (file.name.match(/\.(doc|docx)$/i) ? '📝' :
+                            (file.name.match(/\.(xls|xlsx|csv)$/i) ? '📊' :
+                            (file.name.match(/\.(zip|rar|7z)$/i) ? '🗜️' :
+                            (file.name.match(/\.(mp4|mov|avi)$/i) ? '🎬' :
+                            (file.name.match(/\.(mp3|wav|flac)$/i) ? '🎵' : '📎'))))));
+                        attachHtml += `
+                        <div class="discord-attachment-file-card">
+                            <span class="discord-attachment-file-icon">${icon}</span>
+                            <div class="discord-attachment-file-info">
+                                <div class="discord-attachment-filename" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                                <div class="discord-attachment-filesize">${sizeStr}</div>
+                            </div>
+                            <span style="font-size: 16px; opacity: 0.7;">⬇️</span>
+                        </div>`;
+                    }
+                });
+                attachmentsContainer.innerHTML = attachHtml;
+            } else {
+                attachmentsContainer.style.display = 'none';
+                attachmentsContainer.innerHTML = '';
             }
         }
 
@@ -5104,6 +5202,17 @@
         formData.append('embed_color', embedColor);
         if (footerText) formData.append('footer_text', footerText);
         if (footerColor) formData.append('footer_color', footerColor);
+        const footerIconSource = document.getElementById('ann-footer-icon-source')?.value || 'none';
+        const customFooterIconUrl = document.getElementById('ann-footer-icon-url')?.value.trim() || '';
+        let resolvedFooterIcon = '';
+        if (footerIconSource === 'server') {
+            resolvedFooterIcon = '{{ guild.icon.url if guild.icon else "" }}';
+        } else if (footerIconSource === 'bot') {
+            resolvedFooterIcon = '{{ bot.user.display_avatar.url if bot and bot.user else "" }}';
+        } else if (footerIconSource === 'custom') {
+            resolvedFooterIcon = customFooterIconUrl;
+        }
+        if (resolvedFooterIcon) formData.append('footer_icon_url', resolvedFooterIcon);
         formData.append('show_author', showAuthor ? 'true' : 'false');
         if (authorName) formData.append('author_name', authorName);
         const isJustified = document.getElementById('ann-justify-toggle')?.checked || false;
