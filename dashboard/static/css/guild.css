@@ -1040,7 +1040,7 @@
 .gh-s27 { width: 100% !important; }
 .gh-s28 { width: 180px !important; }
 .gh-s29 { flex: 1 !important; min-width: 180px !important; }
-.gh-s30 { flex: 1 !important; min-width: 180px !important; display: none !important; }
+.gh-s30 { flex: 1 !important; min-width: 180px !important; display: none; }
 .gh-s31 { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 12px !important; margin-bottom: 14px !important; padding: 10px 14px !important; background: rgba(99,102,241,0.08) !important; border-radius: 8px !important; border: 1px solid rgba(99,102,241,0.25) !important; flex-wrap: wrap !important; }
 .gh-s32 { display: flex !important; align-items: center !important; gap: 10px !important; }
 .gh-s33 { margin: 0 !important; }
@@ -1128,9 +1128,9 @@
 .gh-s115 { font-size: 12px !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.05em !important; color: var(--accent-cyan) !important; }
 .gh-s116 { font-size: 11px !important; color: var(--text-dim) !important; }
 .gh-s117 { display: flex !important; align-items: center !important; justify-content: center !important; height: 100% !important; color: #fff !important; font-weight: 700 !important; }
-.gh-s118 { display: none !important; font-size: 14px !important; line-height: 1.5 !important; color: #dbdee1 !important; }
-.gh-s119 { display: none !important; align-items: center !important; gap: 8px !important; margin-bottom: 8px !important; }
-.gh-s120 { width: 20px !important; height: 20px !important; border-radius: 50% !important; object-fit: cover !important; display: none !important; }
+.gh-s118 { display: none; font-size: 14px !important; line-height: 1.5 !important; color: #dbdee1 !important; }
+.gh-s119 { display: none; align-items: center !important; gap: 8px !important; margin-bottom: 8px !important; }
+.gh-s120 { width: 20px !important; height: 20px !important; border-radius: 50% !important; object-fit: cover !important; display: none; }
 .gh-s121 { font-size: 13px !important; font-weight: 700 !important; color: #f1f5f9 !important; }
 .gh-s122 { margin-bottom: 20px !important; }
 .gh-s123 { font-size: 13px !important; color: var(--text-muted) !important; margin-bottom: 16px !important; }
