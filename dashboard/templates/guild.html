@@ -5905,8 +5905,10 @@ async function loadMembersList(offset = 0) {
         return;
     }
 
+    window.currentLoadedMembers = {};
     let html = '';
     data.members.forEach(m => {
+        window.currentLoadedMembers[String(m.id)] = m;
         html += `
             <tr>
                 <td>
@@ -5921,7 +5923,7 @@ async function loadMembersList(offset = 0) {
                 <td style="font-size:12px; color:#c084fc;">@${escapeHtml(m.top_role)}</td>
                 <td style="font-size:12px; color:var(--text-muted);">${m.roles.length} roles</td>
                 <td>
-                    <button type="button" class="btn btn-sm btn-secondary" onclick='selectMemberForInspector(${JSON.stringify(m).replace(/'/g, "&#39;")})'>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="inspectMemberById('${m.id}')">
                         🔍 Inspect
                     </button>
                 </td>
@@ -5931,53 +5933,80 @@ async function loadMembersList(offset = 0) {
     tbody.innerHTML = html;
 }
 
+function inspectMemberById(memberId) {
+    const member = window.currentLoadedMembers && window.currentLoadedMembers[String(memberId)];
+    if (member) {
+        selectMemberForInspector(member);
+    }
+}
+
 function selectMemberForInspector(member) {
+    if (typeof member === 'string' && window.currentLoadedMembers && window.currentLoadedMembers[member]) {
+        member = window.currentLoadedMembers[member];
+    }
+    if (!member) return;
+
     selectedInspectorMember = member;
     const card = document.getElementById('member-inspector-card');
     if (!card) return;
 
     card.style.display = 'block';
-    document.getElementById('insp-avatar').src = member.avatar;
-    document.getElementById('insp-name').textContent = member.display_name;
+    card.style.setProperty('display', 'block', 'important');
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    document.getElementById('insp-avatar').src = member.avatar || '';
+    document.getElementById('insp-name').textContent = member.display_name || member.name || 'User';
     document.getElementById('insp-id').textContent = `ID: ${member.id} • Joined: ${member.joined_at}`;
 
     const prot = document.getElementById('insp-protection');
-    if (member.is_protected) {
-        prot.textContent = '🛡️ Protected (Admin/Owner)';
-        prot.style.background = 'rgba(239, 68, 68, 0.2)';
-        prot.style.color = '#f87171';
-    } else {
-        prot.textContent = 'Standard Member';
-        prot.style.background = 'rgba(16, 185, 129, 0.2)';
-        prot.style.color = '#34d399';
+    if (prot) {
+        if (member.is_protected) {
+            prot.textContent = '🛡️ Protected (Admin/Owner)';
+            prot.style.background = 'rgba(239, 68, 68, 0.2)';
+            prot.style.color = '#f87171';
+        } else {
+            prot.textContent = 'Standard Member';
+            prot.style.background = 'rgba(16, 185, 129, 0.2)';
+            prot.style.color = '#34d399';
+        }
     }
 
     // Render current roles chips
     const rolesDiv = document.getElementById('insp-current-roles');
-    if (member.roles.length === 0) {
-        rolesDiv.innerHTML = '<span style="font-size:12px; color:var(--text-dim);">No custom roles assigned</span>';
-    } else {
-        rolesDiv.innerHTML = member.roles.map(r => `
-            <span class="user-chip" style="border-left: 3px solid ${r.color !== '#000000' ? r.color : '#94a3b8'};">
-                @${escapeHtml(r.name)}
-            </span>
-        `).join('');
+    if (rolesDiv) {
+        if (!member.roles || member.roles.length === 0) {
+            rolesDiv.innerHTML = '<span style="font-size:12px; color:var(--text-dim);">No custom roles assigned</span>';
+        } else {
+            rolesDiv.innerHTML = member.roles.map(r => `
+                <span class="user-chip" style="border-left: 3px solid ${r.color !== '#000000' ? r.color : '#94a3b8'};">
+                    @${escapeHtml(r.name)}
+                </span>
+            `).join('');
+        }
     }
 
     // Populate manageable assign dropdown (roles member doesn't have)
-    const memberRoleIds = new Set(member.roles.map(r => String(r.id)));
+    const availableRoles = (cachedRolesCatalog && cachedRolesCatalog.length > 0)
+        ? cachedRolesCatalog
+        : (typeof getAvailableRoles === 'function' ? getAvailableRoles() : []);
+    const memberRoleIds = new Set((member.roles || []).map(r => String(r.id)));
+
     const assignSelect = document.getElementById('insp-assign-role-select');
-    assignSelect.innerHTML = '<option value="">Select Role to Add...</option>' +
-        cachedRolesCatalog
-            .filter(r => r.can_bot_manage && !memberRoleIds.has(String(r.id)))
-            .map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+    if (assignSelect) {
+        assignSelect.innerHTML = '<option value="">Select Role to Add...</option>' +
+            availableRoles
+                .filter(r => r.can_bot_manage !== false && !memberRoleIds.has(String(r.id)))
+                .map(r => `<option value="${r.id}">@${escapeHtml(r.name ? r.name.replace(/^@/, '') : r.id)}</option>`).join('');
+    }
 
     // Populate remove dropdown (manageable roles member currently has)
     const removeSelect = document.getElementById('insp-remove-role-select');
-    removeSelect.innerHTML = '<option value="">Select Role to Remove...</option>' +
-        cachedRolesCatalog
-            .filter(r => r.can_bot_manage && memberRoleIds.has(String(r.id)))
-            .map(r => `<option value="${r.id}">@${escapeHtml(r.name)}</option>`).join('');
+    if (removeSelect) {
+        removeSelect.innerHTML = '<option value="">Select Role to Remove...</option>' +
+            availableRoles
+                .filter(r => r.can_bot_manage !== false && memberRoleIds.has(String(r.id)))
+                .map(r => `<option value="${r.id}">@${escapeHtml(r.name ? r.name.replace(/^@/, '') : r.id)}</option>`).join('');
+    }
 }
 
 async function submitRoleChange(action) {
@@ -6007,7 +6036,11 @@ async function submitRoleChange(action) {
         alert(`Successfully ${action === 'assign' ? 'assigned' : 'removed'} role!`);
         // Refresh member details
         loadMembersList(0);
-        document.getElementById('member-inspector-card').style.display = 'none';
+        const card = document.getElementById('member-inspector-card');
+        if (card) {
+            card.style.display = 'none';
+            card.style.setProperty('display', 'none', 'important');
+        }
         selectedInspectorMember = null;
     } else {
         alert(res?.error || 'Role change failed');

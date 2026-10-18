@@ -1168,7 +1168,7 @@
 .gh-s210 { text-align: center !important; padding: 20px !important; }
 .gh-s211 { display: flex !important; gap: 10px !important; margin-bottom: 16px !important; }
 .gh-s212 { max-height: 260px !important; overflow-y: auto !important; margin-bottom: 18px !important; }
-.gh-s213 { display: none !important; background: rgba(15, 23, 42, 0.7) !important; border: 1px solid var(--border-hover) !important; border-radius: var(--radius-md) !important; padding: 18px !important; }
+.gh-s213 { display: none; background: rgba(15, 23, 42, 0.7) !important; border: 1px solid var(--border-hover) !important; border-radius: var(--radius-md) !important; padding: 18px !important; }
 .gh-s214 { display: flex !important; align-items: center !important; justify-content: space-between !important; margin-bottom: 14px !important; }
 .gh-s215 { display: flex !important; align-items: center !important; gap: 12px !important; }
 .gh-s216 { width: 44px !important; height: 44px !important; border-radius: 50% !important; object-fit: cover !important; }
