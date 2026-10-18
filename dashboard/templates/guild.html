@@ -3687,10 +3687,10 @@
 
             <div class="tickets-form-row">
                 <div class="tickets-form-group">
-                    <label class="tickets-label">Panel Accent Color</label>
+                    <label class="tickets-label" for="ticket-config-panel-color">Panel Accent Color</label>
                     <div class="tickets-color-picker-group">
-                        <input type="color" id="ticket-config-panel-color" class="tickets-color-input" value="#5865F2" oninput="handleTicketColorChange(this.value)" onchange="handleTicketColorChange(this.value)">
-                        <input type="text" id="ticket-config-panel-color-hex" class="form-control" value="#5865F2" oninput="handleTicketColorChange(this.value)" maxlength="7">
+                        <input type="color" id="ticket-config-panel-color" class="tickets-color-input" value="#5865F2" oninput="handleTicketColorChange(this.value)" onchange="handleTicketColorChange(this.value)" title="Panel Accent Color Picker" aria-label="Panel Accent Color Picker">
+                        <input type="text" id="ticket-config-panel-color-hex" class="form-control" value="#5865F2" oninput="handleTicketColorChange(this.value)" maxlength="7" title="Panel Accent Color Hex" placeholder="#5865F2" aria-label="Panel Accent Color Hex">
                     </div>
                 </div>
                 <div class="tickets-form-group">
@@ -4064,10 +4064,10 @@
 
             <div class="tickets-form-row">
                 <div class="tickets-form-group">
-                    <label class="tickets-label">Panel Color</label>
+                    <label class="tickets-label" for="new-panel-color">Panel Color</label>
                     <div class="tickets-color-picker-group">
-                        <input type="color" id="new-panel-color" class="tickets-color-input" value="#5865F2" onchange="document.getElementById('new-panel-color-hex').value = this.value">
-                        <input type="text" id="new-panel-color-hex" class="form-control" value="#5865F2" oninput="document.getElementById('new-panel-color').value = this.value" maxlength="7">
+                        <input type="color" id="new-panel-color" class="tickets-color-input" value="#5865F2" onchange="document.getElementById('new-panel-color-hex').value = this.value" title="New Panel Color Picker" aria-label="New Panel Color Picker">
+                        <input type="text" id="new-panel-color-hex" class="form-control" value="#5865F2" oninput="document.getElementById('new-panel-color').value = this.value" maxlength="7" title="New Panel Color Hex" placeholder="#5865F2" aria-label="New Panel Color Hex">
                     </div>
                 </div>
                 <div class="tickets-form-group">
