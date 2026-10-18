@@ -7231,8 +7231,12 @@ async function saveCurrentTemplate() {
                         </div>
                         <div class="form-card-btn-row">
                             <button class="btn btn-primary btn-sm flex-1" onclick="publishFormPanel(${f.id})" title="Publish or update public panel in Discord">
-                                🚀 Publish Panel
+                                🚀 ${f.panel_message_id ? 'Sync Panel' : 'Publish Panel'}
                             </button>
+                            ${f.panel_message_id ? `
+                            <button class="btn btn-secondary btn-sm" onclick="unpublishFormPanel(${f.id})" title="Unpublish / Remove public panel from Discord channel">
+                                🛑 Unpublish
+                            </button>` : ''}
                             <button class="btn btn-secondary btn-sm" onclick="editFormSettings(${f.id})" title="Edit form settings">
                                 ⚙️
                             </button>
@@ -7306,17 +7310,15 @@ async function saveCurrentTemplate() {
         document.getElementById('fb-max-subs').value = form.max_submissions_per_user || 0;
         document.getElementById('fb-cooldown').value = form.cooldown_seconds || 60;
 
-        // Populate datetime fields if unix timestamps exist
+        // Populate datetime fields in true local time (avoiding UTC toISOString offset skew)
         if (form.opens_at) {
-            const dt = new Date(form.opens_at * 1000);
-            document.getElementById('fb-opens-at').value = dt.toISOString().slice(0, 16);
+            document.getElementById('fb-opens-at').value = formatLocalDatetime(form.opens_at * 1000);
         } else {
             document.getElementById('fb-opens-at').value = '';
         }
 
         if (form.closes_at) {
-            const dt = new Date(form.closes_at * 1000);
-            document.getElementById('fb-closes-at').value = dt.toISOString().slice(0, 16);
+            document.getElementById('fb-closes-at').value = formatLocalDatetime(form.closes_at * 1000);
         } else {
             document.getElementById('fb-closes-at').value = '';
         }
@@ -7334,11 +7336,24 @@ async function saveCurrentTemplate() {
         document.getElementById('fb-approved-role-box').style.display = checked ? 'block' : 'none';
     }
 
+    function formatLocalDatetime(dateInput) {
+        if (!dateInput) return '';
+        const d = new Date(dateInput);
+        if (isNaN(d.getTime())) return '';
+        const pad = n => String(n).padStart(2, '0');
+        const year = d.getFullYear();
+        const month = pad(d.getMonth() + 1);
+        const day = pad(d.getDate());
+        const hours = pad(d.getHours());
+        const minutes = pad(d.getMinutes());
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+
     function setQuickDuration(seconds) {
         const now = new Date();
         const close = new Date(now.getTime() + seconds * 1000);
-        document.getElementById('fb-opens-at').value = now.toISOString().slice(0, 16);
-        document.getElementById('fb-closes-at').value = close.toISOString().slice(0, 16);
+        document.getElementById('fb-opens-at').value = formatLocalDatetime(now);
+        document.getElementById('fb-closes-at').value = formatLocalDatetime(close);
     }
 
     function clearScheduleDates() {
@@ -7407,6 +7422,23 @@ async function saveCurrentTemplate() {
         } else {
             alert(res?.error || 'Failed to update form status');
         }
+    }
+
+    async function unpublishFormPanel(formId) {
+        if (!confirm(`Are you sure you want to unpublish form #${formId}? This will remove the panel message from the Discord channel and revert it to unpublished.`)) return;
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${formId}/unpublish`, 'POST', {});
+        if (res && res.success) {
+            alert(res.message || 'Form panel unpublished successfully.');
+            await loadGuildForms();
+        } else {
+            alert(res?.error || 'Failed to unpublish form panel');
+        }
+    }
+
+    function deleteFormConfig(formId) {
+        const form = cachedGuildForms.find(f => f.id === formId);
+        const title = form ? form.title : `#${formId}`;
+        deleteFormConfirm(formId, title);
     }
 
     async function deleteFormConfirm(formId, title) {

@@ -272,6 +272,40 @@ async def api_publish_form(guild_id: int, form_id: int):
         return jsonify({"error": f"Failed to send panel message: {e}"}), 500
 
 
+@forms_bp.route("/api/guild/<int:guild_id>/forms/<int:form_id>/unpublish", methods=["POST"])
+async def api_unpublish_form(guild_id: int, form_id: int):
+    """Unpublishes a form panel from Discord and removes message reference."""
+    bot = get_bot()
+    guild = bot.get_guild(guild_id) if bot else None
+
+    db = FormsDB.get_instance()
+    form = await db.get_form(guild_id, form_id)
+    if not form:
+        return jsonify({"error": "Form not found"}), 404
+
+    panel_ch_id = form.get("panel_channel_id")
+    panel_msg_id = form.get("panel_message_id")
+
+    if guild and panel_ch_id and panel_msg_id:
+        target_ch = guild.get_channel(panel_ch_id)
+        if not target_ch:
+            try:
+                target_ch = await guild.fetch_channel(panel_ch_id)
+            except Exception:
+                pass
+        if target_ch and hasattr(target_ch, "fetch_message"):
+            try:
+                msg = await target_ch.fetch_message(panel_msg_id)
+                await msg.delete()
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                logger.warning("Could not delete panel message during unpublish: %s", e)
+
+    await db.update_form(guild_id, form_id, panel_channel_id=None, panel_message_id=None)
+    return jsonify({"success": True, "message": "Form panel unpublished and removed from Discord channel."})
+
+
 @forms_bp.route("/api/guild/<int:guild_id>/forms/<int:form_id>/toggle_status", methods=["POST"])
 async def api_toggle_form_status(guild_id: int, form_id: int):
     """Toggles form closed/open state and refreshes live panel."""
