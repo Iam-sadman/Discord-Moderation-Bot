@@ -4173,6 +4173,7 @@
             loadBanList();
         } else if (tabName === 'bulk-mod') {
             toggleBulkActionOptions();
+            checkActiveBulkJob();
         } else if (tabName === 'mod-audit') {
             loadModAuditLogs(0);
         } else if (tabName === 'mod-config') {
@@ -6687,34 +6688,26 @@ function toggleBulkActionOptions() {
         const hasRolesSelect = document.getElementById('bulk-filter-has-roles');
         const filteredHasRoles = Array.from(hasRolesSelect?.selectedOptions || []).map(o => ({ id: o.value, text: o.text }));
 
+        if (roleSelect) roleSelect.disabled = false;
+        if (roleLabel) {
+            roleLabel.innerHTML = 'Select Role to Remove <span style="color:var(--accent-rose); font-weight:600;">(-)</span>';
+        }
+
         if (filteredHasRoles.length === 1) {
-            // Auto-lock and disable because user is removing the exact role filtered on the left
-            if (roleSelect) {
+            if (roleSelect && (!roleSelect.value || roleSelect.selectedIndex <= 0)) {
                 roleSelect.value = filteredHasRoles[0].id;
-                roleSelect.disabled = true;
-            }
-            if (roleLabel) {
-                roleLabel.innerHTML = 'Target Role to Remove <span style="font-size:11px; color:var(--accent-rose); font-weight:normal;">(Auto-locked from filter)</span>';
             }
             if (roleHint) {
                 roleHint.style.display = 'block';
-                roleHint.innerHTML = `<span style="color:#38bdf8; display:flex; align-items:center; gap:4px;">🔒 <strong>Auto-locked:</strong> Removing <code>${escapeHtml(filteredHasRoles[0].text)}</code> (auto-detected from left filter). Selection is disabled to prevent accidental misconfiguration.</span>`;
+                roleHint.innerHTML = `<span style="color:#38bdf8;">💡 Auto-suggested from filter: <code>${escapeHtml(filteredHasRoles[0].text)}</code>. You can change this to any role you want to remove.</span>`;
             }
         } else if (filteredHasRoles.length > 1) {
-            if (roleSelect) roleSelect.disabled = false;
-            if (roleLabel) {
-                roleLabel.innerHTML = 'Select Role to Remove <span style="color:var(--accent-rose); font-weight:600;">(-)</span>';
-            }
             if (roleHint) {
                 roleHint.style.display = 'block';
                 roleHint.innerHTML = `<span style="color:#fbbf24;">⚠️ Multiple roles selected in left filter. Please choose which role to remove.</span>`;
             }
         } else {
             // No role selected in left filter (e.g., filtered by join date only)
-            if (roleSelect) roleSelect.disabled = false;
-            if (roleLabel) {
-                roleLabel.innerHTML = 'Select Role to Remove <span style="color:var(--accent-rose); font-weight:600;">(-)</span>';
-            }
             if (roleHint) {
                 roleHint.style.display = 'block';
                 roleHint.innerHTML = `<span style="color:var(--text-dim);">Select which role to remove from the matched members.</span>`;
@@ -6802,8 +6795,8 @@ async function launchBulkJob() {
     const roleSelect = document.getElementById('bulk-target-role-select');
     let roleId = roleSelect?.value;
 
-    // If role_remove and left filter has 1 role, ensure roleId is taken from that filtered role even if select is disabled
-    if (action === 'role_remove') {
+    // Fall back to filtered role only if user didn't explicitly choose one in dropdown
+    if (!roleId && action === 'role_remove') {
         const hasRolesSelect = document.getElementById('bulk-filter-has-roles');
         const selectedFilteredRoles = Array.from(hasRolesSelect?.selectedOptions || []).map(o => o.value);
         if (selectedFilteredRoles.length === 1) {
@@ -6843,7 +6836,15 @@ async function launchBulkJob() {
 
 function startBulkJobPolling(jobId) {
     const banner = document.getElementById('bulk-active-job-banner');
-    if (banner) banner.style.display = 'block';
+    if (banner) {
+        banner.style.display = 'block';
+        banner.style.setProperty('display', 'block', 'important');
+    }
+    const cancelBtn = document.getElementById('btn-cancel-bulk-job');
+    if (cancelBtn) {
+        cancelBtn.style.display = 'inline-block';
+        cancelBtn.style.setProperty('display', 'inline-block', 'important');
+    }
 
     clearInterval(bulkJobPollInterval);
     bulkJobPollInterval = setInterval(async () => {
@@ -6855,17 +6856,44 @@ function startBulkJobPolling(jobId) {
         const processed = (j.completed_targets || 0) + (j.failed_targets || 0) + (j.skipped_targets || 0);
         const pct = Math.min(100, Math.floor((processed / total) * 100));
 
-        document.getElementById('bulk-job-title').textContent = `Bulk ${j.action_type.toUpperCase()} • ${j.status.toUpperCase()}`;
-        document.getElementById('bulk-job-meta').textContent = `Job ID: ${j.job_id} • Target Count: ${total}`;
-        document.getElementById('bulk-job-progress-bar').style.width = `${pct}%`;
-        document.getElementById('bulk-job-counters').textContent = `Processed ${processed} / ${total} (${pct}%)`;
-        document.getElementById('bulk-job-stats').textContent = `Success: ${j.completed_targets} | Failed: ${j.failed_targets} | Skipped: ${j.skipped_targets}`;
+        const titleElem = document.getElementById('bulk-job-title');
+        if (titleElem) titleElem.textContent = `Bulk ${j.action_type.toUpperCase()} • ${j.status.toUpperCase()}`;
+        const metaElem = document.getElementById('bulk-job-meta');
+        if (metaElem) metaElem.textContent = `Job ID: ${j.job_id} • Target Count: ${total}`;
+        const bar = document.getElementById('bulk-job-progress-bar');
+        if (bar) {
+            bar.style.width = `${pct}%`;
+            bar.style.setProperty('width', `${pct}%`, 'important');
+        }
+        const countersElem = document.getElementById('bulk-job-counters');
+        if (countersElem) countersElem.textContent = `Processed ${processed} / ${total} (${pct}%)`;
+        const statsElem = document.getElementById('bulk-job-stats');
+        if (statsElem) statsElem.textContent = `Success: ${j.completed_targets} | Failed: ${j.failed_targets} | Skipped: ${j.skipped_targets}`;
 
         if (j.status === 'completed' || j.status === 'cancelled' || j.status === 'failed' || j.status === 'partially_completed') {
             clearInterval(bulkJobPollInterval);
-            document.getElementById('btn-cancel-bulk-job').style.display = 'none';
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
+                cancelBtn.style.setProperty('display', 'none', 'important');
+            }
         }
     }, 1500);
+}
+
+async function checkActiveBulkJob() {
+    if (activeBulkJobId) return;
+    try {
+        const data = await apiRequest(`/api/guild/${guildId}/bulk/jobs`, 'GET');
+        if (data && data.jobs && Array.isArray(data.jobs)) {
+            const runningJob = data.jobs.find(j => j.status === 'running' || j.status === 'queued');
+            if (runningJob) {
+                activeBulkJobId = runningJob.job_id;
+                startBulkJobPolling(activeBulkJobId);
+            }
+        }
+    } catch (e) {
+        // silent
+    }
 }
 
 async function cancelActiveBulkJob() {
