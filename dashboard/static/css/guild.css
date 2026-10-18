@@ -1194,10 +1194,10 @@
 .gh-s236 { margin-bottom: 0 !important; }
 .gh-s237 { display: flex !important; flex-direction: column !important; gap: 10px !important; }
 .gh-s238 { margin-top: 24px !important; display: flex !important; gap: 12px !important; justify-content: flex-end !important; }
-.gh-s239 { border-left-color: #5865F2 !important; }
+.gh-s239 { border-left-color: #5865F2; }
 .gh-s240 { display: flex !important; justify-content: space-between !important; gap: 12px !important; }
-.gh-s241 { width: 60px !important; height: 60px !important; border-radius: 4px !important; object-fit: cover !important; display: none !important; }
-.gh-s242 { width: 100% !important; border-radius: 4px !important; margin-top: 10px !important; display: none !important; }
+.gh-s241 { width: 60px !important; height: 60px !important; border-radius: 4px !important; object-fit: cover !important; display: none; }
+.gh-s242 { width: 100% !important; border-radius: 4px !important; margin-top: 10px !important; display: none; }
 .gh-s243 { display: flex !important; flex-direction: column !important; gap: 12px !important; }
 .gh-s244 { text-align: center !important; padding: 20px !important; color: var(--text-dim) !important; }
 .gh-s245 { font-size: 12px !important; }

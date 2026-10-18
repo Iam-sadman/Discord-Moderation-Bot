@@ -1774,7 +1774,7 @@
                 <div class="form-group">
                     <label class="form-label">Embed Accent Color</label>
                     <div class="gh-s231">
-                        <input type="color" id="panel-color-picker" value="#5865F2" class="gh-s232" title="Panel Accent Color Picker" onchange="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();">
+                        <input type="color" id="panel-color-picker" value="#5865F2" class="gh-s232" title="Panel Accent Color Picker" oninput="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();" onchange="document.getElementById('panel-color-hex').value = this.value; updatePanelLivePreview();">
                         <input type="text" class="form-input gh-s233" id="panel-color-hex" value="#5865F2" title="Panel Color Hex" placeholder="#5865F2" oninput="document.getElementById('panel-color-picker').value = this.value; updatePanelLivePreview();">
                     </div>
                 </div>
@@ -1841,7 +1841,7 @@
                     </div>
 
                     <!-- Live Embed Preview -->
-                    <div class="discord-embed-card gh-s239" id="panel-preview-card">
+                    <div class="discord-embed-card" id="panel-preview-card">
                         <div class="gh-s240">
                             <div class="gh-s170">
                                 <div class="discord-embed-title" id="panel-preview-title">Choose Your Community Roles</div>
@@ -6162,12 +6162,18 @@ function renderPanelItemsRows() {
 function updatePanelLivePreview() {
     const title = document.getElementById('panel-title-input')?.value || 'Choose Your Roles';
     const desc = document.getElementById('panel-desc-input')?.value || 'Click the buttons below to assign or remove roles.';
-    const color = document.getElementById('panel-color-hex')?.value || '#5865F2';
+    let color = document.getElementById('panel-color-hex')?.value?.trim() || '#5865F2';
+    if (!color.startsWith('#') && /^[0-9a-fA-F]{3,8}$/.test(color)) {
+        color = '#' + color;
+    }
     const thumbUrl = document.getElementById('panel-thumb-url')?.value.trim() || '';
     const imageUrl = document.getElementById('panel-image-url')?.value.trim() || '';
 
     const card = document.getElementById('panel-preview-card');
-    if (card) card.style.borderLeftColor = color;
+    if (card) {
+        card.style.borderLeftColor = color;
+        card.style.setProperty('border-left-color', color, 'important');
+    }
 
     const titleElem = document.getElementById('panel-preview-title');
     if (titleElem) titleElem.textContent = title;
@@ -6177,14 +6183,26 @@ function updatePanelLivePreview() {
 
     const thumbElem = document.getElementById('panel-preview-thumb');
     if (thumbElem) {
-        if (thumbUrl) { thumbElem.src = thumbUrl; thumbElem.style.display = 'block'; }
-        else { thumbElem.style.display = 'none'; }
+        if (thumbUrl) {
+            thumbElem.src = thumbUrl;
+            thumbElem.style.display = 'block';
+            thumbElem.style.setProperty('display', 'block', 'important');
+        } else {
+            thumbElem.style.display = 'none';
+            thumbElem.style.setProperty('display', 'none', 'important');
+        }
     }
 
     const imgElem = document.getElementById('panel-preview-image');
     if (imgElem) {
-        if (imageUrl) { imgElem.src = imageUrl; imgElem.style.display = 'block'; }
-        else { imgElem.style.display = 'none'; }
+        if (imageUrl) {
+            imgElem.src = imageUrl;
+            imgElem.style.display = 'block';
+            imgElem.style.setProperty('display', 'block', 'important');
+        } else {
+            imgElem.style.display = 'none';
+            imgElem.style.setProperty('display', 'none', 'important');
+        }
     }
 
     // Render Preview Buttons
