@@ -177,15 +177,19 @@ class MeetingAudioSink:
         self.user_names: Dict[int, str] = {}
         self._stopped = False
 
-    def write(self, user: Optional[discord.User], data: bytes):
+    def write(self, user: Optional[discord.User], data):
         """Called by voice_recv for each audio packet."""
         if self._stopped or user is None:
             return
         uid = user.id
         if uid not in self.user_buffers:
             self.user_buffers[uid] = bytearray()
-            self.user_names[uid] = user.display_name
-        self.user_buffers[uid].extend(data)
+            self.user_names[uid] = getattr(user, "display_name", str(user))
+
+        # Handle both raw bytes and VoiceData objects from discord-ext-voice-recv
+        pcm = getattr(data, "pcm", data)
+        if isinstance(pcm, (bytes, bytearray)):
+            self.user_buffers[uid].extend(pcm)
 
     def stop(self):
         """Marks the sink as stopped."""
@@ -373,30 +377,86 @@ class MeetingsCog(commands.Cog):
             if not m.bot:
                 await self.db.add_participant(meeting_id, m.id, m.display_name)
 
+        # Check bot permissions in voice channel
+        bot_member = guild.me
+        if bot_member:
+            perms = voice_channel.permissions_for(bot_member)
+            if not perms.view_channel:
+                await interaction.followup.send(
+                    f"❌ The Meeting Bot does not have **View Channel** permission for **{voice_channel.name}**.\n"
+                    f"Please grant the Meeting Bot's role permission to view this channel.",
+                    ephemeral=True
+                )
+                return
+            if not perms.connect:
+                await interaction.followup.send(
+                    f"❌ The Meeting Bot does not have **Connect** permission for **{voice_channel.name}**.\n"
+                    f"Please grant the Meeting Bot's role permission to connect to this voice channel.",
+                    ephemeral=True
+                )
+                return
+
         # Connect to voice channel and start recording
         sink = MeetingAudioSink(meeting_id)
 
-        try:
-            # Try to use VoiceRecvClient for per-user audio capture
+        # Handle lingering voice connection safely
+        vc = guild.voice_client
+        if vc:
+            if vc.is_connected() and vc.channel and vc.channel.id == voice_channel.id:
+                pass
+            elif vc.is_connected():
+                try:
+                    await vc.move_to(voice_channel)
+                except Exception:
+                    try:
+                        await vc.disconnect(force=True)
+                        await asyncio.sleep(0.4)
+                    except Exception:
+                        pass
+                    vc = None
+            else:
+                try:
+                    await vc.disconnect(force=True)
+                    await asyncio.sleep(0.4)
+                except Exception:
+                    pass
+                vc = None
+
+        use_voice_recv = False
+        if not vc or not vc.is_connected():
             try:
                 from discord.ext import voice_recv
-                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
-                vc.listen(voice_recv.BasicSink(sink.write))
+                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=15.0, reconnect=True)
                 use_voice_recv = True
-            except (ImportError, Exception) as e:
-                logger.warning(f"[MEETING] voice_recv not available ({e}), using basic voice client")
-                vc = await voice_channel.connect()
-                use_voice_recv = False
+            except Exception as e:
+                logger.warning(f"[MEETING] VoiceRecvClient connection failed ({e}), attempting standard voice connection...")
+                if guild.voice_client:
+                    try:
+                        await guild.voice_client.disconnect(force=True)
+                        await asyncio.sleep(0.4)
+                    except Exception:
+                        pass
+                try:
+                    vc = await voice_channel.connect(timeout=15.0, reconnect=True)
+                    use_voice_recv = False
+                except Exception as err:
+                    logger.error(f"[MEETING] Failed to connect to voice channel: {err}", exc_info=True)
+                    await self.db.update_meeting_status(
+                        meeting_id, "failed", error_message=f"Failed to connect to voice: {err}"
+                    )
+                    await interaction.followup.send(
+                        f"❌ Failed to connect to **{voice_channel.name}**: `{err}`",
+                        ephemeral=True
+                    )
+                    return
 
-        except Exception as e:
-            await self.db.update_meeting_status(
-                meeting_id, "failed", error_message=f"Failed to connect to voice: {e}"
-            )
-            await interaction.followup.send(
-                f"❌ Failed to connect to **{voice_channel.name}**: `{e}`",
-                ephemeral=True
-            )
-            return
+        # Setup audio receiving sink safely
+        if use_voice_recv and hasattr(vc, "listen"):
+            try:
+                vc.listen(voice_recv.BasicSink(sink.write))
+            except Exception as sink_err:
+                logger.warning(f"[MEETING] Failed to attach voice_recv BasicSink: {sink_err}")
+                use_voice_recv = False
 
         # Store active meeting state
         self._active_meetings[guild.id] = {
@@ -1117,22 +1177,78 @@ class MeetingsCog(commands.Cog):
             if not m.bot:
                 await self.db.add_participant(meeting_id, m.id, m.display_name)
 
+        # Check bot permissions in voice channel
+        bot_member = guild.me
+        if bot_member:
+            perms = voice_channel.permissions_for(bot_member)
+            if not perms.view_channel:
+                return {
+                    "success": False,
+                    "error": f"The Meeting Bot does not have 'View Channel' permission for #{voice_channel.name}. Please grant the Meeting Bot's role permission to view this channel."
+                }
+            if not perms.connect:
+                return {
+                    "success": False,
+                    "error": f"The Meeting Bot does not have 'Connect' permission for #{voice_channel.name}. Please grant the Meeting Bot's role permission to connect to this voice channel."
+                }
+
         # Connect to voice
         sink = MeetingAudioSink(meeting_id)
-        try:
+
+        # Handle lingering voice connection safely
+        vc = guild.voice_client
+        if vc:
+            if vc.is_connected() and vc.channel and vc.channel.id == voice_channel.id:
+                pass
+            elif vc.is_connected():
+                try:
+                    await vc.move_to(voice_channel)
+                except Exception:
+                    try:
+                        await vc.disconnect(force=True)
+                        await asyncio.sleep(0.4)
+                    except Exception:
+                        pass
+                    vc = None
+            else:
+                try:
+                    await vc.disconnect(force=True)
+                    await asyncio.sleep(0.4)
+                except Exception:
+                    pass
+                vc = None
+
+        use_voice_recv = False
+        if not vc or not vc.is_connected():
             try:
                 from discord.ext import voice_recv
-                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
-                vc.listen(voice_recv.BasicSink(sink.write))
+                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=15.0, reconnect=True)
                 use_voice_recv = True
-            except (ImportError, Exception):
-                vc = await voice_channel.connect()
+            except Exception as e:
+                logger.warning(f"[MEETING] VoiceRecvClient connect failed ({e}), attempting standard voice connection...")
+                if guild.voice_client:
+                    try:
+                        await guild.voice_client.disconnect(force=True)
+                        await asyncio.sleep(0.4)
+                    except Exception:
+                        pass
+                try:
+                    vc = await voice_channel.connect(timeout=15.0, reconnect=True)
+                    use_voice_recv = False
+                except Exception as err:
+                    logger.error(f"[MEETING] Failed to connect to voice channel: {err}", exc_info=True)
+                    await self.db.update_meeting_status(
+                        meeting_id, "failed", error_message=f"Failed to connect: {err}"
+                    )
+                    return {"success": False, "error": f"Failed to connect to voice: {err}"}
+
+        # Setup audio receiving sink safely
+        if use_voice_recv and hasattr(vc, "listen"):
+            try:
+                vc.listen(voice_recv.BasicSink(sink.write))
+            except Exception as sink_err:
+                logger.warning(f"[MEETING] Failed to attach voice_recv BasicSink: {sink_err}")
                 use_voice_recv = False
-        except Exception as e:
-            await self.db.update_meeting_status(
-                meeting_id, "failed", error_message=f"Failed to connect: {e}"
-            )
-            return {"success": False, "error": f"Failed to connect to voice: {e}"}
 
         self._active_meetings[guild_id] = {
             "meeting_id": meeting_id,
