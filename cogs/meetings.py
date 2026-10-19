@@ -501,12 +501,32 @@ class MeetingsCog(commands.Cog):
             return
 
         # Start audio recording sink
+        listen_error_container = {"error": None}
+
+        def _after_listen(err):
+            if err:
+                logger.error(f"[MEETING] VoiceRecvClient listen stopped for meeting {meeting_id}: {err}", exc_info=err)
+                listen_error_container["error"] = f"{type(err).__name__}: {err}"
+            else:
+                logger.info(f"[MEETING] VoiceRecvClient listen stopped cleanly for meeting {meeting_id}.")
+
         try:
             if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
                 vc.stop_listening()
                 await asyncio.sleep(0.1)
-            vc.listen(sink)
-            logger.info(f"[MEETING] Successfully attached MeetingAudioSink to {voice_channel.name}")
+
+            # Use official BasicSink from voice_recv if available
+            try:
+                from discord.ext import voice_recv
+                recv_sink = voice_recv.BasicSink(sink.write, decode=True)
+            except Exception:
+                recv_sink = sink
+
+            vc.listen(recv_sink, after=_after_listen)
+            logger.info(
+                f"[MEETING] Successfully attached audio sink to {voice_channel.name}. "
+                f"Mode: {getattr(vc, 'mode', 'N/A')}, is_listening={vc.is_listening()}"
+            )
         except Exception as sink_err:
             logger.error(f"[MEETING] Failed to attach audio sink: {sink_err}", exc_info=True)
             try:
@@ -529,8 +549,10 @@ class MeetingsCog(commands.Cog):
             "output_channel_id": output_channel.id,
             "voice_client": vc,
             "sink": sink,
+            "recv_sink": recv_sink,
             "use_voice_recv": use_voice_recv,
-            "started_at": time.time()
+            "started_at": time.time(),
+            "listen_error_container": listen_error_container
         }
 
         # Post recording control panel embed
@@ -731,9 +753,20 @@ class MeetingsCog(commands.Cog):
         vc_cls_name = vc.__class__.__name__ if vc else "None"
         is_listening = getattr(vc, "is_listening", lambda: False)() if vc else False
 
+        vc_mode = getattr(vc, "mode", "N/A")
+        listen_err_cont = state.get("listen_error_container", {})
+        last_err = listen_err_cont.get("error")
+        reader = getattr(vc, "_reader", None)
+        if reader and hasattr(reader, "error") and reader.error:
+            last_err = f"{type(reader.error).__name__}: {reader.error}"
+
         embed.add_field(name="Meeting ID", value=str(state["meeting_id"]), inline=True)
         embed.add_field(name="VoiceClient Class", value=f"`{vc_cls_name}`", inline=True)
+        embed.add_field(name="Encryption Mode", value=f"`{vc_mode}`", inline=True)
         embed.add_field(name="Voice Listening", value="✅ True" if is_listening else "❌ False", inline=True)
+
+        if last_err:
+            embed.add_field(name="⚠️ Listener Stopped Error", value=f"```{last_err}```", inline=False)
 
         if sink:
             total_packets = getattr(sink, "total_packets", 0)
@@ -761,6 +794,50 @@ class MeetingsCog(commands.Cog):
             embed.add_field(name="Audio Buffer Status", value=summary_val[:1024], inline=False)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @meeting_group.command(name="retry_listen", description="Attempt to re-attach the voice listener if it stopped")
+    async def meeting_retry_listen(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        state = self._active_meetings.get(guild.id)
+        if not state:
+            await interaction.followup.send("❌ No active meeting recording in this server.", ephemeral=True)
+            return
+
+        vc = state.get("voice_client")
+        sink = state.get("sink")
+        meeting_id = state.get("meeting_id")
+        if not vc or not sink:
+            await interaction.followup.send("❌ Missing voice client or audio sink.", ephemeral=True)
+            return
+
+        try:
+            from discord.ext import voice_recv
+            if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
+                vc.stop_listening()
+                await asyncio.sleep(0.1)
+
+            listen_err_cont = state.setdefault("listen_error_container", {"error": None})
+
+            def _after_listen(err):
+                if err:
+                    logger.error(f"[MEETING] Re-listen stopped: {err}", exc_info=err)
+                    listen_err_cont["error"] = f"{type(err).__name__}: {err}"
+                else:
+                    logger.info(f"[MEETING] Re-listen ended cleanly for meeting {meeting_id}.")
+
+            recv_sink = voice_recv.BasicSink(sink.write, decode=True)
+            state["recv_sink"] = recv_sink
+            vc.listen(recv_sink, after=_after_listen)
+            await interaction.followup.send(
+                f"✅ Listener re-attached! `is_listening = {vc.is_listening()}`\n"
+                f"Mode: `{getattr(vc, 'mode', 'N/A')}`. Speak into mic and test with `/meeting diag`.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Re-attach failed: `{type(e).__name__}: {e}`", ephemeral=True
+            )
 
     # =========================================================================
     # Core Processing Logic
@@ -1423,12 +1500,32 @@ class MeetingsCog(commands.Cog):
             return {"success": False, "error": f"Failed to connect recording client: {e}"}
 
         # Start audio recording sink
+        listen_error_container = {"error": None}
+
+        def _after_listen(err):
+            if err:
+                logger.error(f"[MEETING] Dashboard: VoiceRecvClient listen stopped for meeting {meeting_id}: {err}", exc_info=err)
+                listen_error_container["error"] = f"{type(err).__name__}: {err}"
+            else:
+                logger.info(f"[MEETING] Dashboard: VoiceRecvClient listen stopped cleanly for meeting {meeting_id}.")
+
         try:
             if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
                 vc.stop_listening()
                 await asyncio.sleep(0.1)
-            vc.listen(sink)
-            logger.info(f"[MEETING] Dashboard: Successfully attached MeetingAudioSink to {voice_channel.name}")
+
+            # Use official BasicSink from voice_recv if available
+            try:
+                from discord.ext import voice_recv
+                recv_sink = voice_recv.BasicSink(sink.write, decode=True)
+            except Exception:
+                recv_sink = sink
+
+            vc.listen(recv_sink, after=_after_listen)
+            logger.info(
+                f"[MEETING] Dashboard: Successfully attached audio sink to {voice_channel.name}. "
+                f"Mode: {getattr(vc, 'mode', 'N/A')}, is_listening={vc.is_listening()}"
+            )
         except Exception as sink_err:
             logger.error(f"[MEETING] Dashboard: Failed to attach audio sink: {sink_err}", exc_info=True)
             try:
@@ -1446,9 +1543,11 @@ class MeetingsCog(commands.Cog):
             "voice_channel": voice_channel,
             "voice_client": vc,
             "sink": sink,
+            "recv_sink": recv_sink,
             "use_voice_recv": use_voice_recv,
             "started_at": time.time(),
-            "output_channel_id": output_channel_id
+            "output_channel_id": output_channel_id,
+            "listen_error_container": listen_error_container
         }
 
         # Post control embed
