@@ -209,21 +209,21 @@ class MeetingAudioSink:
             # Write raw PCM
             await asyncio.to_thread(self._write_pcm, pcm_path, buffer)
 
-            # Convert PCM to WAV using ffmpeg
+            # Convert PCM to WAV using Python built-in wave module (reliable, no external ffmpeg needed)
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    "ffmpeg", "-y",
-                    "-f", "s16le", "-ar", "48000", "-ac", "2",
-                    "-i", pcm_path,
-                    wav_path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                await proc.communicate()
-                if proc.returncode == 0 and os.path.exists(wav_path):
+                def _write_wav(pcm_bytes, out_wav):
+                    import wave
+                    with wave.open(out_wav, "wb") as wf:
+                        wf.setnchannels(2)      # Stereo
+                        wf.setsampwidth(2)      # 16-bit
+                        wf.setframerate(48000)  # 48kHz Discord voice rate
+                        wf.writeframes(pcm_bytes)
+
+                await asyncio.to_thread(_write_wav, buffer, wav_path)
+                if os.path.exists(wav_path):
                     saved_files.append(wav_path)
             except Exception as e:
-                logger.warning(f"[MEETING] Failed to convert PCM for user {uid}: {e}")
+                logger.warning(f"[MEETING] Failed to convert PCM to WAV for user {uid}: {e}")
 
         return saved_files
 

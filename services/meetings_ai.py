@@ -181,35 +181,42 @@ async def generate_meeting_minutes(
 async def compress_audio_ffmpeg(input_path: str, output_path: str) -> str:
     """
     Compresses audio to lightweight mono format using ffmpeg subprocess.
-    Runs in a subprocess to avoid blocking the event loop.
-    Returns the output file path.
+    If ffmpeg is not installed on system, falls back to using the uncompressed audio file directly.
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-y", "-i", input_path,
-        "-ac", "1",        # mono
-        "-ar", "16000",    # 16kHz sample rate
-        "-b:a", "32k",     # 32kbps bitrate
-        "-vn",             # no video
-        output_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await proc.communicate()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", input_path,
+            "-ac", "1",        # mono
+            "-ar", "16000",    # 16kHz sample rate
+            "-b:a", "32k",     # 32kbps bitrate
+            "-vn",             # no video
+            output_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
 
-    if proc.returncode != 0:
-        error_msg = stderr.decode(errors="replace")[-500:]
-        raise RuntimeError(f"ffmpeg compression failed (exit {proc.returncode}): {error_msg}")
+        if proc.returncode != 0:
+            error_msg = stderr.decode(errors="replace")[-500:]
+            logger.warning(f"[AI] ffmpeg compression failed (exit {proc.returncode}): {error_msg}. Using uncompressed audio.")
+            shutil.copy2(input_path, output_path)
+            return output_path
 
-    logger.info(f"[AI] Audio compressed: {input_path} -> {output_path}")
-    return output_path
+        logger.info(f"[AI] Audio compressed: {input_path} -> {output_path}")
+        return output_path
+
+    except FileNotFoundError:
+        logger.warning("[AI] ffmpeg is not installed in system PATH. Proceeding with uncompressed audio directly for Gemini AI.")
+        shutil.copy2(input_path, output_path)
+        return output_path
 
 
 async def merge_audio_files_ffmpeg(input_files: List[str], output_path: str) -> str:
     """
-    Merges multiple audio files into one using ffmpeg concat filter.
-    Runs as a subprocess to avoid blocking. Returns output file path.
+    Merges multiple audio files into one. Uses ffmpeg concat if available,
+    or Python built-in wave concat fallback if ffmpeg is missing.
     """
     if not input_files:
         raise ValueError("No audio files to merge.")
@@ -219,7 +226,7 @@ async def merge_audio_files_ffmpeg(input_files: List[str], output_path: str) -> 
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # Create a concat list file
+    # Create a concat list file for ffmpeg
     list_path = output_path + ".list.txt"
     with open(list_path, "w", encoding="utf-8") as f:
         for fp in input_files:
@@ -239,13 +246,53 @@ async def merge_audio_files_ffmpeg(input_files: List[str], output_path: str) -> 
 
         if proc.returncode != 0:
             error_msg = stderr.decode(errors="replace")[-500:]
-            raise RuntimeError(f"ffmpeg merge failed (exit {proc.returncode}): {error_msg}")
+            logger.warning(f"[AI] ffmpeg merge failed: {error_msg}. Falling back to Python audio merge.")
+            return await _merge_wav_files_fallback(input_files, output_path)
 
         logger.info(f"[AI] Merged {len(input_files)} audio files -> {output_path}")
         return output_path
+
+    except FileNotFoundError:
+        logger.warning("[AI] ffmpeg not installed. Merging audio using Python wave fallback.")
+        return await _merge_wav_files_fallback(input_files, output_path)
+
     finally:
         # Clean up list file
         try:
-            os.remove(list_path)
+            if os.path.exists(list_path):
+                os.remove(list_path)
         except OSError:
             pass
+
+
+async def _merge_wav_files_fallback(input_files: List[str], output_path: str) -> str:
+    """Fallback to merge multiple WAV files using Python built-in wave module without ffmpeg."""
+    def _do_merge():
+        import wave
+        wav_files = [f for f in input_files if f.lower().endswith(".wav") and os.path.exists(f)]
+        if not wav_files:
+            # If not wav, copy the first available file
+            shutil.copy2(input_files[0], output_path)
+            return output_path
+
+        first = wav_files[0]
+        with wave.open(first, "rb") as w0:
+            params = w0.getparams()
+
+        # Ensure output is wav extension for wave module
+        actual_output = output_path
+        if not actual_output.lower().endswith(".wav"):
+            actual_output = os.path.splitext(output_path)[0] + ".wav"
+
+        with wave.open(actual_output, "wb") as wout:
+            wout.setparams(params)
+            for wf_path in wav_files:
+                try:
+                    with wave.open(wf_path, "rb") as win:
+                        wout.writeframes(win.readframes(win.getnframes()))
+                except Exception as err:
+                    logger.warning(f"[AI] Could not append {wf_path}: {err}")
+
+        return actual_output
+
+    return await asyncio.to_thread(_do_merge)
