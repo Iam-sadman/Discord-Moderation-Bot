@@ -43,6 +43,70 @@ try:
 except Exception as _opus_err:
     logger.warning(f"[MEETING] Opus load check: {_opus_err}")
 
+# =============================================================================
+# Resilient Monkey-Patches for discord-ext-voice-recv & libopus
+# =============================================================================
+# Discord frequently sends silent, corrupted, or extension frames that trigger
+# `OpusError: corrupted stream`. Without this patch, an unhandled OpusError crashes
+# the internal PacketRouter thread in voice_recv, causing `is_listening` to flip
+# to False immediately. These patches catch and drop malformed packets gracefully.
+
+try:
+    _orig_opus_decode = discord.opus.Decoder.decode
+
+    def _safe_opus_decode(self, data, *, fec=False):
+        try:
+            return _orig_opus_decode(self, data, fec=fec)
+        except discord.opus.OpusError as oe:
+            # Corrupted stream or malformed packet: return empty bytes instead of crashing the thread
+            logger.debug(f"[OPUS] Handled corrupted audio frame: {oe}")
+            return b""
+        except Exception as e:
+            logger.debug(f"[OPUS] Decoder exception: {e}")
+            return b""
+
+    discord.opus.Decoder.decode = _safe_opus_decode
+    logger.info("[MEETING] Applied crash-resilience patch to discord.opus.Decoder.decode")
+except Exception as _patch_err:
+    logger.warning(f"[MEETING] Could not patch discord.opus.Decoder: {_patch_err}")
+
+try:
+    import discord.ext.voice_recv.opus as _vr_opus
+    _orig_vr_decode_packet = _vr_opus.PacketDecoder._decode_packet
+
+    def _safe_vr_decode_packet(self, packet):
+        try:
+            return _orig_vr_decode_packet(self, packet)
+        except Exception as err:
+            logger.debug(f"[VOICE_RECV] Handled PacketDecoder exception: {err}")
+            return packet, b""
+
+    _vr_opus.PacketDecoder._decode_packet = _safe_vr_decode_packet
+    logger.info("[MEETING] Applied crash-resilience patch to voice_recv.PacketDecoder._decode_packet")
+except Exception as _vr_patch_err:
+    logger.debug(f"[MEETING] Note: voice_recv.opus patch: {_vr_patch_err}")
+
+try:
+    import discord.ext.voice_recv.router as _vr_router
+    _orig_vr_do_run = _vr_router.PacketRouter._do_run
+
+    def _safe_vr_do_run(self):
+        while not self._end_thread.is_set():
+            self.waiter.wait()
+            with self._lock:
+                for decoder in list(self.waiter.items):
+                    try:
+                        data = decoder.pop_data()
+                        if data is not None:
+                            self.sink.write(data.source, data)
+                    except Exception as loop_err:
+                        logger.debug(f"[VOICE_RECV] PacketRouter loop error suppressed: {loop_err}")
+
+    _vr_router.PacketRouter._do_run = _safe_vr_do_run
+    logger.info("[MEETING] Applied crash-resilience patch to voice_recv.PacketRouter._do_run")
+except Exception as _vr_r_err:
+    logger.debug(f"[MEETING] Note: voice_recv.router patch: {_vr_r_err}")
+
 # Base directory for temporary meeting audio files
 TEMP_MEETINGS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp_meetings")
 
