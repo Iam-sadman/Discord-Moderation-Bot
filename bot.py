@@ -96,13 +96,13 @@ class ModularBot(commands.Bot):
 
         self.tree.on_error = on_tree_error
 
-        # Load all cogs from the cogs directory
+        # Load all cogs from the cogs directory (meetings is dedicated to secondary MeetingAssistantBot)
         cogs_dir = os.path.join(os.path.dirname(__file__), "cogs")
-        legacy_music_cogs = {"directstream", "localmusic", "usermusic"}
+        excluded_cogs = {"directstream", "localmusic", "usermusic", "meetings"}
         if os.path.exists(cogs_dir):
             for filename in sorted(os.listdir(cogs_dir)):
                 if filename.endswith(".py") and not filename.startswith("_"):
-                    if filename[:-3] in legacy_music_cogs:
+                    if filename[:-3] in excluded_cogs:
                         continue
                     cog_name = f"cogs.{filename[:-3]}"
                     try:
@@ -184,10 +184,23 @@ class ModularBot(commands.Bot):
 async def main():
     bot = ModularBot()
 
+    # Start Meeting Assistant Bot (Dedicated Secondary Bot) if token configured
+    meeting_bot = None
+    meeting_token = getattr(Config, "MEETING_BOT_TOKEN", "").strip()
+    if meeting_token:
+        try:
+            from meeting_bot import MeetingAssistantBot
+            meeting_bot = MeetingAssistantBot()
+            logger.info("[OK] Dedicated Meeting Assistant Bot instance created")
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to instantiate MeetingAssistantBot: {e}\n{traceback.format_exc()}")
+    else:
+        logger.info("[INFO] MEETING_BOT_TOKEN not configured in .env — Meeting Assistant Bot disabled")
+
     # Start web dashboard in background
     try:
         from dashboard.app import create_dashboard
-        dashboard = create_dashboard(bot)
+        dashboard = create_dashboard(bot, meeting_bot=meeting_bot)
 
         async def run_dashboard():
             await dashboard.run_task(
@@ -201,7 +214,13 @@ async def main():
     except Exception as e:
         logger.warning(f"[!] Dashboard not started: {e}")
 
-    await bot.start(Config.TOKEN)
+    # Start Discord Bot instance(s)
+    tasks = [bot.start(Config.TOKEN)]
+    if meeting_bot and meeting_token:
+        tasks.append(meeting_bot.start(meeting_token))
+        logger.info("[OK] Starting Primary ModularBot and Meeting Assistant Bot concurrently...")
+
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":

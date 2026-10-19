@@ -285,13 +285,14 @@ def resolve_author_profile(guild, user_id: str = "", access_key: str = "", name:
     return author_name, avatar_url
 
 
-def create_dashboard(bot):
+def create_dashboard(bot, meeting_bot=None):
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     static_dir = os.path.join(os.path.dirname(__file__), "static")
     app = Quart(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path="/static")
     app.secret_key = Config.WEB_SECRET
     app = cors(app)
     app.discord_bot = bot
+    app.meeting_bot = meeting_bot
 
     from dashboard.moderation_api import moderation_bp
     app.register_blueprint(moderation_bp)
@@ -304,6 +305,9 @@ def create_dashboard(bot):
 
     from dashboard.tickets_api import tickets_bp
     app.register_blueprint(tickets_bp)
+
+    from dashboard.meetings_api import meetings_bp
+    app.register_blueprint(meetings_bp)
 
     # ──── Helper: Record Security Event ────
     async def record_audit_event(action: str, target: str, details: str):
@@ -649,7 +653,8 @@ def create_dashboard(bot):
             mod_templates=mod_templates,
             mod_permissions=mod_permissions,
             operator_role=operator_role,
-            forms=guild_forms
+            forms=guild_forms,
+            meeting_bot=getattr(app, "meeting_bot", None)
         )
 
     # ──── API Routes: Logs & Catalog ────

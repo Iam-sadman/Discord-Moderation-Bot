@@ -23,6 +23,12 @@ class Config:
     TICKETS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "tickets.db")
     INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", os.getenv("WEB_SECRET_KEY", "forms_internal_bridge_secret"))
 
+    # Meeting Assistant Bot (Secondary Bot Instance)
+    MEETING_BOT_TOKEN = os.getenv("MEETING_BOT_TOKEN", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    MEETINGS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "meetings.db")
+
     # Optional fallbacks from environment
     SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", 300))
     ARC_CHANNEL_ID = os.getenv("ARC_CHANNEL_ID", "")

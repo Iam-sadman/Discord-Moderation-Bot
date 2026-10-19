@@ -6,6 +6,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/forms.css') }}?v=2.4">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.4">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=4.3">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/meetings.css') }}?v=1.0">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.4">
 {% endblock %}
 
@@ -96,6 +97,9 @@
     </button>
     <button class="tab-btn" onclick="switchGuildTab('tickets', this)" id="tab-btn-tickets">
         🎫 Support Tickets
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('meetings', this)" id="tab-btn-meetings">
+        🎙️ Meetings & Training
     </button>
     <button class="tab-btn" onclick="switchGuildTab('music', this)" id="tab-btn-music">
         🎵 Music Engine
@@ -4088,6 +4092,285 @@
             </div>
         </form>
     </div>
+<!-- ========================================== -->
+<!-- 17. MEETINGS & TRAINING ASSISTANT TAB     -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-meetings">
+    <!-- Header Bar -->
+    <div class="meetings-header-bar">
+        <div>
+            <div class="meetings-header-title">
+                <span>🎙️ Meetings & Training Assistant</span>
+                <span id="mtg-bot-badge" class="meetings-status-badge offline">
+                    <span class="meetings-dot"></span> Checking...
+                </span>
+            </div>
+            <div class="meetings-header-subtitle">
+                Dedicated Secondary Discord Voice Bot for real-time voice recording, participant attendance tracking, and multimodal Gemini AI meeting minutes. Operates independently so audio recording and server music playback never conflict.
+            </div>
+            <div style="margin-top: 6px;">
+                <span style="font-size: 12px; color: var(--text-muted);">Bot Instance: </span>
+                <strong id="mtg-bot-name" style="font-size: 12px; color: #cbd5e1;">Detecting...</strong>
+            </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button class="btn btn-secondary" onclick="initMeetingsTab()">
+                🔄 Refresh
+            </button>
+            <button class="btn btn-primary" onclick="openStartMeetingModal()">
+                🔴 Start Recording
+            </button>
+        </div>
+    </div>
+
+    <!-- Active Recording Pulsing Live Banner -->
+    <div class="meetings-live-banner" id="mtg-active-banner" style="display: none;">
+        <div class="meetings-live-info">
+            <div class="meetings-live-indicator">
+                🎙️
+            </div>
+            <div>
+                <div class="meetings-live-title" id="mtg-active-title">Live Meeting Recording</div>
+                <div class="meetings-live-meta" id="mtg-active-meta">
+                    <span>Voice Channel</span>
+                </div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 14px;">
+            <div class="meetings-live-timer" id="mtg-active-timer">00:00:00</div>
+            <button class="btn btn-danger" id="mtg-btn-stop-active" onclick="stopActiveMeetingFromUI()">
+                ⏹️ Stop Recording & Generate Minutes
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="meetings-stats-grid">
+        <div class="meetings-stat-card">
+            <div class="meetings-stat-icon" style="color: #6366f1;">📋</div>
+            <div>
+                <div class="meetings-stat-val" id="mtg-stat-total">0</div>
+                <div class="meetings-stat-lbl">Total Meetings</div>
+            </div>
+        </div>
+        <div class="meetings-stat-card">
+            <div class="meetings-stat-icon" style="color: #ef4444;">🔴</div>
+            <div>
+                <div class="meetings-stat-val" id="mtg-stat-active">0</div>
+                <div class="meetings-stat-lbl">Active Recordings</div>
+            </div>
+        </div>
+        <div class="meetings-stat-card">
+            <div class="meetings-stat-icon" style="color: #22c55e;">✅</div>
+            <div>
+                <div class="meetings-stat-val" id="mtg-stat-completed">0</div>
+                <div class="meetings-stat-lbl">Completed Minutes</div>
+            </div>
+        </div>
+        <div class="meetings-stat-card">
+            <div class="meetings-stat-icon" style="color: #38bdf8;">👥</div>
+            <div>
+                <div class="meetings-stat-val" id="mtg-stat-participants">0</div>
+                <div class="meetings-stat-lbl">Unique Attendees</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Grid Layout: Settings & Quick Tips -->
+    <div class="grid-2" style="margin-bottom: 24px;">
+        <!-- Meeting Settings Card -->
+        <div class="glass-card">
+            <div class="card-header">
+                <h3>⚙️ Meeting Assistant Settings</h3>
+            </div>
+            <div style="padding: 16px 20px;">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">
+                        Default Minutes Output Channel
+                    </label>
+                    <select id="mtg-setting-output-channel" class="form-control" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                        <option value="">-- None (Must specify per meeting) --</option>
+                    </select>
+                    <span style="font-size: 11px; color: var(--text-muted); display: block; margin-top: 4px;">
+                        Where the bot posts meeting embeds, summaries, markdown files, and full transcripts.
+                    </span>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 6px;">
+                        Allowed Operator Roles
+                    </label>
+                    <div id="mtg-setting-roles-container" style="max-height: 140px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+                        <span style="font-size: 12px; color: var(--text-muted);">Loading roles...</span>
+                    </div>
+                    <span style="font-size: 11px; color: var(--text-muted); display: block; margin-top: 4px;">
+                        Roles permitted to run <code>/meeting record</code> and start sessions via dashboard. Admins always have access.
+                    </span>
+                </div>
+
+                <div style="text-align: right;">
+                    <button class="btn btn-primary" onclick="saveMeetingSettings()">
+                        💾 Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- How It Works Card -->
+        <div class="glass-card">
+            <div class="card-header">
+                <h3>💡 How It Works</h3>
+            </div>
+            <div style="padding: 16px 20px; font-size: 13px; line-height: 1.6; color: #cbd5e1;">
+                <p style="margin-bottom: 10px;">
+                    <strong>1. Dedicated Second Bot:</strong> Powered by <code>MEETING_BOT_TOKEN</code>, the meeting bot joins voice channels independently without conflicting with music playback.
+                </p>
+                <p style="margin-bottom: 10px;">
+                    <strong>2. Live Attendance Tracking:</strong> The bot records joins, leaves, and total talk time for every attendee into the attendance ledger.
+                </p>
+                <p style="margin-bottom: 10px;">
+                    <strong>3. Gemini Multimodal AI:</strong> Upon stopping, audio is compressed with FFmpeg and transcribed by Gemini AI to produce:
+                </p>
+                <ul style="padding-left: 20px; margin-bottom: 10px;">
+                    <li>Executive Summary & Decisions</li>
+                    <li>Key Discussion Points</li>
+                    <li>Action Items with assignees</li>
+                    <li>Full verbatim English transcript</li>
+                </ul>
+                <p style="margin-bottom: 0; color: var(--text-muted); font-size: 12px;">
+                    🔒 All temporary audio files and Gemini cloud files are destroyed immediately in <code>try...finally</code> cleanup blocks.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Meeting History & Minutes Explorer -->
+    <div class="glass-card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <h3>📁 Meeting History & Minutes</h3>
+            <div class="meetings-filter-group">
+                <select id="mtg-filter-status" class="form-control" onchange="loadMeetingsList(1)" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px;">
+                    <option value="">All Statuses</option>
+                    <option value="completed">Completed</option>
+                    <option value="recording">Recording</option>
+                    <option value="processing">Processing</option>
+                    <option value="failed">Failed</option>
+                </select>
+            </div>
+        </div>
+
+        <div style="padding: 20px;">
+            <div class="meetings-table-container">
+                <table class="meetings-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Meeting Title & Project</th>
+                            <th>Date & Time</th>
+                            <th>Voice Channel</th>
+                            <th>Duration</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mtg-history-tbody">
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                                ⏳ Loading meetings...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="mtg-pagination" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+                <!-- Pagination buttons dynamically rendered -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- START MEETING RECORDING MODAL              -->
+<!-- ========================================== -->
+<div class="mtg-modal-overlay" id="mtg-start-modal" style="display: none;">
+    <div class="mtg-modal-content" style="max-width: 520px;">
+        <div class="mtg-modal-header">
+            <h3>🔴 Start Meeting / Training Recording</h3>
+            <button class="btn btn-sm btn-secondary" onclick="closeStartMeetingModal()">✕</button>
+        </div>
+        <form onsubmit="submitStartMeeting(event)">
+            <div class="mtg-modal-body">
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 6px;">
+                        Meeting Title *
+                    </label>
+                    <input type="text" id="mtg-start-title" required class="form-control" placeholder="e.g. Q3 Sprint Planning or Mod Team Training" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 6px;">
+                        Voice Channel to Join *
+                    </label>
+                    <select id="mtg-start-voice-channel" required class="form-control" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                        <option value="">-- Select Voice Channel --</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 6px;">
+                        Output Text Channel
+                    </label>
+                    <select id="mtg-start-output-channel" class="form-control" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                        <option value="">-- Use Default Output Channel --</option>
+                    </select>
+                    <span style="font-size: 11px; color: var(--text-muted); display: block; margin-top: 4px;">
+                        Embeds & attachment files will be posted here when finished.
+                    </span>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 6px;">
+                        Project Code / Category (Optional)
+                    </label>
+                    <input type="text" id="mtg-start-project" class="form-control" placeholder="e.g. CORE-DEV, QC-OPS, STAFF" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-subtle); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                </div>
+            </div>
+            <div class="mtg-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeStartMeetingModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="mtg-btn-submit-start">🔴 Start Recording</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MEETING MINUTES & TRANSCRIPT VIEWER MODAL  -->
+<!-- ========================================== -->
+<div class="mtg-modal-overlay" id="mtg-minutes-modal" style="display: none;">
+    <div class="mtg-modal-content">
+        <div class="mtg-modal-header">
+            <h3 id="mtg-minutes-title">📋 Meeting Minutes</h3>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <a id="mtg-btn-dl-md" href="#" class="btn btn-sm btn-secondary" title="Download Markdown Minutes">
+                    📥 .md
+                </a>
+                <a id="mtg-btn-dl-txt" href="#" class="btn btn-sm btn-secondary" title="Download Text Transcript">
+                    📥 .txt
+                </a>
+                <button class="btn btn-sm btn-secondary" onclick="closeMeetingMinutesModal()">✕</button>
+            </div>
+        </div>
+        <div class="mtg-modal-body" id="mtg-minutes-modal-body">
+            <!-- Dynamic content loaded via JS -->
+        </div>
+        <div class="mtg-modal-footer">
+            <span style="font-size: 12px; color: var(--text-muted);">
+                Powered by Gemini Multimodal AI & Discord.py Voice Recv
+            </span>
+            <button class="btn btn-secondary" onclick="closeMeetingMinutesModal()">Close</button>
+        </div>
+    </div>
 </div>
 
 {% endblock %}
@@ -4192,6 +4475,8 @@
             initQCTrackerTab();
         } else if (tabName === 'tickets') {
             initTicketsTab();
+        } else if (tabName === 'meetings') {
+            initMeetingsTab();
         } else {
             stopMusicAutoPolling();
         }
@@ -7938,4 +8223,5 @@ async function saveCurrentTemplate() {
 </script>
 <script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.4"></script>
 <script src="{{ url_for('static', filename='js/tickets.js') }}?v=4.4"></script>
+<script src="{{ url_for('static', filename='js/meetings.js') }}?v=1.0"></script>
 {% endblock %}
