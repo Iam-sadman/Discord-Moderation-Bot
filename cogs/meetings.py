@@ -171,13 +171,22 @@ class MeetingNoteModal(discord.ui.Modal, title="📌 Add Meeting Note"):
 # Audio Sink — Per-User Voice Capture
 # =============================================================================
 
-class MeetingAudioSink:
+try:
+    from discord.ext import voice_recv
+    _AudioSinkBase = voice_recv.AudioSink
+except Exception:
+    _AudioSinkBase = object
+
+
+class MeetingAudioSink(_AudioSinkBase):
     """
     Captures incoming audio per user using discord-ext-voice-recv.
     Stores raw PCM data per speaker, then writes to files on stop.
     """
 
     def __init__(self, meeting_id: int):
+        if _AudioSinkBase is not object:
+            super().__init__()
         self.meeting_id = meeting_id
         self.temp_dir = os.path.join(TEMP_MEETINGS_DIR, f"meeting_{meeting_id}")
         os.makedirs(self.temp_dir, exist_ok=True)
@@ -185,30 +194,43 @@ class MeetingAudioSink:
         self.user_names: Dict[int, str] = {}
         self._stopped = False
 
+    def wants_opus(self) -> bool:
+        """Instructs discord-ext-voice-recv to decode Opus to 16-bit 48kHz stereo PCM."""
+        return False
+
+    def cleanup(self):
+        """Called by discord-ext-voice-recv when listener is stopped."""
+        self._stopped = True
+
     def write(self, user: Optional[discord.User], data):
         """Called by voice_recv for each audio packet."""
         if self._stopped:
             return
 
-        # Resolve speaker identifier
-        if user is not None:
-            uid = user.id
-            name = getattr(user, "display_name", str(user))
-        else:
-            # Fallback to RTP packet SSRC if available
-            packet = getattr(data, "packet", None)
-            ssrc = getattr(packet, "ssrc", None)
-            uid = ssrc if ssrc is not None else 0
-            name = f"Speaker_{uid}" if uid else "Speaker"
+        try:
+            # Resolve speaker identifier
+            if user is not None:
+                uid = user.id
+                name = getattr(user, "display_name", str(user))
+            else:
+                packet = getattr(data, "packet", None)
+                ssrc = getattr(packet, "ssrc", None) or getattr(data, "ssrc", None)
+                uid = ssrc if ssrc is not None else 0
+                name = f"Speaker_{uid}" if uid else "Speaker"
 
-        # Handle both raw bytes and VoiceData objects from discord-ext-voice-recv
-        pcm = getattr(data, "pcm", data)
-        if isinstance(pcm, (bytes, bytearray)) and len(pcm) > 0:
-            if uid not in self.user_buffers:
-                self.user_buffers[uid] = bytearray()
-                self.user_names[uid] = name
-                logger.info(f"[MEETING] Audio capture active for {name} (ID: {uid})")
-            self.user_buffers[uid].extend(pcm)
+            # Check both .pcm and raw bytes fallback
+            pcm = getattr(data, "pcm", None)
+            if pcm is None and isinstance(data, (bytes, bytearray)):
+                pcm = data
+
+            if pcm and len(pcm) > 0:
+                if uid not in self.user_buffers:
+                    self.user_buffers[uid] = bytearray()
+                    self.user_names[uid] = name
+                    logger.info(f"[MEETING] Audio capture active for {name} (ID: {uid})")
+                self.user_buffers[uid].extend(pcm)
+        except Exception as write_err:
+            logger.warning(f"[MEETING] Error in sink write: {write_err}")
 
     def stop(self):
         """Marks the sink as stopped."""
@@ -422,64 +444,59 @@ class MeetingsCog(commands.Cog):
         # Connect to voice channel and start recording
         sink = MeetingAudioSink(meeting_id)
 
-        # Handle lingering voice connection safely
+        # Always cleanly disconnect any lingering voice client to ensure clean state
         vc = guild.voice_client
         if vc:
-            if vc.is_connected() and vc.channel and vc.channel.id == voice_channel.id:
+            try:
+                if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
+                    vc.stop_listening()
+            except Exception:
                 pass
-            elif vc.is_connected():
-                try:
-                    await vc.move_to(voice_channel)
-                except Exception:
-                    try:
-                        await vc.disconnect(force=True)
-                        await asyncio.sleep(0.4)
-                    except Exception:
-                        pass
-                    vc = None
-            else:
-                try:
-                    await vc.disconnect(force=True)
-                    await asyncio.sleep(0.4)
-                except Exception:
-                    pass
-                vc = None
-
-        use_voice_recv = False
-        if not vc or not vc.is_connected():
             try:
-                from discord.ext import voice_recv
-                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=15.0, reconnect=True)
-                use_voice_recv = True
-            except Exception as e:
-                logger.warning(f"[MEETING] VoiceRecvClient connection failed ({e}), attempting standard voice connection...")
-                if guild.voice_client:
-                    try:
-                        await guild.voice_client.disconnect(force=True)
-                        await asyncio.sleep(0.4)
-                    except Exception:
-                        pass
-                try:
-                    vc = await voice_channel.connect(timeout=15.0, reconnect=True)
-                    use_voice_recv = False
-                except Exception as err:
-                    logger.error(f"[MEETING] Failed to connect to voice channel: {err}", exc_info=True)
-                    await self.db.update_meeting_status(
-                        meeting_id, "failed", error_message=f"Failed to connect to voice: {err}"
-                    )
-                    await interaction.followup.send(
-                        f"❌ Failed to connect to **{voice_channel.name}**: `{err}`",
-                        ephemeral=True
-                    )
-                    return
+                await vc.disconnect(force=True)
+                await asyncio.sleep(0.4)
+            except Exception:
+                pass
+            vc = None
 
-        # Setup audio receiving sink safely
-        if use_voice_recv and hasattr(vc, "listen"):
+        # Freshly connect using VoiceRecvClient
+        try:
+            from discord.ext import voice_recv
+            vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=20.0, reconnect=True, self_deaf=False)
+            use_voice_recv = True
+            logger.info(f"[MEETING] VoiceRecvClient connected to {voice_channel.name}")
+        except Exception as e:
+            logger.error(f"[MEETING] VoiceRecvClient connection failed: {e}", exc_info=True)
+            await self.db.update_meeting_status(
+                meeting_id, "failed", error_message=f"Failed to connect recording client: {e}"
+            )
+            await interaction.followup.send(
+                f"❌ Failed to connect recording client to **{voice_channel.name}**: `{e}`\n"
+                f"Ensure `discord-ext-voice-recv` and `PyNaCl` are installed in the bot's environment.",
+                ephemeral=True
+            )
+            return
+
+        # Start audio recording sink
+        try:
+            if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
+                vc.stop_listening()
+                await asyncio.sleep(0.1)
+            vc.listen(sink)
+            logger.info(f"[MEETING] Successfully attached MeetingAudioSink to {voice_channel.name}")
+        except Exception as sink_err:
+            logger.error(f"[MEETING] Failed to attach audio sink: {sink_err}", exc_info=True)
             try:
-                vc.listen(voice_recv.BasicSink(sink.write))
-            except Exception as sink_err:
-                logger.warning(f"[MEETING] Failed to attach voice_recv BasicSink: {sink_err}")
-                use_voice_recv = False
+                await vc.disconnect(force=True)
+            except Exception:
+                pass
+            await self.db.update_meeting_status(
+                meeting_id, "failed", error_message=f"Failed to start recording sink: {sink_err}"
+            )
+            await interaction.followup.send(
+                f"❌ Failed to start recording: `{sink_err}`", ephemeral=True
+            )
+            return
 
         # Store active meeting state
         self._active_meetings[guild.id] = {
@@ -667,8 +684,11 @@ class MeetingsCog(commands.Cog):
 
         # Disconnect from voice
         try:
-            if vc and vc.is_connected():
-                await vc.disconnect(force=True)
+            if vc:
+                if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
+                    vc.stop_listening()
+                if vc.is_connected():
+                    await vc.disconnect(force=True)
         except Exception as e:
             logger.warning(f"[MEETING] Error disconnecting VC: {e}")
 
@@ -1172,8 +1192,11 @@ class MeetingsCog(commands.Cog):
 
         # Disconnect
         try:
-            if vc and vc.is_connected():
-                await vc.disconnect(force=True)
+            if vc:
+                if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
+                    vc.stop_listening()
+                if vc.is_connected():
+                    await vc.disconnect(force=True)
         except Exception:
             pass
 
@@ -1251,60 +1274,51 @@ class MeetingsCog(commands.Cog):
         # Connect to voice
         sink = MeetingAudioSink(meeting_id)
 
-        # Handle lingering voice connection safely
+        # Always cleanly disconnect any lingering voice client to ensure clean state
         vc = guild.voice_client
         if vc:
-            if vc.is_connected() and vc.channel and vc.channel.id == voice_channel.id:
+            try:
+                if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
+                    vc.stop_listening()
+            except Exception:
                 pass
-            elif vc.is_connected():
-                try:
-                    await vc.move_to(voice_channel)
-                except Exception:
-                    try:
-                        await vc.disconnect(force=True)
-                        await asyncio.sleep(0.4)
-                    except Exception:
-                        pass
-                    vc = None
-            else:
-                try:
-                    await vc.disconnect(force=True)
-                    await asyncio.sleep(0.4)
-                except Exception:
-                    pass
-                vc = None
-
-        use_voice_recv = False
-        if not vc or not vc.is_connected():
             try:
-                from discord.ext import voice_recv
-                vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=15.0, reconnect=True)
-                use_voice_recv = True
-            except Exception as e:
-                logger.warning(f"[MEETING] VoiceRecvClient connect failed ({e}), attempting standard voice connection...")
-                if guild.voice_client:
-                    try:
-                        await guild.voice_client.disconnect(force=True)
-                        await asyncio.sleep(0.4)
-                    except Exception:
-                        pass
-                try:
-                    vc = await voice_channel.connect(timeout=15.0, reconnect=True)
-                    use_voice_recv = False
-                except Exception as err:
-                    logger.error(f"[MEETING] Failed to connect to voice channel: {err}", exc_info=True)
-                    await self.db.update_meeting_status(
-                        meeting_id, "failed", error_message=f"Failed to connect: {err}"
-                    )
-                    return {"success": False, "error": f"Failed to connect to voice: {err}"}
+                await vc.disconnect(force=True)
+                await asyncio.sleep(0.4)
+            except Exception:
+                pass
+            vc = None
 
-        # Setup audio receiving sink safely
-        if use_voice_recv and hasattr(vc, "listen"):
+        # Freshly connect using VoiceRecvClient
+        try:
+            from discord.ext import voice_recv
+            vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=20.0, reconnect=True, self_deaf=False)
+            use_voice_recv = True
+            logger.info(f"[MEETING] Dashboard: VoiceRecvClient connected to {voice_channel.name}")
+        except Exception as e:
+            logger.error(f"[MEETING] Dashboard: VoiceRecvClient connection failed: {e}", exc_info=True)
+            await self.db.update_meeting_status(
+                meeting_id, "failed", error_message=f"Failed to connect recording client: {e}"
+            )
+            return {"success": False, "error": f"Failed to connect recording client: {e}"}
+
+        # Start audio recording sink
+        try:
+            if hasattr(vc, "stop_listening") and hasattr(vc, "is_listening") and vc.is_listening():
+                vc.stop_listening()
+                await asyncio.sleep(0.1)
+            vc.listen(sink)
+            logger.info(f"[MEETING] Dashboard: Successfully attached MeetingAudioSink to {voice_channel.name}")
+        except Exception as sink_err:
+            logger.error(f"[MEETING] Dashboard: Failed to attach audio sink: {sink_err}", exc_info=True)
             try:
-                vc.listen(voice_recv.BasicSink(sink.write))
-            except Exception as sink_err:
-                logger.warning(f"[MEETING] Failed to attach voice_recv BasicSink: {sink_err}")
-                use_voice_recv = False
+                await vc.disconnect(force=True)
+            except Exception:
+                pass
+            await self.db.update_meeting_status(
+                meeting_id, "failed", error_message=f"Failed to start recording sink: {sink_err}"
+            )
+            return {"success": False, "error": f"Failed to start recording: {sink_err}"}
 
         self._active_meetings[guild_id] = {
             "meeting_id": meeting_id,
