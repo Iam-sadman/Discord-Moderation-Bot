@@ -26,7 +26,7 @@ class Config:
     # Meeting Assistant Bot (Secondary Bot Instance)
     MEETING_BOT_TOKEN = os.getenv("MEETING_BOT_TOKEN", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     MEETINGS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "meetings.db")
 
     # Optional fallbacks from environment
