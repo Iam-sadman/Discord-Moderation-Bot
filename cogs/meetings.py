@@ -35,6 +35,14 @@ from services.meetings_ai import (
 
 logger = logging.getLogger("MeetingsCog")
 
+# Ensure default opus library is loaded for discord-ext-voice-recv
+try:
+    if not discord.opus.is_loaded():
+        discord.opus._load_default()
+        logger.info("[MEETING] Default opus library loaded successfully.")
+except Exception as _opus_err:
+    logger.warning(f"[MEETING] Opus load check: {_opus_err}")
+
 # Base directory for temporary meeting audio files
 TEMP_MEETINGS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp_meetings")
 
@@ -179,16 +187,27 @@ class MeetingAudioSink:
 
     def write(self, user: Optional[discord.User], data):
         """Called by voice_recv for each audio packet."""
-        if self._stopped or user is None:
+        if self._stopped:
             return
-        uid = user.id
-        if uid not in self.user_buffers:
-            self.user_buffers[uid] = bytearray()
-            self.user_names[uid] = getattr(user, "display_name", str(user))
+
+        # Resolve speaker identifier
+        if user is not None:
+            uid = user.id
+            name = getattr(user, "display_name", str(user))
+        else:
+            # Fallback to RTP packet SSRC if available
+            packet = getattr(data, "packet", None)
+            ssrc = getattr(packet, "ssrc", None)
+            uid = ssrc if ssrc is not None else 0
+            name = f"Speaker_{uid}" if uid else "Speaker"
 
         # Handle both raw bytes and VoiceData objects from discord-ext-voice-recv
         pcm = getattr(data, "pcm", data)
-        if isinstance(pcm, (bytes, bytearray)):
+        if isinstance(pcm, (bytes, bytearray)) and len(pcm) > 0:
+            if uid not in self.user_buffers:
+                self.user_buffers[uid] = bytearray()
+                self.user_names[uid] = name
+                logger.info(f"[MEETING] Audio capture active for {name} (ID: {uid})")
             self.user_buffers[uid].extend(pcm)
 
     def stop(self):
@@ -203,10 +222,13 @@ class MeetingAudioSink:
         self._stopped = True
         saved_files = []
 
+        logger.info(f"[MEETING] Saving audio buffers for meeting {self.meeting_id}. Speakers: {len(self.user_buffers)}")
         for uid, buffer in self.user_buffers.items():
             if not buffer:
                 continue
 
+            speaker_name = self.user_names.get(uid, f"User_{uid}")
+            logger.info(f"[MEETING] Writing audio for {speaker_name} ({len(buffer)} bytes PCM)")
             pcm_path = os.path.join(self.temp_dir, f"user_{uid}.pcm")
             wav_path = os.path.join(self.temp_dir, f"user_{uid}.wav")
 
@@ -229,6 +251,7 @@ class MeetingAudioSink:
             except Exception as e:
                 logger.warning(f"[MEETING] Failed to convert PCM to WAV for user {uid}: {e}")
 
+        logger.info(f"[MEETING] Audio files ready for processing: {len(saved_files)} files")
         return saved_files
 
     @staticmethod
@@ -463,6 +486,7 @@ class MeetingsCog(commands.Cog):
             "meeting_id": meeting_id,
             "title": title,
             "voice_channel": voice_channel,
+            "output_channel_id": output_channel.id,
             "voice_client": vc,
             "sink": sink,
             "use_voice_recv": use_voice_recv,
@@ -666,9 +690,20 @@ class MeetingsCog(commands.Cog):
         try:
             output_ch_id = state.get("output_channel_id")
             ctrl_msg_id = state.get("control_message_id")
-            if output_ch_id and ctrl_msg_id:
+            if not output_ch_id:
+                db_m = await self.db.get_meeting(meeting_id)
+                if db_m and db_m.get("output_channel_id"):
+                    output_ch_id = int(db_m["output_channel_id"])
+
+            if output_ch_id:
                 channel = self.bot.get_channel(output_ch_id)
-                if channel:
+                if not channel:
+                    try:
+                        channel = await self.bot.fetch_channel(output_ch_id)
+                    except Exception:
+                        channel = None
+
+                if channel and ctrl_msg_id:
                     try:
                         ctrl_msg = await channel.fetch_message(ctrl_msg_id)
                         processing_embed = discord.Embed(
@@ -683,10 +718,10 @@ class MeetingsCog(commands.Cog):
                             timestamp=datetime.now(timezone.utc)
                         )
                         await ctrl_msg.edit(embed=processing_embed, view=None)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as edit_err:
+                        logger.warning(f"[MEETING] Could not edit control message: {edit_err}")
+        except Exception as e:
+            logger.warning(f"[MEETING] Could not update control panel: {e}")
 
         await interaction.followup.send(
             f"✅ Meeting **{title}** stopped ({fmt_duration(duration)}).\n"
@@ -711,6 +746,7 @@ class MeetingsCog(commands.Cog):
 
             if not audio_files:
                 # No audio captured — update status and notify
+                logger.warning(f"[MEETING] No audio captured for meeting {meeting_id}.")
                 await self.db.update_meeting_status(
                     meeting_id, "failed",
                     error_message="No audio was captured. Ensure members were speaking and "
@@ -740,13 +776,24 @@ class MeetingsCog(commands.Cog):
 
             # Save results to database
             meeting = await self.db.get_meeting(meeting_id)
-            output_channel = self.bot.get_channel(int(meeting["output_channel_id"])) if meeting else None
+            out_ch_id = int(meeting["output_channel_id"]) if meeting and meeting.get("output_channel_id") else None
+
+            output_channel = None
+            if out_ch_id:
+                output_channel = self.bot.get_channel(out_ch_id)
+                if not output_channel:
+                    try:
+                        output_channel = await self.bot.fetch_channel(out_ch_id)
+                    except Exception as ch_err:
+                        logger.warning(f"[MEETING] Could not fetch output channel {out_ch_id}: {ch_err}")
 
             output_msg_id = None
             if output_channel:
                 output_msg_id = await self._post_minutes_embed(
                     meeting_id, meeting, result, output_channel, guild
                 )
+            else:
+                logger.error(f"[MEETING] Output channel {out_ch_id} could not be resolved! Minutes will still be in DB.")
 
             await self.db.save_meeting_results(
                 meeting_id=meeting_id,
@@ -959,6 +1006,13 @@ class MeetingsCog(commands.Cog):
 
             if output_ch_id:
                 channel = self.bot.get_channel(output_ch_id)
+                if not channel:
+                    try:
+                        channel = await self.bot.fetch_channel(output_ch_id)
+                    except Exception as ch_err:
+                        logger.warning(f"[MEETING] Could not fetch channel {output_ch_id} for error embed: {ch_err}")
+                        channel = None
+
                 if channel:
                     embed = discord.Embed(
                         title="❌ Meeting Minutes Generation Failed",
@@ -971,6 +1025,8 @@ class MeetingsCog(commands.Cog):
                         timestamp=datetime.now(timezone.utc)
                     )
                     await channel.send(embed=embed)
+                else:
+                    logger.error(f"[MEETING] Could not resolve output channel {output_ch_id} to post error embed.")
         except Exception as e:
             logger.warning(f"[MEETING] Failed to post error embed: {e}")
 
