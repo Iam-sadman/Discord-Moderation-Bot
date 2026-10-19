@@ -48,12 +48,25 @@ function formatTimerClock(seconds) {
     return `${pad(m)}:${pad(s)}`;
 }
 
+// Safe Guild ID resolver
+function getGuildId() {
+    if (window.guildId) return String(window.guildId);
+    const parts = window.location.pathname.split('/');
+    for (let i = 0; i < parts.length; i++) {
+        if (parts[i] === 'guild' && parts[i + 1]) {
+            return parts[i + 1];
+        }
+    }
+    return '';
+}
+
 // =============================================================================
 // 1. Initialization
 // =============================================================================
 
 async function initMeetingsTab() {
-    console.log("[Meetings] Initializing Meetings & Training tab for guild:", window.guildId);
+    const gid = getGuildId();
+    console.log("[Meetings] Initializing Meetings & Training tab for guild:", gid);
     try {
         await Promise.all([
             fetchMeetingStatus(),
@@ -71,8 +84,9 @@ async function initMeetingsTab() {
 // =============================================================================
 
 async function fetchMeetingStatus() {
+    const gid = getGuildId();
     try {
-        const res = await fetch(`/api/meetings/guilds/${window.guildId}/status`);
+        const res = await fetch(`/api/meetings/guilds/${gid}/status`);
         const data = await res.json();
         if (!data.success) return;
 
@@ -112,8 +126,9 @@ async function fetchMeetingStatus() {
 }
 
 async function fetchMeetingChannels() {
+    const gid = getGuildId();
     try {
-        const res = await fetch(`/api/meetings/guilds/${window.guildId}/channels`);
+        const res = await fetch(`/api/meetings/guilds/${gid}/channels`);
         const data = await res.json();
         if (data.success) {
             meetingVoiceChannels = data.voice_channels || [];
@@ -170,33 +185,38 @@ function populateChannelDropdowns() {
     const rolesContainer = document.getElementById('mtg-setting-roles-container');
     if (rolesContainer) {
         rolesContainer.innerHTML = '';
-        const allowedSet = new Set(currentMeetingSettings ? currentMeetingSettings.allowed_role_ids : []);
-        meetingRoles.forEach(r => {
-            const label = document.createElement('label');
-            label.style.display = 'inline-flex';
-            label.style.alignItems = 'center';
-            label.style.gap = '6px';
-            label.style.marginRight = '12px';
-            label.style.marginBottom = '6px';
-            label.style.fontSize = '12px';
-            label.style.cursor = 'pointer';
+        if (!meetingRoles || meetingRoles.length === 0) {
+            rolesContainer.innerHTML = '<span style="font-size: 12px; color: var(--text-muted);">No roles found or bot not connected to server.</span>';
+        } else {
+            const allowedSet = new Set(currentMeetingSettings ? currentMeetingSettings.allowed_role_ids : []);
+            meetingRoles.forEach(r => {
+                const label = document.createElement('label');
+                label.style.display = 'inline-flex';
+                label.style.alignItems = 'center';
+                label.style.gap = '6px';
+                label.style.marginRight = '12px';
+                label.style.marginBottom = '6px';
+                label.style.fontSize = '12px';
+                label.style.cursor = 'pointer';
 
-            const chk = document.createElement('input');
-            chk.type = 'checkbox';
-            chk.value = r.id;
-            chk.className = 'mtg-role-checkbox';
-            if (allowedSet.has(r.id)) chk.checked = true;
+                const chk = document.createElement('input');
+                chk.type = 'checkbox';
+                chk.value = r.id;
+                chk.className = 'mtg-role-checkbox';
+                if (allowedSet.has(r.id)) chk.checked = true;
 
-            label.appendChild(chk);
-            label.appendChild(document.createTextNode(r.name));
-            rolesContainer.appendChild(label);
-        });
+                label.appendChild(chk);
+                label.appendChild(document.createTextNode(r.name));
+                rolesContainer.appendChild(label);
+            });
+        }
     }
 }
 
 async function fetchMeetingSettings() {
+    const gid = getGuildId();
     try {
-        const res = await fetch(`/api/meetings/guilds/${window.guildId}/settings`);
+        const res = await fetch(`/api/meetings/guilds/${gid}/settings`);
         const data = await res.json();
         if (data.success && data.settings) {
             currentMeetingSettings = data.settings;
@@ -211,6 +231,7 @@ async function fetchMeetingSettings() {
 }
 
 async function saveMeetingSettings() {
+    const gid = getGuildId();
     const outSelect = document.getElementById('mtg-setting-output-channel');
     const defaultOutId = outSelect ? outSelect.value : null;
 
@@ -218,7 +239,7 @@ async function saveMeetingSettings() {
     const allowedRoles = Array.from(roleCheckboxes).map(cb => cb.value);
 
     try {
-        const res = await fetch(`/api/meetings/guilds/${window.guildId}/settings`, {
+        const res = await fetch(`/api/meetings/guilds/${gid}/settings`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -230,7 +251,7 @@ async function saveMeetingSettings() {
         if (data.success) {
             alert("✅ Meeting Assistant settings updated successfully.");
             currentMeetingSettings = {
-                guild_id: window.guildId,
+                guild_id: gid,
                 default_output_channel_id: defaultOutId,
                 allowed_role_ids: allowedRoles
             };
@@ -297,8 +318,9 @@ async function stopActiveMeetingFromUI() {
         btn.innerHTML = `⏳ Processing...`;
     }
 
+    const gid = getGuildId();
     try {
-        const res = await fetch(`/api/meetings/guilds/${window.guildId}/stop`, {
+        const res = await fetch(`/api/meetings/guilds/${gid}/stop`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ meeting_id: meetingId })
@@ -358,8 +380,9 @@ async function submitStartMeeting(e) {
         submitBtn.textContent = "Connecting to Voice...";
     }
 
+    const gid = getGuildId();
     try {
-        const res = await fetch(`/api/meetings/guilds/${window.guildId}/start`, {
+        const res = await fetch(`/api/meetings/guilds/${gid}/start`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -405,7 +428,8 @@ async function loadMeetingsList(page = 1) {
     const statusFilter = document.getElementById('mtg-filter-status') ? document.getElementById('mtg-filter-status').value : '';
     currentMeetingStatusFilter = statusFilter;
 
-    let url = `/api/meetings/guilds/${window.guildId}/list?page=${page}&limit=15`;
+    const gid = getGuildId();
+    let url = `/api/meetings/guilds/${gid}/list?page=${page}&limit=15`;
     if (statusFilter) url += `&status=${encodeURIComponent(statusFilter)}`;
 
     try {
