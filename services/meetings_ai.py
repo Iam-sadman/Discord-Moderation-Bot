@@ -136,10 +136,10 @@ async def generate_meeting_minutes(
                 hint_str = ", ".join(speakers_hint)
                 prompt += f"\n\nKnown speakers in this meeting: {hint_str}. Use these names in the transcript where possible."
 
-            # Build candidate models list: primary configured model first, followed by stable fallbacks
-            configured_model = Config.GEMINI_MODEL or "gemini-1.5-flash"
+            # Build candidate models list: primary configured model first, followed by modern 2.x fallbacks
+            configured_model = Config.GEMINI_MODEL or "gemini-2.0-flash"
             candidate_models = [configured_model]
-            for fallback in ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-8b"]:
+            for fallback in ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]:
                 if fallback not in candidate_models:
                     candidate_models.append(fallback)
 
