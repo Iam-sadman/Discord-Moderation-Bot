@@ -136,18 +136,39 @@ async def generate_meeting_minutes(
                 hint_str = ", ".join(speakers_hint)
                 prompt += f"\n\nKnown speakers in this meeting: {hint_str}. Use these names in the transcript where possible."
 
-            # Generate structured minutes
-            logger.info(f"[AI] Generating minutes with model: {Config.GEMINI_MODEL}")
-            response = client.models.generate_content(
-                model=Config.GEMINI_MODEL,
-                contents=[uploaded_file, prompt],
-                config={
-                    "response_mime_type": "application/json",
-                    "temperature": 0.2,
-                }
-            )
+            # Build candidate models list: primary configured model first, followed by stable fallbacks
+            configured_model = Config.GEMINI_MODEL or "gemini-1.5-flash"
+            candidate_models = [configured_model]
+            for fallback in ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-8b"]:
+                if fallback not in candidate_models:
+                    candidate_models.append(fallback)
 
-            return response.text
+            last_err = None
+            for model_name in candidate_models:
+                try:
+                    logger.info(f"[AI] Generating minutes with model: {model_name}")
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[uploaded_file, prompt],
+                        config={
+                            "response_mime_type": "application/json",
+                            "temperature": 0.2,
+                        }
+                    )
+                    if response and response.text:
+                        logger.info(f"[AI] Successfully generated minutes using model: {model_name}")
+                        return response.text
+                except Exception as model_err:
+                    last_err = model_err
+                    logger.warning(
+                        f"[AI] Model '{model_name}' failed or overloaded ({model_err}). "
+                        f"Attempting fallback model if available..."
+                    )
+                    continue
+
+            if last_err:
+                raise last_err
+            raise RuntimeError("All Gemini candidate models failed to generate content.")
 
         raw_response = await asyncio.to_thread(_upload_and_generate)
         result = _parse_json_response(raw_response)
