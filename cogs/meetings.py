@@ -192,6 +192,8 @@ class MeetingAudioSink(_AudioSinkBase):
         os.makedirs(self.temp_dir, exist_ok=True)
         self.user_buffers: Dict[int, bytearray] = {}
         self.user_names: Dict[int, str] = {}
+        self._decoders: Dict[int, Any] = {}
+        self.total_packets: int = 0
         self._stopped = False
 
     def wants_opus(self) -> bool:
@@ -201,6 +203,7 @@ class MeetingAudioSink(_AudioSinkBase):
     def cleanup(self):
         """Called by discord-ext-voice-recv when listener is stopped."""
         self._stopped = True
+        self._decoders.clear()
 
     def write(self, user: Optional[discord.User], data):
         """Called by voice_recv for each audio packet."""
@@ -208,6 +211,8 @@ class MeetingAudioSink(_AudioSinkBase):
             return
 
         try:
+            self.total_packets += 1
+
             # Resolve speaker identifier
             if user is not None:
                 uid = user.id
@@ -223,6 +228,15 @@ class MeetingAudioSink(_AudioSinkBase):
             if pcm is None and isinstance(data, (bytes, bytearray)):
                 pcm = data
 
+            # Fallback: if pcm is None, try manual opus decode from data.opus
+            if not pcm and hasattr(data, "opus") and data.opus:
+                try:
+                    if uid not in self._decoders:
+                        self._decoders[uid] = discord.opus.Decoder()
+                    pcm = self._decoders[uid].decode(data.opus)
+                except Exception:
+                    pass
+
             if pcm and len(pcm) > 0:
                 if uid not in self.user_buffers:
                     self.user_buffers[uid] = bytearray()
@@ -235,6 +249,7 @@ class MeetingAudioSink(_AudioSinkBase):
     def stop(self):
         """Marks the sink as stopped."""
         self._stopped = True
+        self._decoders.clear()
 
     async def save_audio_files(self) -> List[str]:
         """
@@ -465,6 +480,14 @@ class MeetingsCog(commands.Cog):
             vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=20.0, reconnect=True, self_deaf=False)
             use_voice_recv = True
             logger.info(f"[MEETING] VoiceRecvClient connected to {voice_channel.name}")
+
+            # Ensure bot member is not deafened in voice channel
+            if bot_member and bot_member.voice and (bot_member.voice.deaf or bot_member.voice.self_deaf):
+                try:
+                    await bot_member.edit(deafen=False)
+                    logger.info("[MEETING] Cleared deafen status on bot member.")
+                except Exception as deaf_err:
+                    logger.debug(f"[MEETING] Could not un-deafen bot member: {deaf_err}")
         except Exception as e:
             logger.error(f"[MEETING] VoiceRecvClient connection failed: {e}", exc_info=True)
             await self.db.update_meeting_status(
@@ -649,6 +672,95 @@ class MeetingsCog(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             await interaction.followup.send("ℹ️ No active meeting recording in this server.", ephemeral=True)
+
+    @meeting_group.command(name="diag", description="Diagnose live meeting audio capture and voice connection")
+    async def meeting_diag(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        guild = interaction.guild
+        state = self._active_meetings.get(guild.id)
+
+        # Check Opus library status
+        opus_loaded = discord.opus.is_loaded()
+
+        # Check bot voice state
+        bot_member = guild.me
+        bot_voice = bot_member.voice if bot_member else None
+
+        embed = discord.Embed(
+            title="🔍 Meeting Bot Voice Diagnostics",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        embed.add_field(
+            name="Opus Library",
+            value=f"{'✅ Loaded' if opus_loaded else '❌ Not Loaded'}",
+            inline=True
+        )
+
+        if bot_voice and bot_voice.channel:
+            deaf_status = []
+            if bot_voice.self_deaf:
+                deaf_status.append("Self-Deafened (❌)")
+            if bot_voice.deaf:
+                deaf_status.append("Server-Deafened (❌)")
+            if not deaf_status:
+                deaf_status.append("Normal (✅ Can Receive Audio)")
+            embed.add_field(
+                name="Bot Voice State",
+                value=f"Channel: **{bot_voice.channel.name}**\nDeafen: {', '.join(deaf_status)}",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="Bot Voice State",
+                value="⚠️ Bot is not connected to any voice channel",
+                inline=False
+            )
+
+        if not state:
+            embed.add_field(
+                name="Active Recording Session",
+                value="No meeting currently recording in this server.\nRun `/meeting start <title>` to start recording.",
+                inline=False
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        vc = state.get("voice_client")
+        sink = state.get("sink")
+        vc_cls_name = vc.__class__.__name__ if vc else "None"
+        is_listening = getattr(vc, "is_listening", lambda: False)() if vc else False
+
+        embed.add_field(name="Meeting ID", value=str(state["meeting_id"]), inline=True)
+        embed.add_field(name="VoiceClient Class", value=f"`{vc_cls_name}`", inline=True)
+        embed.add_field(name="Voice Listening", value="✅ True" if is_listening else "❌ False", inline=True)
+
+        if sink:
+            total_packets = getattr(sink, "total_packets", 0)
+            user_buffers = getattr(sink, "user_buffers", {})
+            user_names = getattr(sink, "user_names", {})
+
+            speaker_lines = []
+            total_bytes = 0
+            for uid, buf in user_buffers.items():
+                s_name = user_names.get(uid, f"User {uid}")
+                total_bytes += len(buf)
+                approx_sec = len(buf) / (48000 * 2 * 2) if len(buf) > 0 else 0
+                speaker_lines.append(f"• **{s_name}**: `{len(buf):,}` bytes PCM (~{approx_sec:.1f}s)")
+
+            summary_val = f"Total RTP Packets: **{total_packets:,}**\nTotal Audio Data: **{total_bytes:,}** bytes\n"
+            if speaker_lines:
+                summary_val += "\n" + "\n".join(speaker_lines[:8])
+            else:
+                summary_val += (
+                    "\n⚠️ **No voice data captured yet.**\n"
+                    "Speak into the microphone while in the channel and run `/meeting diag` again.\n"
+                    "*(If packets stay at 0 after speaking, check if the bot is server-deafened or if Discord E2EE is active)*"
+                )
+
+            embed.add_field(name="Audio Buffer Status", value=summary_val[:1024], inline=False)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     # =========================================================================
     # Core Processing Logic
@@ -1295,6 +1407,14 @@ class MeetingsCog(commands.Cog):
             vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient, timeout=20.0, reconnect=True, self_deaf=False)
             use_voice_recv = True
             logger.info(f"[MEETING] Dashboard: VoiceRecvClient connected to {voice_channel.name}")
+
+            # Ensure bot member is not deafened in voice channel
+            if bot_member and bot_member.voice and (bot_member.voice.deaf or bot_member.voice.self_deaf):
+                try:
+                    await bot_member.edit(deafen=False)
+                    logger.info("[MEETING] Dashboard: Cleared deafen status on bot member.")
+                except Exception as deaf_err:
+                    logger.debug(f"[MEETING] Dashboard: Could not un-deafen bot member: {deaf_err}")
         except Exception as e:
             logger.error(f"[MEETING] Dashboard: VoiceRecvClient connection failed: {e}", exc_info=True)
             await self.db.update_meeting_status(
