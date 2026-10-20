@@ -906,8 +906,9 @@ async function loadQCTeams() {
                </div>`
             : '<span class="text-muted text-xs italic">— Unassigned —</span>';
 
+        const safeChannels = window.guildChannels || (typeof guildChannels !== 'undefined' ? guildChannels : []);
         const channelName = t.team_channel_id
-            ? `#${guildChannels.find(c => String(c.id) === String(t.team_channel_id))?.name || t.team_channel_id}`
+            ? `#${safeChannels.find(c => String(c.id) === String(t.team_channel_id))?.name || t.team_channel_id}`
             : '<span class="text-muted text-xs">Default Alert Channel</span>';
 
         return `
@@ -1040,15 +1041,18 @@ async function loadQCSettings() {
 }
 
 function populateQCSettingsDropdowns() {
+    const channels = window.guildChannels || (typeof guildChannels !== 'undefined' ? guildChannels : []);
+    const roles = window.guildRoles || (typeof guildRoles !== 'undefined' ? guildRoles : []);
+
     const chSelect = document.getElementById('qc-settings-alert-channel');
     if (chSelect && chSelect.children.length <= 1) {
         chSelect.innerHTML = '<option value="">-- No Default Channel Selected --</option>' +
-            guildChannels.map(c => `<option value="${escapeHTML(String(c.id))}">#${escapeHTML(c.name)}</option>`).join('');
+            channels.map(c => `<option value="${escapeHTML(String(c.id))}">#${escapeHTML(c.name)}</option>`).join('');
     }
 
     const rolesContainer = document.getElementById('qc-settings-checker-roles-container');
     if (rolesContainer && rolesContainer.children.length === 0) {
-        rolesContainer.innerHTML = guildRoles.map(r => `
+        rolesContainer.innerHTML = roles.map(r => `
             <label class="d-flex align-center gap-2 text-sm" style="margin-bottom: 6px;">
                 <input type="checkbox" class="qc-checker-role-checkbox" value="${escapeHTML(String(r.id))}">
                 <span>${escapeHTML(r.name)} <span class="text-xs text-muted">(${escapeHTML(String(r.id))})</span></span>

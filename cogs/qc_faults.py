@@ -24,6 +24,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from services.qc_faults_db import QCFaultsDB
+from config import Config
 
 logger = logging.getLogger("QCFaultsCog")
 
@@ -250,34 +251,83 @@ class QCFaultsCog(commands.Cog, name="QCFaults"):
 
     async def is_qc_authorized(self, interaction: discord.Interaction) -> bool:
         """
-        Validates if user is Server Admin, has a configured Checker Role,
-        or is a registered Team Leader.
+        Validates if user is Server Owner, Admin, has a configured Checker Role
+        (via QC Settings or Cog Permissions RBAC), or is a registered Team Leader.
         """
-        if not interaction.guild:
+        guild = interaction.guild
+        if not guild:
             return False
 
-        user = interaction.user
-        perms = interaction.permissions
+        # 1. Resolve user to discord.Member so roles are reliably accessible
+        member = interaction.user
+        if not isinstance(member, discord.Member):
+            cached_member = guild.get_member(member.id)
+            if cached_member:
+                member = cached_member
+            else:
+                try:
+                    member = await guild.fetch_member(member.id)
+                except Exception:
+                    pass
 
-        # 1. Server Admin
-        if perms.administrator or perms.manage_guild:
+        # 2. Server Owner & Discord Administrators / Managers
+        if getattr(guild, "owner_id", None) == member.id:
             return True
 
-        guild_id = interaction.guild_id
-        # 2. Configured Checker Roles
+        guild_perms = getattr(member, "guild_permissions", None)
+        if guild_perms and (guild_perms.administrator or guild_perms.manage_guild):
+            return True
+
+        perms = getattr(interaction, "permissions", None)
+        if perms and (perms.administrator or perms.manage_guild):
+            return True
+
+        # Extract member roles as both int and str sets for foolproof matching
+        member_roles = getattr(member, "roles", [])
+        user_role_ids = {r.id for r in member_roles}
+        user_role_ids_str = {str(r.id) for r in member_roles}
+
+        # 3. Check Config RBAC Cog Permissions (qc_faults, qc)
+        try:
+            if hasattr(Config, "check_member_cog_permission"):
+                if await Config.check_member_cog_permission(member, "qc_faults"):
+                    return True
+                if await Config.check_member_cog_permission(member, "qc"):
+                    return True
+        except Exception as e:
+            logger.debug(f"Config RBAC check notice: {e}")
+
+        # 4. Check Configured Checker Roles in QC Settings (qc_settings table)
+        guild_id = getattr(guild, "id", None) or getattr(interaction, "guild_id", None)
         settings = await self.db.get_settings(guild_id)
-        checker_roles = set(settings.get("checker_role_ids") or [])
-        user_roles = {r.id for r in getattr(user, "roles", [])}
-        if checker_roles.intersection(user_roles):
+        raw_checker_roles = settings.get("checker_role_ids") or []
+        checker_roles_int = {int(r) for r in raw_checker_roles if str(r).isdigit()}
+        checker_roles_str = {str(r) for r in raw_checker_roles}
+
+        if checker_roles_int.intersection(user_role_ids) or checker_roles_str.intersection(user_role_ids_str):
             return True
 
-        # 3. Registered Team Leader
+        # 5. Fallback: Check if member has Checker access via LOA / Staff checker roles if set
+        try:
+            if hasattr(Config, "get_cog_permission"):
+                loa_perms = await Config.get_cog_permission(guild_id, "loa")
+                if loa_perms and loa_perms.get("access_level") == "roles_only":
+                    loa_roles = {int(r) for r in loa_perms.get("allowed_roles", []) if str(r).isdigit()}
+                    if loa_roles.intersection(user_role_ids):
+                        return True
+        except Exception as e:
+            logger.debug(f"LOA checker permission check notice: {e}")
+
+        # 6. Registered Team Leader (by user ID or leader role)
         teams = await self.db.list_teams(guild_id)
         for t in teams:
-            if t.get("leader_user_id") and t["leader_user_id"] == user.id:
+            leader_uid = t.get("leader_user_id")
+            if leader_uid and str(leader_uid) == str(member.id):
                 return True
-            if t.get("leader_role_id") and t["leader_role_id"] in user_roles:
-                return True
+            leader_rid = t.get("leader_role_id")
+            if leader_rid:
+                if leader_rid in user_role_ids or str(leader_rid) in user_role_ids_str:
+                    return True
 
         return False
 

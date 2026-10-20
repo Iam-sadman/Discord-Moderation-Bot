@@ -1283,6 +1283,49 @@
                         Save Settings Perms
                     </button>
                 </div>
+
+                <!-- 7. QC & Fault Tracker Cog -->
+                <div class="cog-perm-card" id="perm-card-qc_faults">
+                    <div class="cog-perm-header">
+                        <strong class="gh-s160">🔍 QC & Fault Tracker</strong>
+                        <span class="role-badge staff">QC Staff</span>
+                    </div>
+                    <p class="gh-s148">
+                        Controls access to <code>/fault log</code> and fault logging commands on Discord.
+                    </p>
+                    <label class="gh-s149">Access Level</label>
+                    <select id="perm-level-qc_faults" onchange="handleCogLevelChange('qc_faults')" class="gh-s150" title="QC Faults Cog Access Level">
+                        <option value="roles_only" {{ "selected" if cog_permissions.get('qc_faults', {}).get('access_level') == 'roles_only' else "" }}>👥 Checkers & Staff Roles (+ Admins)</option>
+                        <option value="admin_only" {{ "selected" if cog_permissions.get('qc_faults', {}).get('access_level') == 'admin_only' else "" }}>👑 Administrators Only</option>
+                        <option value="everyone" {{ "selected" if cog_permissions.get('qc_faults', {}).get('access_level') == 'everyone' else "" }}>🌐 Everyone</option>
+                    </select>
+
+                    <div id="perm-roles-wrap-qc_faults" class="perm-roles-wrap {{ 'd-none' if cog_permissions.get('qc_faults', {}).get('access_level') != 'roles_only' else '' }}">
+                        <label class="gh-s149">Permitted Checker Roles</label>
+                        <div class="chip-container gh-s151" id="perm-chips-qc_faults">
+                            {% for rid in cog_permissions.get('qc_faults', {}).get('allowed_roles', []) %}
+                            <span class="user-chip" id="perm-chip-qc_faults-{{ rid }}">
+                                Role #{{ rid }}
+                                <span class="btn-remove-chip" onclick="removePermRole('qc_faults', '{{ rid }}')">&times;</span>
+                            </span>
+                            {% endfor %}
+                            {% if not cog_permissions.get('qc_faults', {}).get('allowed_roles') %}
+                            <span class="empty-role-hint gh-s152">None added (Admins only)</span>
+                            {% endif %}
+                        </div>
+                        <div class="gh-s153">
+                            <select id="perm-select-qc_faults" class="gh-s154" title="Select Role to Grant QC Checker Access">
+                                <option value="">-- Add Checker Role --</option>
+                                {% for r in roles %}{% if r.name != "@everyone" %}<option value="{{ r.id }}">{{ r.name }}</option>{% endif %}{% endfor %}
+                            </select>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="addPermRole('qc_faults')">+ Add</button>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn btn-primary btn-sm gh-s155" onclick="saveCogPerm('qc_faults')">
+                        Save QC Perms
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -4399,7 +4442,8 @@
     "loa": {{ cog_permissions.get('loa', {}).get('allowed_roles', []) | tojson }},
     "labeler_tracker": {{ cog_permissions.get('labeler_tracker', {}).get('allowed_roles', []) | tojson }},
     "logger": {{ cog_permissions.get('logger', {}).get('allowed_roles', []) | tojson }},
-    "settings": {{ cog_permissions.get('settings', {}).get('allowed_roles', []) | tojson }}
+    "settings": {{ cog_permissions.get('settings', {}).get('allowed_roles', []) | tojson }},
+    "qc_faults": {{ cog_permissions.get('qc_faults', {}).get('allowed_roles', []) | tojson }}
 }
 </script>
 <script type="application/json" id="allowed-self-roles-data">

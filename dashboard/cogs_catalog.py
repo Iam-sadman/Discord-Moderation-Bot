@@ -39,6 +39,10 @@ def resolve_command_permissions(cmd_name: str, cog_name: str, app_cmd_perms: Any
     if c == "/loa_status":
         return "Everyone"
 
+    # QC & Fault Tracker Cog
+    if cog_name in ("QCFaults", "QCFaultsCog") or c.startswith("/fault"):
+        return "Checkers / Admin"
+
     # Logger Cog
     if c.startswith("/log") or c.startswith("/logsearch"):
         return "Manage Server / Admin"
@@ -140,11 +144,18 @@ def get_cogs_and_commands_catalog(bot) -> List[Dict[str, Any]]:
             "category": "Community & Operations",
             "color": "#14B8A6",
             "description": "Production-ready form builder with customizable fields, multi-page modals, approval/rejection workflows, live scheduling, and Excel/CSV exports."
+        },
+        "QCFaults": {
+            "display_name": "QC & Fault Tracker",
+            "icon": "🔍",
+            "category": "Operations & QC",
+            "color": "#10B981",
+            "description": "Quality Control & Fault Tracking system for project teams, labelers, and checkers with color-coded alerts and dynamic acknowledgment."
         }
     }
 
     # Desired canonical presentation order
-    canonical_order = ["Settings", "Moderation", "FormsCog", "Forms", "LabelerTracker", "Announcement", "Loa", "Logger", "Music"]
+    canonical_order = ["Settings", "Moderation", "FormsCog", "Forms", "QCFaults", "LabelerTracker", "Announcement", "Loa", "Logger", "Music"]
 
     # Function to parse an app_command (command or group)
     def parse_app_command(cmd, cog_name: str, prefix="/") -> List[Dict[str, Any]]:

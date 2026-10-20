@@ -793,11 +793,22 @@ async def api_qc_update_settings(guild_id: int):
     if isinstance(raw_roles, list):
         for rid in raw_roles:
             s_rid = str(rid).strip()
-            if SNOWFLAKE_REGEX.match(s_rid):
+            if s_rid.isdigit():
                 checker_role_ids.append(int(s_rid))
 
     db = QCFaultsDB.get_instance()
     await db.update_settings(guild_id, alert_channel_id, checker_role_ids)
+
+    # Synchronize with global Cog RBAC permissions
+    try:
+        await Config.set_cog_permission(
+            guild_id,
+            "qc_faults",
+            "roles_only" if checker_role_ids else "admin_only",
+            checker_role_ids
+        )
+    except Exception as e:
+        logger.warning(f"Could not sync cog_permissions for qc_faults: {e}")
 
     return jsonify({"success": True, "message": "QC Settings saved successfully"})
 

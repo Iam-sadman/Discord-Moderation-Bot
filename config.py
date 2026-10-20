@@ -258,6 +258,10 @@ class Config:
             "moderation": {
                 "access_level": "roles_only",
                 "allowed_roles": []
+            },
+            "qc_faults": {
+                "access_level": "roles_only",
+                "allowed_roles": []
             }
         }
 
@@ -276,16 +280,20 @@ class Config:
     @classmethod
     async def get_cog_permission(cls, guild_id: int, cog_name: str) -> Dict[str, Any]:
         cog_key = cog_name.lower().replace(" ", "_")
-        if cog_key == "labelertracker":
+        if cog_key in ("labelertracker", "labeler_tracker"):
             cog_key = "labeler_tracker"
+        elif cog_key in ("qc", "qcfaults", "qc_faults", "qcfault"):
+            cog_key = "qc_faults"
         all_perms = await cls.get_all_cog_permissions(guild_id)
         return all_perms.get(cog_key, {"access_level": "admin_only", "allowed_roles": []})
 
     @classmethod
     async def set_cog_permission(cls, guild_id: int, cog_name: str, access_level: str, allowed_roles: List[Any]):
         cog_key = cog_name.lower().replace(" ", "_")
-        if cog_key == "labelertracker":
+        if cog_key in ("labelertracker", "labeler_tracker"):
             cog_key = "labeler_tracker"
+        elif cog_key in ("qc", "qcfaults", "qc_faults", "qcfault"):
+            cog_key = "qc_faults"
 
         saved = await cls.get_guild_setting(guild_id, "cog_permissions", {})
         if not isinstance(saved, dict):

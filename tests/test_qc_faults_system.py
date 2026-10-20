@@ -592,6 +592,88 @@ class TestQCFaultsSystem(unittest.IsolatedAsyncioTestCase):
         f_after = await self.db.get_fault_log(fault_id, self.guild_id)
         self.assertEqual(f_after["status"], "acknowledged")
 
+    # =========================================================================
+    # 11. is_qc_authorized Permission Checks
+    # =========================================================================
+
+    async def test_11_is_qc_authorized(self):
+        """Validates is_qc_authorized for Server Admin, Checker Roles (int/str), uncached Member, and Team Leaders."""
+        cog = QCFaultsCog(MagicMock())
+        cog.db = self.db
+
+        checker_role_id = 999111222333
+
+        # Save settings with string role ID
+        await self.db.update_settings(self.guild_id, self.alert_channel_id, [str(checker_role_id)])
+
+        # 1. Member with checker role (int id)
+        mock_role = MagicMock()
+        mock_role.id = checker_role_id
+
+        mock_checker = MagicMock(spec=discord.Member)
+        mock_checker.id = 555666
+        mock_checker.roles = [mock_role]
+        mock_checker.guild_permissions = discord.Permissions.none()
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.guild = MagicMock()
+        interaction.guild.id = self.guild_id
+        interaction.guild.owner_id = 111111
+        interaction.guild_id = self.guild_id
+        interaction.user = mock_checker
+        interaction.permissions = discord.Permissions.none()
+
+        auth1 = await cog.is_qc_authorized(interaction)
+        self.assertTrue(auth1, "Checker member with int role ID matching str setting must be authorized")
+
+        # 2. Uncached user (discord.User) resolved via guild
+        mock_user = MagicMock(spec=discord.User)
+        mock_user.id = 555666
+        del mock_user.roles
+
+        interaction.guild.get_member.return_value = mock_checker
+        interaction.user = mock_user
+
+        auth2 = await cog.is_qc_authorized(interaction)
+        self.assertTrue(auth2, "Uncached user resolved to member must be authorized")
+
+        # 3. Server Admin
+        admin_perms = discord.Permissions.all()
+        admin_member = MagicMock(spec=discord.Member)
+        admin_member.id = 777888
+        admin_member.roles = []
+        admin_member.guild_permissions = admin_perms
+        interaction.user = admin_member
+        interaction.permissions = admin_perms
+
+        auth3 = await cog.is_qc_authorized(interaction)
+        self.assertTrue(auth3, "Server Administrator must be authorized")
+
+        # 4. Registered Team Leader
+        await self.db.create_team(self.guild_id, "QC Alpha", 123456, leader_user_id=888999)
+        leader_user = MagicMock(spec=discord.Member)
+        leader_user.id = 888999
+        leader_user.roles = []
+        leader_user.guild_permissions = discord.Permissions.none()
+        interaction.user = leader_user
+        interaction.permissions = discord.Permissions.none()
+
+        auth4 = await cog.is_qc_authorized(interaction)
+        self.assertTrue(auth4, "Registered Team Leader must be authorized")
+
+        # 5. Unauthorized random user
+        random_user = MagicMock(spec=discord.Member)
+        random_user.id = 999999
+        random_user.roles = []
+        random_user.guild_permissions = discord.Permissions.none()
+        interaction.user = random_user
+        interaction.permissions = discord.Permissions.none()
+        interaction.guild.owner_id = 111111
+        interaction.guild.get_member.return_value = random_user
+
+        auth5 = await cog.is_qc_authorized(interaction)
+        self.assertFalse(auth5, "Unauthorized random user without roles must be denied")
+
 
 if __name__ == "__main__":
     unittest.main()

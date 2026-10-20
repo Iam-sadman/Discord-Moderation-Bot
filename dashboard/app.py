@@ -1229,6 +1229,19 @@ def create_dashboard(bot, meeting_bot=None):
             return jsonify({"error": "cog_name is required"}), 400
 
         await Config.set_cog_permission(guild_id, cog_name, access_level, allowed_roles)
+
+        # If configuring qc_faults / qc, also sync to QCFaultsDB
+        clean_key = cog_name.lower().replace(" ", "_")
+        if clean_key in ("qc", "qc_faults", "qcfaults"):
+            try:
+                from services.qc_faults_db import QCFaultsDB
+                qc_db = QCFaultsDB.get_instance()
+                cur_settings = await qc_db.get_settings(guild_id)
+                clean_roles = [int(r) for r in allowed_roles if str(r).isdigit()]
+                await qc_db.update_settings(guild_id, cur_settings.get("alert_channel_id"), clean_roles)
+            except Exception as e:
+                logger.warning(f"Could not sync QCFaultsDB from cog_permissions: {e}")
+
         current_user = session.get("user_id", "admin")
         await record_audit_event(
             action="UPDATE_COG_PERMISSIONS",

@@ -149,7 +149,8 @@ class QCFaultsDB:
                 row = await cursor.fetchone()
                 if row:
                     try:
-                        role_ids = json.loads(row["checker_role_ids"] or "[]")
+                        raw_roles = json.loads(row["checker_role_ids"] or "[]")
+                        role_ids = [int(r) for r in raw_roles if str(r).isdigit()]
                     except Exception:
                         role_ids = []
                     return {
@@ -170,7 +171,8 @@ class QCFaultsDB:
         checker_role_ids: Optional[List[int]] = None
     ) -> bool:
         """Upserts QC settings for a guild."""
-        roles_json = json.dumps(checker_role_ids or [])
+        clean_roles = [int(r) for r in (checker_role_ids or []) if str(r).isdigit()]
+        roles_json = json.dumps(clean_roles)
         async with self.get_connection() as db:
             await db.execute("""
                 INSERT INTO qc_settings (guild_id, alert_channel_id, checker_role_ids)
