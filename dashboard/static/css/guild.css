@@ -1316,8 +1316,9 @@
 .gh-s303 { z-index: 10000 !important; }
 .gh-s304 { display: none !important; background: rgba(0,0,0,0.25) !important; border-left: 3px solid var(--accent-primary) !important; padding: 12px !important; border-radius: 4px !important; margin-bottom: 20px !important; font-size: 12px !important; }
 .gh-s305 { justify-content: space-between !important; }
-.gh-s306 { z-index: 10001 !important; }
-.gh-s307 { display: none !important; position: fixed !important; inset: 0 !important; z-index: 9999 !important; background: rgba(0,0,0,0.75) !important; -webkit-backdrop-filter: blur(8px) !important; backdrop-filter: blur(8px) !important; align-items: center !important; justify-content: center !important; }
+.gh-s307 { position: fixed !important; inset: 0 !important; z-index: 9999 !important; background: rgba(0,0,0,0.75) !important; -webkit-backdrop-filter: blur(8px) !important; backdrop-filter: blur(8px) !important; align-items: center !important; justify-content: center !important; }
+.gh-s307:not(.active) { display: none !important; }
+.gh-s307.active { display: flex !important; }
 .gh-s308 { background: var(--bg-card) !important; border: 1px solid var(--border-hover) !important; border-radius: var(--radius-lg) !important; padding: 28px !important; width: 100% !important; max-width: 480px !important; box-shadow: var(--shadow-glow) !important; }
 .gh-s309 { font-size: 18px !important; font-weight: 700 !important; margin-bottom: 12px !important; color: #ffffff !important; }
 .gh-s310 { font-size: 13px !important; color: var(--text-muted) !important; margin-bottom: 18px !important; }

@@ -1982,6 +1982,9 @@
                 <button type="button" class="tab-btn" onclick="switchModAction('ban', this)" id="btn-mod-tab-ban">
                     🔨 Ban
                 </button>
+                <button type="button" class="tab-btn" onclick="switchModAction('unban', this)" id="btn-mod-tab-unban">
+                    🔓 Unban
+                </button>
             </div>
 
             <!-- Action Form Fields -->
@@ -2863,8 +2866,8 @@
 <!-- ========================================== -->
 <!-- CONFIRMATION MODAL COMPONENT               -->
 <!-- ========================================== -->
-<div id="mod-confirm-modal" onclick="if(event.target === this) closeConfirmModal()" class="gh-s307">
-    <div class="gh-s308">
+<div id="mod-confirm-modal" onclick="if(event.target === this) closeConfirmModal()" class="modal-backdrop gh-s307">
+    <div class="modal-box gh-s308">
         <h4 class="gh-s309" id="modal-confirm-title">Confirm Destructive Action</h4>
         <p class="gh-s310" id="modal-confirm-desc">Are you sure you want to proceed?</p>
 
@@ -6894,6 +6897,11 @@ function switchModAction(action, btn) {
         msgDeleteGrp.style.display = 'block';
         submitBtn.textContent = '🔨 Permanently Ban';
         submitBtn.className = 'btn btn-danger';
+    } else if (action === 'unban') {
+        durationGrp.style.display = 'none';
+        msgDeleteGrp.style.display = 'none';
+        submitBtn.textContent = '🔓 Unban User';
+        submitBtn.className = 'btn btn-primary';
     }
 }
 
@@ -6995,46 +7003,69 @@ function filterBanList() {
     renderBanList(filtered);
 }
 
-function unbanUser(userId) {
+async function unbanUser(userId, btnEl) {
     const ban = (currentBansList || []).find(b => String(b.user_id) === String(userId));
     const userName = ban ? ban.user_name : `User ${userId}`;
-    const avatar = (ban && ban.avatar) ? ban.avatar : 'https://cdn.discordapp.com/embed/avatars/0.png';
 
-    pendingModActionData = {
-        action: 'unban',
-        target_id: String(userId),
-        reason: 'Appealed via dashboard',
-        notify_dm: false,
-        custom_dm: '',
-        duration_seconds: 0,
-        delete_message_days: 0
-    };
-
-    const modalTitle = document.getElementById('modal-confirm-title');
-    const modalDesc = document.getElementById('modal-confirm-desc');
-    const modalDetails = document.getElementById('modal-confirm-details');
-
-    if (modalTitle) modalTitle.textContent = 'Confirm UNBAN';
-    if (modalDesc) modalDesc.textContent = `Are you sure you want to unban ${userName}?`;
-    if (modalDetails) {
-        modalDetails.innerHTML = `
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-                <img src="${avatar}" style="width:36px; height:36px; border-radius:50%;" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
-                <div>
-                    <div style="font-weight:600; font-size:13px; color:#ffffff;">${escapeHtml(userName)}</div>
-                    <div style="font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono';">${escapeHtml(String(userId))}</div>
-                </div>
-            </div>
-            <div style="margin-bottom:8px;"><strong>Action:</strong> <span class="event-badge update">UNBAN</span></div>
-            <div style="margin-top:10px;">
-                <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Audit Log Reason:</label>
-                <input type="text" id="unban-custom-reason" class="form-input" value="Appealed via dashboard" style="width:100%; font-size:12px;" oninput="if(pendingModActionData) pendingModActionData.reason = this.value.trim();">
-            </div>
-        `;
+    let reason = 'Appealed via dashboard';
+    if (typeof prompt === 'function') {
+        const p = prompt(`Enter reason for unbanning ${userName}:`, 'Appealed via dashboard');
+        if (p === null) return; // User cancelled
+        if (p.trim()) reason = p.trim();
+    } else {
+        if (!confirm(`Are you sure you want to unban ${userName}?`)) return;
     }
 
-    const modal = document.getElementById('mod-confirm-modal');
-    if (modal) modal.style.display = 'flex';
+    const btn = btnEl || (window.event && window.event.target ? window.event.target.closest('button') : null);
+    const oldText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Unbanning...';
+    }
+
+    try {
+        const res = await apiRequest(`/api/guild/${guildId}/moderation/unban`, 'POST', {
+            user_id: String(userId),
+            reason: reason
+        });
+
+        if (res && res.success) {
+            if (res.already_unbanned) {
+                if (typeof showToast === 'function') {
+                    showToast(`${userName} is not currently banned on this server.`, 'info');
+                } else {
+                    alert(`${userName} is not currently banned on this server.`);
+                }
+            } else {
+                const msg = `Successfully unbanned ${userName}!`;
+                if (typeof showToast === 'function') {
+                    showToast(msg, 'success');
+                } else {
+                    alert(msg);
+                }
+            }
+            await loadBanList();
+        } else {
+            const errMsg = res?.error || res?.message || 'Unban failed';
+            if (typeof showToast === 'function') {
+                showToast(errMsg, 'error');
+            } else {
+                alert(errMsg);
+            }
+        }
+    } catch (err) {
+        const errStr = 'Unban error: ' + (err.message || err);
+        if (typeof showToast === 'function') {
+            showToast(errStr, 'error');
+        } else {
+            alert(errStr);
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = oldText || 'Unban';
+        }
+    }
 }
 
 function promptConfirmModAction() {
@@ -7048,7 +7079,8 @@ function promptConfirmModAction() {
         return;
     }
 
-    const reason = document.getElementById('mod-reason-input')?.value.trim() || 'No reason provided';
+    const defaultReason = currentModAction === 'unban' ? 'Appealed via dashboard' : 'No reason provided';
+    const reason = document.getElementById('mod-reason-input')?.value.trim() || defaultReason;
     const notifyDm = document.getElementById('mod-notify-dm-toggle')?.checked || false;
     const customDm = document.getElementById('mod-custom-dm-input')?.value.trim() || '';
 
@@ -7076,11 +7108,13 @@ function promptConfirmModAction() {
     document.getElementById('modal-confirm-desc').textContent = `Are you sure you want to execute ${currentModAction} on user ${targetInput}?`;
 
     let detailsHtml = `
-        <div><strong>Action:</strong> <span class="event-badge ${currentModAction === 'timeout' ? 'update' : 'leave'}">${currentModAction.toUpperCase()}</span></div>
+        <div><strong>Action:</strong> <span class="event-badge ${currentModAction === 'timeout' || currentModAction === 'unban' ? 'update' : 'leave'}">${currentModAction.toUpperCase()}</span></div>
         <div><strong>Target:</strong> ${escapeHtml(targetInput)}</div>
         <div><strong>Reason:</strong> ${escapeHtml(reason)}</div>
-        <div><strong>DM Notification:</strong> ${notifyDm ? 'Enabled' : 'Disabled'}</div>
     `;
+    if (currentModAction !== 'unban') {
+        detailsHtml += `<div><strong>DM Notification:</strong> ${notifyDm ? 'Enabled' : 'Disabled'}</div>`;
+    }
     if (durationSecs > 0) {
         detailsHtml += `<div><strong>Duration:</strong> ${Math.floor(durationSecs / 60)} minutes (${durationSecs}s)</div>`;
     }
@@ -7089,11 +7123,23 @@ function promptConfirmModAction() {
     }
     document.getElementById('modal-confirm-details').innerHTML = detailsHtml;
 
-    document.getElementById('mod-confirm-modal').style.display = 'flex';
+    openConfirmModal();
+}
+
+function openConfirmModal() {
+    const modal = document.getElementById('mod-confirm-modal');
+    if (modal) {
+        modal.classList.add('active');
+        modal.style.setProperty('display', 'flex', 'important');
+    }
 }
 
 function closeConfirmModal() {
-    document.getElementById('mod-confirm-modal').style.display = 'none';
+    const modal = document.getElementById('mod-confirm-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.setProperty('display', 'none', 'important');
+    }
     pendingModActionData = null;
 }
 
@@ -7101,10 +7147,6 @@ async function executeConfirmedModAction() {
     if (!pendingModActionData) return;
 
     const data = pendingModActionData;
-    const customReasonInput = document.getElementById('unban-custom-reason');
-    if (data.action === 'unban' && customReasonInput) {
-        data.reason = customReasonInput.value.trim() || 'Appealed via dashboard';
-    }
     closeConfirmModal();
 
     let endpoint = `/api/guild/${guildId}/moderation/${data.action}`;
@@ -7118,11 +7160,19 @@ async function executeConfirmedModAction() {
     });
 
     if (res && res.success) {
-        const msg = `Successfully executed ${data.action} on target user!`;
-        if (typeof showToast === 'function') {
-            showToast(msg, 'success');
+        if (res.already_unbanned) {
+            if (typeof showToast === 'function') {
+                showToast(`User ${data.target_id} is not currently banned on this server.`, 'info');
+            } else {
+                alert(`User ${data.target_id} is not currently banned on this server.`);
+            }
         } else {
-            alert(msg);
+            const msg = `Successfully executed ${data.action} on target user!`;
+            if (typeof showToast === 'function') {
+                showToast(msg, 'success');
+            } else {
+                alert(msg);
+            }
         }
         const targetInput = document.getElementById('mod-target-input');
         if (targetInput) targetInput.value = '';
