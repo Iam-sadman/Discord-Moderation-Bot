@@ -682,6 +682,44 @@ class TestModerationSystem(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res_ok.status_code, 200)
         self.assertTrue((await res_ok.get_json())["success"])
 
+    async def test_32_unban_api_and_bans_list_snowflake_string(self):
+        """32. Ban list returns snowflake IDs as strings and unban API executes unban successfully."""
+        async with self.client.session_transaction() as sess:
+            sess["user_id"] = "admin_user"
+            sess["role"] = "Admin"
+
+        async def mock_bans_iter(limit=1000):
+            ban_item = MagicMock()
+            ban_item.user = self.mock_target_member
+            ban_item.reason = "Violation of server rules"
+            yield ban_item
+
+        self.mock_guild.bans = mock_bans_iter
+
+        # 1. Fetch ban list - user_id must be a string to avoid JS precision loss
+        res_bans = await self.client.get(f"/api/guild/{self.mock_guild.id}/moderation/bans")
+        self.assertEqual(res_bans.status_code, 200)
+        bans_data = await res_bans.get_json()
+        self.assertTrue(bans_data["success"])
+        self.assertEqual(len(bans_data["bans"]), 1)
+        self.assertIsInstance(bans_data["bans"][0]["user_id"], str)
+        self.assertEqual(bans_data["bans"][0]["user_id"], str(self.mock_target_member.id))
+
+        # 2. Execute unban via API
+        ban_entry = MagicMock()
+        ban_entry.user = self.mock_target_member
+        self.mock_guild.fetch_ban.return_value = ban_entry
+
+        res_unban = await self.client.post(f"/api/guild/{self.mock_guild.id}/moderation/unban", json={
+            "user_id": str(self.mock_target_member.id),
+            "reason": "Appealed via dashboard"
+        })
+        self.assertEqual(res_unban.status_code, 200)
+        unban_data = await res_unban.get_json()
+        self.assertTrue(unban_data["success"])
+        self.mock_guild.unban.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
+

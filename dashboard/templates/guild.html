@@ -6927,6 +6927,8 @@ async function resolveTargetMember() {
     }
 }
 
+let currentBansList = [];
+
 async function loadBanList() {
     const tbody = document.getElementById('ban-list-tbody');
     if (!tbody) return;
@@ -6938,52 +6940,111 @@ async function loadBanList() {
         return;
     }
 
-    if (data.bans.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-dim);">No banned users found in this server.</td></tr>';
+    currentBansList = data.bans || [];
+    filterBanList();
+}
+
+function renderBanList(bans) {
+    const tbody = document.getElementById('ban-list-tbody');
+    if (!tbody) return;
+
+    if (!bans || bans.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; padding: 20px; color: var(--text-dim);">No banned users found.</td></tr>';
         return;
     }
 
-    tbody.innerHTML = data.bans.map(b => `
+    tbody.innerHTML = bans.map(b => {
+        const uidStr = String(b.user_id);
+        const uName = b.user_name || 'Unknown User';
+        const avatarUrl = b.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png';
+        const reasonText = b.reason || 'No reason specified';
+        return `
         <tr>
             <td>
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <img src="${b.avatar}" style="width:24px; height:24px; border-radius:50%;">
+                    <img src="${avatarUrl}" style="width:24px; height:24px; border-radius:50%;" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
                     <div>
-                        <div style="font-weight:600; font-size:12px; color:#ffffff;">${escapeHtml(b.user_name)}</div>
-                        <div style="font-size:10px; color:var(--text-dim); font-family:'JetBrains Mono';">${b.user_id}</div>
+                        <div style="font-weight:600; font-size:12px; color:#ffffff;">${escapeHtml(uName)}</div>
+                        <div style="font-size:10px; color:var(--text-dim); font-family:'JetBrains Mono';">${escapeHtml(uidStr)}</div>
                     </div>
                 </div>
             </td>
-            <td style="font-size:12px; color:var(--text-muted);">${escapeHtml(b.reason)}</td>
+            <td style="font-size:12px; color:var(--text-muted);">${escapeHtml(reasonText)}</td>
             <td>
-                <button type="button" class="btn btn-sm btn-secondary" onclick="unbanUser('${b.user_id}', ${JSON.stringify(b.user_name)})">
+                <button type="button" class="btn btn-sm btn-secondary" onclick="unbanUser('${escapeHtml(uidStr)}')">
                     Unban
                 </button>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
-async function unbanUser(userId, userName) {
-    const reason = prompt(`Reason for unbanning ${userName}:`, 'Appealed via dashboard');
-    if (reason === null) return;
-
-    const res = await apiRequest(`/api/guild/${guildId}/moderation/unban`, 'POST', {
-        user_id: userId,
-        reason: reason
-    });
-    if (res && res.success) {
-        alert(`Successfully unbanned ${userName}!`);
-        loadBanList();
-    } else {
-        alert(res?.error || 'Unban failed');
+function filterBanList() {
+    const query = (document.getElementById('ban-search-input')?.value || '').trim().toLowerCase();
+    if (!query) {
+        renderBanList(currentBansList);
+        return;
     }
+    const filtered = (currentBansList || []).filter(b => {
+        const nameMatch = b.user_name && b.user_name.toLowerCase().includes(query);
+        const idMatch = b.user_id && String(b.user_id).includes(query);
+        const reasonMatch = b.reason && b.reason.toLowerCase().includes(query);
+        return Boolean(nameMatch || idMatch || reasonMatch);
+    });
+    renderBanList(filtered);
+}
+
+function unbanUser(userId) {
+    const ban = (currentBansList || []).find(b => String(b.user_id) === String(userId));
+    const userName = ban ? ban.user_name : `User ${userId}`;
+    const avatar = (ban && ban.avatar) ? ban.avatar : 'https://cdn.discordapp.com/embed/avatars/0.png';
+
+    pendingModActionData = {
+        action: 'unban',
+        target_id: String(userId),
+        reason: 'Appealed via dashboard',
+        notify_dm: false,
+        custom_dm: '',
+        duration_seconds: 0,
+        delete_message_days: 0
+    };
+
+    const modalTitle = document.getElementById('modal-confirm-title');
+    const modalDesc = document.getElementById('modal-confirm-desc');
+    const modalDetails = document.getElementById('modal-confirm-details');
+
+    if (modalTitle) modalTitle.textContent = 'Confirm UNBAN';
+    if (modalDesc) modalDesc.textContent = `Are you sure you want to unban ${userName}?`;
+    if (modalDetails) {
+        modalDetails.innerHTML = `
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+                <img src="${avatar}" style="width:36px; height:36px; border-radius:50%;" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                <div>
+                    <div style="font-weight:600; font-size:13px; color:#ffffff;">${escapeHtml(userName)}</div>
+                    <div style="font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono';">${escapeHtml(String(userId))}</div>
+                </div>
+            </div>
+            <div style="margin-bottom:8px;"><strong>Action:</strong> <span class="event-badge update">UNBAN</span></div>
+            <div style="margin-top:10px;">
+                <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Audit Log Reason:</label>
+                <input type="text" id="unban-custom-reason" class="form-input" value="Appealed via dashboard" style="width:100%; font-size:12px;" oninput="if(pendingModActionData) pendingModActionData.reason = this.value.trim();">
+            </div>
+        `;
+    }
+
+    const modal = document.getElementById('mod-confirm-modal');
+    if (modal) modal.style.display = 'flex';
 }
 
 function promptConfirmModAction() {
     const targetInput = document.getElementById('mod-target-input')?.value.trim();
     if (!targetInput) {
-        alert('Please enter a target member or User ID.');
+        if (typeof showToast === 'function') {
+            showToast('Please enter a target member or User ID.', 'error');
+        } else {
+            alert('Please enter a target member or User ID.');
+        }
         return;
     }
 
@@ -7040,6 +7101,10 @@ async function executeConfirmedModAction() {
     if (!pendingModActionData) return;
 
     const data = pendingModActionData;
+    const customReasonInput = document.getElementById('unban-custom-reason');
+    if (data.action === 'unban' && customReasonInput) {
+        data.reason = customReasonInput.value.trim() || 'Appealed via dashboard';
+    }
     closeConfirmModal();
 
     let endpoint = `/api/guild/${guildId}/moderation/${data.action}`;
@@ -7053,14 +7118,26 @@ async function executeConfirmedModAction() {
     });
 
     if (res && res.success) {
-        alert(`Successfully executed ${data.action} on target user!`);
-        document.getElementById('mod-target-input').value = '';
-        document.getElementById('target-resolved-card').style.display = 'none';
-        if (data.action === 'ban' || data.action === 'tempban') {
+        const msg = `Successfully executed ${data.action} on target user!`;
+        if (typeof showToast === 'function') {
+            showToast(msg, 'success');
+        } else {
+            alert(msg);
+        }
+        const targetInput = document.getElementById('mod-target-input');
+        if (targetInput) targetInput.value = '';
+        const card = document.getElementById('target-resolved-card');
+        if (card) card.style.display = 'none';
+        if (data.action === 'ban' || data.action === 'tempban' || data.action === 'unban') {
             loadBanList();
         }
     } else {
-        alert(res?.error || 'Operation failed');
+        const errMsg = res?.error || 'Operation failed';
+        if (typeof showToast === 'function') {
+            showToast(errMsg, 'error');
+        } else {
+            alert(errMsg);
+        }
     }
 }
 

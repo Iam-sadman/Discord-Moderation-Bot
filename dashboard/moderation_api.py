@@ -35,7 +35,7 @@ async def check_operator_permission(guild_id: int, capability_key: str) -> tuple
         return False, "Unauthorized: Valid session required"
 
     # Master Administrator accounts always bypass capability restrictions
-    if user_role.lower() in ("administrator", "master admin"):
+    if user_role.lower() in ("administrator", "master admin", "admin"):
         return True, ""
 
     db = ModerationDB.get_instance()
@@ -653,7 +653,7 @@ async def api_mod_get_bans(guild_id):
                 if search not in user.name.lower() and search != str(user.id):
                     continue
             bans.append({
-                "user_id": user.id,
+                "user_id": str(user.id),
                 "user_name": str(user),
                 "avatar": str(user.display_avatar.url),
                 "reason": ban_entry.reason or "No reason specified"
@@ -679,13 +679,18 @@ async def api_mod_unban(guild_id):
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
 
+    try:
+        target_uid = int(str(user_id).strip())
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid user_id provided"}), 400
+
     bot = get_bot()
     engine = ModerationEngine.get_instance(bot)
     actor_id = session.get("user_id", "admin")
     actor_name = session.get("name", actor_id)
 
     res = await engine.execute_unban(
-        guild_id=guild_id, target_id=int(user_id), actor_id=actor_id,
+        guild_id=guild_id, target_id=target_uid, actor_id=actor_id,
         actor_name=actor_name, reason=reason, idempotency_key=idempotency_key
     )
     status_code = 200 if res.get("success") else 400

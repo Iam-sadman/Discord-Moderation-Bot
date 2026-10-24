@@ -803,6 +803,8 @@ class ModerationDB:
                     perms[role] = {k: bool(row_dict.get(k, v)) for k, v in defaults.items()}
                 else:
                     perms[role] = defaults.copy()
+            if "Administrator" in perms and "Admin" not in perms:
+                perms["Admin"] = perms["Administrator"].copy()
             return perms
 
     async def set_dashboard_permission_for_role(self, guild_id: int, role: str, capabilities: Dict[str, bool]):
