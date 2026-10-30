@@ -14,6 +14,8 @@ This document is the central architectural index and operational blueprint for t
 | **Leave of Absence (LOA)** | [docs/cogs/loa.md](file:///d:/Projects/DiscordBot/docs/cogs/loa.md) | Member leave applications, supervisor review flow, pinned dashboard, midnight auto-expiration, and CSV export. |
 | **Server Audit Logger** | [docs/cogs/logger.md](file:///d:/Projects/DiscordBot/docs/cogs/logger.md) | Gateway event logging (voice, roles, channels, messages), message delete recovery cache, SQLite WAL pipeline, and member history. |
 | **Unified Music System** | [docs/cogs/music.md](file:///d:/Projects/DiscordBot/docs/cogs/music.md) | YouTube playback, interactive search, server music folder, personal/public libraries, and direct stream uploads. |
+| **Forms Cog** | [docs/cogs/forms.md](file:///d:/Projects/DiscordBot/docs/cogs/forms.md) | Dynamic form builder, multi-page modal pagination, live Discord panels, approvals, and XLSX/CSV exports. |
+| **Forms Incident Guide** | [docs/FORMS_ISSUES_AND_FIXES.md](file:///d:/Projects/DiscordBot/docs/FORMS_ISSUES_AND_FIXES.md) | Incident analysis, resolved gateway timeouts, cooldown architecture, and concurrency guarantees. |
 | **Web Dashboard** | [docs/dashboard/web_dashboard.md](file:///d:/Projects/DiscordBot/docs/dashboard/web_dashboard.md) | Quart web app, Excel user registry (`dashboard_users.xlsx`), hardware/MAC tracking, remote music control, and live audit feed. |
 
 ---

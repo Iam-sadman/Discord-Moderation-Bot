@@ -61,3 +61,9 @@ Discord modals strictly enforce a maximum of 5 `TextInput` components per modal:
 | `/form question add` | `Manage Server` | Adds a custom question with label, style, limits, and placeholder. |
 | `/form question list` | `Manage Server` | Lists all questions and positions for a form. |
 | `/form question delete` | `Manage Server` | Deletes a question and normalizes remaining positions. |
+
+---
+
+## 7. Troubleshooting & Incident History
+For deep-dive architectural analysis, resolved gateway timeout issues, cooldown logic, and concurrency benchmarks, refer to the [Forms Incident & Troubleshooting Guide](file:///d:/Projects/DiscordBot/docs/FORMS_ISSUES_AND_FIXES.md).
+
