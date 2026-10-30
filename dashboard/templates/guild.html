@@ -2752,6 +2752,58 @@
 </div>
 
 <!-- ========================================== -->
+<!-- 2.1 EDIT QUESTION MODAL                    -->
+<!-- ========================================== -->
+<div id="modal-edit-question" class="modal-backdrop">
+    <div class="modal-box modal-box-md">
+        <div class="modal-header">
+            <h3 class="modal-title">✏️ Edit Question</h3>
+            <button onclick="closeEditQuestionModal()" class="modal-close-btn">&times;</button>
+        </div>
+        <form id="edit-question-form" onsubmit="handleEditQuestionSubmit(event)">
+            <input type="hidden" id="eq-question-id" value="">
+            <div class="form-group mb-3">
+                <label class="form-label">
+                    Question Title / Label (Max 45 chars) <span class="required-star">*</span>
+                </label>
+                <input type="text" id="eq-label" class="form-control" required maxlength="45" placeholder="e.g. Why do you want to join our team?">
+            </div>
+            <div class="form-group mb-3">
+                <label class="form-label">Field Style</label>
+                <select id="eq-style" class="form-control" title="Field Style">
+                    <option value="short">Short Single-Line</option>
+                    <option value="paragraph">Paragraph Multi-Line</option>
+                </select>
+            </div>
+            <div class="form-group mb-3">
+                <label class="form-label">Placeholder Hint (Max 100 chars)</label>
+                <input type="text" id="eq-placeholder" class="form-control" maxlength="100" placeholder="Optional helper text...">
+            </div>
+            <div class="gh-s230 mb-3">
+                <div>
+                    <label class="form-label">Min Length</label>
+                    <input type="number" id="eq-min" class="form-control" min="0" max="1000" value="0" placeholder="0">
+                </div>
+                <div>
+                    <label class="form-label">Max Length (≤1000)</label>
+                    <input type="number" id="eq-max" class="form-control" min="1" max="1000" value="1000" placeholder="1000">
+                </div>
+            </div>
+            <div class="form-group mb-4">
+                <label class="gh-s298">
+                    <input type="checkbox" id="eq-required" checked>
+                    Mandatory / Required Field
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeEditQuestionModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="eq-submit-btn">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
 <!-- 3. SUBMISSIONS VIEWER & EXPORT DRAWER      -->
 <!-- ========================================== -->
 <div id="modal-manage-submissions" class="modal-backdrop">
@@ -8063,6 +8115,7 @@ async function saveCurrentTemplate() {
                     <div class="question-actions-row">
                         <button class="btn btn-secondary btn-sm" onclick="moveQuestionOrder(${idx}, -1)" ${isFirst ? 'disabled style="opacity: 0.3;"' : ''} title="Move Up">▲</button>
                         <button class="btn btn-secondary btn-sm" onclick="moveQuestionOrder(${idx}, 1)" ${isLast ? 'disabled style="opacity: 0.3;"' : ''} title="Move Down">▼</button>
+                        <button class="btn btn-secondary btn-sm text-amber" onclick="openEditQuestionModal(${q.id})" title="Edit Question">✏️</button>
                         <button class="btn btn-secondary btn-sm text-rose" onclick="deleteQuestion(${q.id})" title="Delete Question">🗑️</button>
                     </div>
                 </div>
@@ -8088,8 +8141,8 @@ async function saveCurrentTemplate() {
             label: label,
             style: style,
             placeholder: placeholder,
-            min_length: minLen,
-            max_length: maxLen,
+            min_length: isNaN(minLen) ? 0 : minLen,
+            max_length: isNaN(maxLen) ? 1000 : maxLen,
             required: required
         });
 
@@ -8103,6 +8156,60 @@ async function saveCurrentTemplate() {
             await loadGuildForms();
         } else {
             alert(res?.error || 'Failed to add question');
+        }
+    }
+
+    function openEditQuestionModal(questionId) {
+        const q = currentFormQuestions.find(item => item.id === questionId);
+        if (!q) return;
+
+        document.getElementById('eq-question-id').value = q.id;
+        document.getElementById('eq-label').value = q.label || '';
+        document.getElementById('eq-style').value = q.style || 'short';
+        document.getElementById('eq-placeholder').value = q.placeholder || '';
+        document.getElementById('eq-min').value = q.min_length !== null && q.min_length !== undefined ? q.min_length : 0;
+        document.getElementById('eq-max').value = q.max_length !== null && q.max_length !== undefined ? q.max_length : 1000;
+        document.getElementById('eq-required').checked = Boolean(q.required);
+
+        document.getElementById('modal-edit-question').style.display = 'flex';
+    }
+
+    function closeEditQuestionModal() {
+        document.getElementById('modal-edit-question').style.display = 'none';
+    }
+
+    async function handleEditQuestionSubmit(e) {
+        e.preventDefault();
+        const questionId = parseInt(document.getElementById('eq-question-id').value);
+        const label = document.getElementById('eq-label').value.trim();
+        const style = document.getElementById('eq-style').value;
+        const placeholder = document.getElementById('eq-placeholder').value.trim();
+        const minLen = parseInt(document.getElementById('eq-min').value || 0);
+        const maxLen = parseInt(document.getElementById('eq-max').value || 1000);
+        const required = document.getElementById('eq-required').checked;
+
+        if (!label) {
+            alert('Please enter a question label.');
+            return;
+        }
+
+        const res = await apiRequest(`/api/guild/${guildId}/forms/${currentViewingFormId}/questions/${questionId}`, 'PUT', {
+            label: label,
+            style: style,
+            placeholder: placeholder,
+            min_length: isNaN(minLen) ? 0 : minLen,
+            max_length: isNaN(maxLen) ? 1000 : maxLen,
+            required: required
+        });
+
+        if (res && res.success) {
+            closeEditQuestionModal();
+            currentFormQuestions = res.questions || [];
+            renderQuestionsList();
+            await loadGuildForms();
+            alert('Question updated successfully!');
+        } else {
+            alert(res?.error || 'Failed to update question');
         }
     }
 

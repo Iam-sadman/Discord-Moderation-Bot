@@ -420,9 +420,9 @@ class FormsDB:
                 elif key == "required":
                     val = 1 if val else 0
                 elif key in ("min_length", "max_length"):
-                    val = max(0, min(int(val), 1000))
+                    val = max(0, min(int(val if val is not None else 0), 1000))
                 elif key == "position":
-                    val = max(1, int(val))
+                    val = max(1, int(val if val is not None else 1))
 
                 updates.append(f"{key} = ?")
                 params.append(val)

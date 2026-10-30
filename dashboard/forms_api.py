@@ -212,6 +212,8 @@ async def api_update_form(guild_id: int, form_id: int):
     # Sync updated embed on Discord if published
     updated_form = await db.get_form(guild_id, form_id)
     forms_cog = get_forms_cog()
+    if forms_cog and hasattr(forms_cog, "invalidate_cache"):
+        forms_cog.invalidate_cache(form_id)
     if forms_cog and updated_form and updated_form.get("panel_message_id"):
         await forms_cog.refresh_panel_message(updated_form)
 
@@ -259,11 +261,28 @@ async def api_publish_form(guild_id: int, form_id: int):
     embed, view = build_panel_embed_and_view(form)
 
     try:
-        msg = await target_ch.send(embed=embed, view=view)
-        await db.update_panel_message(form_id, target_ch.id, msg.id)
+        msg = None
+        # If panel is already published to this channel, update/edit it in place
+        if form.get("panel_message_id") and (form.get("panel_channel_id") == target_ch.id):
+            try:
+                existing_msg = await target_ch.fetch_message(form["panel_message_id"])
+                await existing_msg.edit(embed=embed, view=view)
+                msg = existing_msg
+            except (discord.NotFound, discord.HTTPException):
+                msg = None
+
+        if not msg:
+            msg = await target_ch.send(embed=embed, view=view)
+            await db.update_panel_message(form_id, target_ch.id, msg.id)
+
+        # Invalidate cog cache so bot is updated immediately
+        forms_cog = get_forms_cog()
+        if forms_cog and hasattr(forms_cog, "invalidate_cache"):
+            forms_cog.invalidate_cache(form_id)
+
         return jsonify({
             "success": True,
-            "message": f"Form panel published to #{target_ch.name}.",
+            "message": f"Form panel published/updated in #{target_ch.name}.",
             "message_id": str(msg.id),
             "jump_url": msg.jump_url
         })
@@ -358,8 +377,8 @@ async def api_add_question(guild_id: int, form_id: int):
     style = "paragraph" if str(data.get("style", "short")).lower() in ("paragraph", "long", "textarea") else "short"
     placeholder = str(data.get("placeholder", "")).strip()[:100] or None
     required = bool(data.get("required", True))
-    min_len = max(0, min(int(data.get("min_length", 0)), 1000))
-    max_len = max(1, min(int(data.get("max_length", 1000)), 1000))
+    min_len = max(0, min(int(data.get("min_length") or 0), 1000))
+    max_len = max(1, min(int(data.get("max_length") or 1000), 1000))
     if min_len > max_len:
         min_len = max_len
 
@@ -372,6 +391,11 @@ async def api_add_question(guild_id: int, form_id: int):
         min_length=min_len,
         max_length=max_len
     )
+
+    # Invalidate cog cache
+    forms_cog = get_forms_cog()
+    if forms_cog and hasattr(forms_cog, "invalidate_cache"):
+        forms_cog.invalidate_cache(form_id)
 
     questions = await db.get_questions(form_id)
     return jsonify({"success": True, "question_id": qid, "questions": questions, "message": "Question added successfully."})
@@ -399,13 +423,18 @@ async def api_update_question(guild_id: int, form_id: int, question_id: int):
     if "required" in data:
         update_fields["required"] = bool(data["required"])
     if "min_length" in data:
-        update_fields["min_length"] = max(0, min(int(data["min_length"]), 1000))
+        update_fields["min_length"] = max(0, min(int(data["min_length"] or 0), 1000))
     if "max_length" in data:
-        update_fields["max_length"] = max(1, min(int(data["max_length"]), 1000))
+        update_fields["max_length"] = max(1, min(int(data["max_length"] or 1000), 1000))
 
     success = await db.update_question(form_id, question_id, **update_fields)
     if not success:
         return jsonify({"error": "Question not found or update failed"}), 404
+
+    # Invalidate cog cache
+    forms_cog = get_forms_cog()
+    if forms_cog and hasattr(forms_cog, "invalidate_cache"):
+        forms_cog.invalidate_cache(form_id)
 
     questions = await db.get_questions(form_id)
     return jsonify({"success": True, "questions": questions, "message": "Question updated successfully."})
@@ -422,6 +451,11 @@ async def api_delete_question(guild_id: int, form_id: int, question_id: int):
     success = await db.delete_question(form_id, question_id)
     if not success:
         return jsonify({"error": "Question not found"}), 404
+
+    # Invalidate cog cache
+    forms_cog = get_forms_cog()
+    if forms_cog and hasattr(forms_cog, "invalidate_cache"):
+        forms_cog.invalidate_cache(form_id)
 
     questions = await db.get_questions(form_id)
     return jsonify({"success": True, "questions": questions, "message": "Question deleted."})
@@ -441,6 +475,12 @@ async def api_reorder_questions(guild_id: int, form_id: int):
 
     q_ids = [int(x) for x in data["question_ids"]]
     await db.reorder_questions(form_id, q_ids)
+
+    # Invalidate cog cache
+    forms_cog = get_forms_cog()
+    if forms_cog and hasattr(forms_cog, "invalidate_cache"):
+        forms_cog.invalidate_cache(form_id)
+
     questions = await db.get_questions(form_id)
     return jsonify({"success": True, "questions": questions, "message": "Questions reordered successfully."})
 

@@ -34,7 +34,7 @@ from discord.ext import commands
 
 from services.forms_db import FormsDB
 from services.forms_exporter import sanitize_csv_cell, build_export_data, generate_csv_bytes, generate_xlsx_bytes
-from cogs.forms import parse_relative_duration, DynamicFormOpenButton, DynamicFormReviewButton, build_panel_embed_and_view
+from cogs.forms import parse_relative_duration, DynamicFormOpenButton, DynamicFormReviewButton, build_panel_embed_and_view, FormPageModal, FormsCog
 from dashboard.app import create_dashboard
 
 
@@ -464,6 +464,120 @@ class TestFormsSystem(unittest.IsolatedAsyncioTestCase):
             )
             # Should reach application logic (404 Form not found instead of 401 Unauthorized)
             self.assertEqual(res_auth.status_code, 404)
+
+    # =========================================================================
+    # 8. Modal Safety & Discord Limit Protection
+    # =========================================================================
+
+    def test_15_modal_safety_none_limits_and_title_length(self):
+        """Test that NoneType min_length/max_length and long titles (>45 chars) never crash or exceed 45 chars."""
+        # 1. Very long form title (>60 chars) on multi-page modal
+        form = {
+            "id": 1,
+            "title": "Super Extremely Long Form Title That Exceeds Discord 45 Character Modal Limit By A Lot"
+        }
+        # Questions with NoneType min_length and max_length
+        questions = [
+            {"id": 1, "label": "Q1", "style": "short", "min_length": None, "max_length": None, "placeholder": None},
+            {"id": 2, "label": "Q2", "style": "paragraph", "min_length": 5, "max_length": 200, "placeholder": "hint"}
+        ]
+        cog_mock = MagicMock(spec=FormsCog)
+        modal = FormPageModal(
+            form=form,
+            questions_chunk=questions,
+            page=1,
+            total_pages=3,
+            cog=cog_mock,
+            draft_key="1:123"
+        )
+        self.assertLessEqual(len(modal.title), 45, f"Modal title '{modal.title}' exceeds Discord 45 character limit!")
+        self.assertEqual(len(modal.inputs), 2)
+        # Check input 1 min_length is None (since 0 or None) and max_length is 1000
+        self.assertEqual(modal.inputs[1].max_length, 1000)
+
+    # =========================================================================
+    # 9. Form Open Debounce vs Submission Cooldown
+    # =========================================================================
+
+    async def test_16_open_debounce_vs_submission_cooldown(self):
+        """Test that opening a form does NOT set submission cooldown, but submission does."""
+        form_id = await self.db.create_form(
+            guild_id=self.guild_id,
+            title="Cooldown Test Form",
+            dest_channel_id=self.dest_channel_id,
+            cooldown_seconds=60
+        )
+        await self.db.add_question(form_id, "Sample Q")
+
+        cog = FormsCog(self.mock_bot)
+        cog.db = self.db
+
+        user_mock = MagicMock(spec=discord.User)
+        user_mock.id = 555123456
+        user_mock.name = "CooldownUser"
+        user_mock.discriminator = "0"
+        user_mock.display_avatar.url = "https://example.com/avatar.png"
+
+        inter_mock = MagicMock(spec=discord.Interaction)
+        inter_mock.guild = self.mock_guild
+        inter_mock.user = user_mock
+        inter_mock.response = MagicMock()
+        inter_mock.response.is_done.return_value = False
+        inter_mock.response.send_modal = AsyncMock()
+        inter_mock.response.send_message = AsyncMock()
+
+        # 1. First open: should send modal and NOT put on 60s submission cooldown
+        await cog.handle_form_open_interaction(inter_mock, form_id)
+        inter_mock.response.send_modal.assert_called_once()
+        self.assertEqual(cog.cooldowns.get((form_id, user_mock.id), 0), 0)
+        self.assertGreater(cog.open_debounce.get((form_id, user_mock.id), 0), 0)
+
+        # 2. Finalize submission: sets submission cooldown
+        inter_submit = MagicMock(spec=discord.Interaction)
+        inter_submit.guild = self.mock_guild
+        inter_submit.user = user_mock
+        inter_submit.response = MagicMock()
+        inter_submit.response.is_done.return_value = False
+        inter_submit.response.defer = AsyncMock()
+        inter_submit.response.send_message = AsyncMock()
+        inter_submit.followup = MagicMock()
+        inter_submit.followup.send = AsyncMock()
+
+        form = await self.db.get_form(self.guild_id, form_id)
+        await cog.finalize_submission(inter_submit, form, {"1": "My Answer"})
+        self.assertGreater(cog.cooldowns.get((form_id, user_mock.id), 0), 0)
+
+    # =========================================================================
+    # 10. Concurrency: Multiple Simultaneous Submissions
+    # =========================================================================
+
+    async def test_17_concurrency_multiple_simultaneous_submissions(self):
+        """Test concurrent submissions from multiple distinct users without locks or collisions."""
+        form_id = await self.db.create_form(
+            guild_id=self.guild_id,
+            title="Concurrent Form",
+            dest_channel_id=self.dest_channel_id
+        )
+        await self.db.add_question(form_id, "Q1")
+
+        async def submit_worker(user_id: int):
+            return await self.db.create_submission(
+                form_id=form_id,
+                guild_id=self.guild_id,
+                user_id=user_id,
+                user_name=f"User_{user_id}",
+                user_discriminator="0",
+                user_avatar_url=None,
+                answers={"1": f"Answer from {user_id}"}
+            )
+
+        # Launch 10 simultaneous submissions
+        sub_ids = await asyncio.gather(*[submit_worker(1000 + i) for i in range(10)])
+        self.assertEqual(len(sub_ids), 10)
+        self.assertEqual(len(set(sub_ids)), 10, "All 10 submissions must have distinct auto-increment IDs!")
+
+        stats = await self.db.get_submission_stats(self.guild_id, form_id)
+        self.assertEqual(stats["total"], 10)
 
 
 if __name__ == "__main__":

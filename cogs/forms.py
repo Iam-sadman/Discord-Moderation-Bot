@@ -107,7 +107,15 @@ class DynamicFormOpenButton(discord.ui.DynamicItem[discord.ui.Button], template=
         if not cog:
             await interaction.response.send_message("❌ Forms service is currently unavailable.", ephemeral=True)
             return
-        await cog.handle_form_open_interaction(interaction, self.form_id)
+        try:
+            await cog.handle_form_open_interaction(interaction, self.form_id)
+        except Exception as e:
+            logger.exception("Error handling form open interaction for form #%s: %s", self.form_id, e)
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message("❌ An unexpected error occurred while opening the form. Please notify an administrator.", ephemeral=True)
+                except Exception:
+                    pass
 
 
 class DynamicFormReviewButton(discord.ui.DynamicItem[discord.ui.Button], template=r"form:review:(?P<action>approve|reject|dm):(?P<sub_id>\d+)"):
@@ -164,7 +172,15 @@ class DynamicFormReviewButton(discord.ui.DynamicItem[discord.ui.Button], templat
         if not cog:
             await interaction.response.send_message("❌ Forms service is currently unavailable.", ephemeral=True)
             return
-        await cog.handle_form_review_interaction(interaction, self.action, self.sub_id)
+        try:
+            await cog.handle_form_review_interaction(interaction, self.action, self.sub_id)
+        except Exception as e:
+            logger.exception("Error handling form review interaction for sub #%s: %s", self.sub_id, e)
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message("❌ An unexpected error occurred while reviewing this submission.", ephemeral=True)
+                except Exception:
+                    pass
 
 
 # =============================================================================
@@ -184,8 +200,15 @@ class FormPageModal(discord.ui.Modal):
         cog: "FormsCog",
         draft_key: str
     ):
-        title = f"{form['title'][:35]} (Page {page}/{total_pages})" if total_pages > 1 else form['title'][:45]
-        super().__init__(title=title)
+        raw_title = str(form.get("title") or "Server Form")
+        if total_pages > 1:
+            suffix = f" (P.{page}/{total_pages})"
+            max_prefix = max(10, 45 - len(suffix))
+            modal_title = f"{raw_title[:max_prefix]}{suffix}"
+        else:
+            modal_title = raw_title[:45]
+
+        super().__init__(title=modal_title[:45])
         self.form = form
         self.questions_chunk = questions_chunk
         self.page = page
@@ -196,17 +219,24 @@ class FormPageModal(discord.ui.Modal):
         self.inputs: Dict[int, discord.ui.TextInput] = {}
 
         for q in self.questions_chunk:
-            is_paragraph = q.get("style", "short").lower() == "paragraph"
+            is_paragraph = str(q.get("style") or "short").lower() == "paragraph"
             text_style = discord.TextStyle.paragraph if is_paragraph else discord.TextStyle.short
-            min_l = max(0, min(q.get("min_length", 0), 1000))
-            max_l = max(1, min(q.get("max_length", 1000), 1000))
+            
+            raw_min = q.get("min_length")
+            raw_max = q.get("max_length")
+            min_l = max(0, min(int(raw_min if raw_min is not None else 0), 1000))
+            max_l = max(1, min(int(raw_max if raw_max is not None else 1000), 1000))
             if min_l > max_l:
                 min_l = max_l
 
+            label_text = str(q.get("label") or "Question")[:45].strip() or "Question"
+            raw_ph = q.get("placeholder")
+            placeholder = str(raw_ph)[:100].strip() if raw_ph else None
+
             inp = discord.ui.TextInput(
-                label=q["label"][:45],
+                label=label_text,
                 style=text_style,
-                placeholder=q.get("placeholder")[:100] if q.get("placeholder") else None,
+                placeholder=placeholder,
                 required=bool(q.get("required", True)),
                 min_length=min_l if min_l > 0 else None,
                 max_length=max_l
@@ -215,42 +245,50 @@ class FormPageModal(discord.ui.Modal):
             self.add_item(inp)
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Extract answers from inputs
-        chunk_answers = {}
-        for qid, inp in self.inputs.items():
-            chunk_answers[str(qid)] = inp.value.strip()
+        try:
+            # Extract answers from inputs
+            chunk_answers = {}
+            for qid, inp in self.inputs.items():
+                chunk_answers[str(qid)] = inp.value.strip()
 
-        # Update draft
-        existing_draft = self.cog.drafts.get(self.draft_key, {
-            "answers": {},
-            "timestamp": time.time(),
-            "form_id": self.form["id"],
-            "user_id": interaction.user.id
-        })
-        existing_draft["answers"].update(chunk_answers)
-        existing_draft["timestamp"] = time.time()
-        self.cog.drafts[self.draft_key] = existing_draft
+            # Update draft
+            existing_draft = self.cog.drafts.get(self.draft_key, {
+                "answers": {},
+                "timestamp": time.time(),
+                "form_id": self.form["id"],
+                "user_id": interaction.user.id
+            })
+            existing_draft["answers"].update(chunk_answers)
+            existing_draft["timestamp"] = time.time()
+            self.cog.drafts[self.draft_key] = existing_draft
 
-        # Check if there are more pages
-        if self.page < self.total_pages:
-            view = FormMultiPageContinueView(
-                form=self.form,
-                next_page=self.page + 1,
-                total_pages=self.total_pages,
-                draft_key=self.draft_key,
-                cog=self.cog
-            )
-            await interaction.response.send_message(
-                f"✅ **Page {self.page} of {self.total_pages} saved!**\n"
-                f"Click **Continue to Next Page ➡️** to proceed, or **Start Over** to reset.",
-                view=view,
-                ephemeral=True
-            )
-        else:
-            # Final page submitted!
-            final_answers = existing_draft["answers"]
-            self.cog.drafts.pop(self.draft_key, None)
-            await self.cog.finalize_submission(interaction, self.form, final_answers)
+            # Check if there are more pages
+            if self.page < self.total_pages:
+                view = FormMultiPageContinueView(
+                    form=self.form,
+                    next_page=self.page + 1,
+                    total_pages=self.total_pages,
+                    draft_key=self.draft_key,
+                    cog=self.cog
+                )
+                await interaction.response.send_message(
+                    f"✅ **Page {self.page} of {self.total_pages} saved!**\n"
+                    f"Click **Continue to Next Page ➡️** to proceed, or **Start Over** to reset.",
+                    view=view,
+                    ephemeral=True
+                )
+            else:
+                # Final page submitted!
+                final_answers = existing_draft["answers"]
+                self.cog.drafts.pop(self.draft_key, None)
+                await self.cog.finalize_submission(interaction, self.form, final_answers)
+        except Exception as e:
+            logger.exception("Error in FormPageModal.on_submit for form #%s: %s", self.form.get("id"), e)
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message("❌ An error occurred while saving your answers. Please try again.", ephemeral=True)
+                except Exception:
+                    pass
 
 
 class FormMultiPageContinueView(discord.ui.View):
@@ -272,25 +310,33 @@ class FormMultiPageContinueView(discord.ui.View):
 
     @discord.ui.button(label="Continue to Next Page ➡️", style=discord.ButtonStyle.primary)
     async def continue_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Retrieve all questions for this form
-        questions = await self.cog.db.get_questions(self.form["id"])
-        chunk_size = 5
-        start_idx = (self.next_page - 1) * chunk_size
-        chunk = questions[start_idx:start_idx + chunk_size]
+        try:
+            # Retrieve all questions for this form
+            questions = await self.cog.get_form_questions_fast(self.form["id"])
+            chunk_size = 5
+            start_idx = (self.next_page - 1) * chunk_size
+            chunk = questions[start_idx:start_idx + chunk_size]
 
-        if not chunk:
-            await interaction.response.send_message("❌ Form questions could not be retrieved.", ephemeral=True)
-            return
+            if not chunk:
+                await interaction.response.send_message("❌ Form questions could not be retrieved.", ephemeral=True)
+                return
 
-        modal = FormPageModal(
-            form=self.form,
-            questions_chunk=chunk,
-            page=self.next_page,
-            total_pages=self.total_pages,
-            cog=self.cog,
-            draft_key=self.draft_key
-        )
-        await interaction.response.send_modal(modal)
+            modal = FormPageModal(
+                form=self.form,
+                questions_chunk=chunk,
+                page=self.next_page,
+                total_pages=self.total_pages,
+                cog=self.cog,
+                draft_key=self.draft_key
+            )
+            await interaction.response.send_modal(modal)
+        except Exception as e:
+            logger.exception("Error in FormMultiPageContinueView.continue_page: %s", e)
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message("❌ An error occurred while opening the next page.", ephemeral=True)
+                except Exception:
+                    pass
 
     @discord.ui.button(label="🔄 Start Over", style=discord.ButtonStyle.danger)
     async def start_over(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -459,8 +505,28 @@ class FormsCog(commands.Cog):
         self.db = FormsDB.get_instance()
         # In-memory drafts for multi-page forms: {draft_key: {"answers": dict, "timestamp": float, "form_id": int, "user_id": int}}
         self.drafts: Dict[str, Dict[str, Any]] = {}
-        # User cooldown tracking: {(form_id, user_id): float_timestamp}
+        # User anti double-click debounce on open: {(form_id, user_id): float_timestamp}
+        self.open_debounce: Dict[Tuple[int, int], float] = {}
+        # User submission cooldown tracking (updated only upon final submission): {(form_id, user_id): float_timestamp}
         self.cooldowns: Dict[Tuple[int, int], float] = {}
+        # High-concurrency in-memory form & questions cache: {form_id: {"form": dict, "questions": list, "timestamp": float}}
+        self._form_cache: Dict[int, Dict[str, Any]] = {}
+
+    def invalidate_cache(self, form_id: int):
+        """Invalidates in-memory cache for a form when updated from dashboard or commands."""
+        self._form_cache.pop(form_id, None)
+
+    async def get_form_questions_fast(self, form_id: int) -> List[Dict[str, Any]]:
+        """Retrieves questions with caching to avoid redundant database reads during multi-page pagination."""
+        now = time.time()
+        cached = self._form_cache.get(form_id)
+        if cached and (now - cached.get("timestamp", 0)) < 30:
+            return cached["questions"]
+        questions = await self.db.get_questions(form_id)
+        if cached:
+            cached["questions"] = questions
+            cached["timestamp"] = now
+        return questions
 
     async def cog_load(self):
         """Initializes database, registers persistent dynamic items, and starts lifecycle task."""
@@ -484,8 +550,9 @@ class FormsCog(commands.Cog):
         """
         Background supervisor that:
         1. Purges stale multi-page in-memory drafts older than 15 minutes.
-        2. Updates scheduled forms to 'Open' when opens_at arrives.
-        3. Updates active forms to 'Closed' when closes_at arrives and automatically delivers the final CSV report.
+        2. Purges stale open debounces and cooldowns.
+        3. Updates scheduled forms to 'Open' when opens_at arrives.
+        4. Updates active forms to 'Closed' when closes_at arrives and automatically delivers the final CSV report.
         """
         now = time.time()
         now_int = int(now)
@@ -495,10 +562,20 @@ class FormsCog(commands.Cog):
         for k in stale_keys:
             self.drafts.pop(k, None)
 
+        # Purge stale open debounces (> 60 seconds)
+        stale_debounces = [k for k, ts in self.open_debounce.items() if now - ts > 60]
+        for k in stale_debounces:
+            self.open_debounce.pop(k, None)
+
         # Purge stale cooldowns (> 3600 seconds)
         stale_cds = [k for k, ts in self.cooldowns.items() if now - ts > 3600]
         for k in stale_cds:
             self.cooldowns.pop(k, None)
+
+        # Purge stale cache entries (> 120 seconds)
+        stale_cache = [fid for fid, data in self._form_cache.items() if now - data.get("timestamp", 0) > 120]
+        for fid in stale_cache:
+            self._form_cache.pop(fid, None)
 
         # 2. Check scheduled forms that are due to open
         try:
@@ -602,7 +679,33 @@ class FormsCog(commands.Cog):
             await interaction.response.send_message("❌ Forms can only be completed within a server.", ephemeral=True)
             return
 
-        form = await self.db.get_form_any(form_id)
+        now = int(time.time())
+        debounce_key = (form_id, user.id)
+
+        # 1. Anti double-click debounce (3 seconds) to prevent duplicate modal popups
+        last_open_click = self.open_debounce.get(debounce_key, 0)
+        if (now - last_open_click) < 3:
+            if not interaction.response.is_done():
+                await interaction.response.send_message("⏳ Opening form, please wait a moment...", ephemeral=True)
+            return
+
+        # 2. Fast Cache Lookup for Form & Questions (High Concurrency Protection)
+        cached_data = self._form_cache.get(form_id)
+        if cached_data and (now - cached_data.get("timestamp", 0)) < 30:
+            form = cached_data["form"]
+            questions = cached_data["questions"]
+        else:
+            form = await self.db.get_form_any(form_id)
+            if form:
+                questions = await self.db.get_questions(form_id)
+                self._form_cache[form_id] = {
+                    "form": form,
+                    "questions": questions,
+                    "timestamp": now
+                }
+            else:
+                questions = []
+
         if not form:
             await interaction.response.send_message("❌ This form no longer exists.", ephemeral=True)
             return
@@ -612,9 +715,7 @@ class FormsCog(commands.Cog):
             await interaction.response.send_message("❌ Access denied: Form does not belong to this server.", ephemeral=True)
             return
 
-        now = int(time.time())
-
-        # 1. State & Timing Guards
+        # 3. State & Timing Guards
         if bool(form.get("is_closed", False)) or not bool(form.get("is_enabled", True)):
             await interaction.response.send_message("🔒 This form is currently closed to new submissions.", ephemeral=True)
             return
@@ -629,39 +730,35 @@ class FormsCog(commands.Cog):
             await interaction.response.send_message(f"🔒 This form closed <t:{closes_at}:R>.", ephemeral=True)
             return
 
-        # 2. Cooldown Guard
-        cooldown = form.get("cooldown_seconds", 60)
-        cd_key = (form_id, user.id)
-        last_click = self.cooldowns.get(cd_key, 0)
-        if cooldown > 0 and (now - last_click) < cooldown:
-            remaining = int(cooldown - (now - last_click))
-            await interaction.response.send_message(f"⏳ Please wait **{remaining}s** before opening this form again.", ephemeral=True)
+        # 4. Check Submission Cooldown Guard (Only applied if user has already submitted previously)
+        cooldown = form.get("cooldown_seconds") or 0
+        last_submission = self.cooldowns.get(debounce_key, 0)
+        if cooldown > 0 and last_submission > 0 and (now - last_submission) < cooldown:
+            remaining = int(cooldown - (now - last_submission))
+            await interaction.response.send_message(f"⏳ You recently submitted this form. Please wait **{remaining}s** before submitting again.", ephemeral=True)
             return
 
-        # 3. Max Submissions Per User Guard
-        max_subs = form.get("max_submissions_per_user", 0)
+        # 5. Max Submissions Per User Guard
+        max_subs = form.get("max_submissions_per_user") or 0
         if max_subs > 0:
             count = await self.db.count_user_submissions(form_id, user.id)
             if count >= max_subs:
                 await interaction.response.send_message(f"❌ You have reached the maximum allowed submissions for this form ({max_subs}).", ephemeral=True)
                 return
 
-        # Fetch questions
-        questions = await self.db.get_questions(form_id)
         if not questions:
             await interaction.response.send_message("⚠️ This form has no questions configured yet. Please notify server staff.", ephemeral=True)
             return
 
-        # Update cooldown timestamp
-        self.cooldowns[cd_key] = now
+        # Record open debounce timestamp
+        self.open_debounce[debounce_key] = now
 
-        # 4. Modal chunking (1-5 questions vs 6+ chained multi-page)
+        # 6. Modal chunking (1-5 questions vs 6+ chained multi-page)
         chunk_size = 5
         total_questions = len(questions)
         total_pages = (total_questions + chunk_size - 1) // chunk_size
 
         draft_key = f"{form_id}:{user.id}"
-        # Start new or resumed draft
         first_chunk = questions[0:chunk_size]
         modal = FormPageModal(
             form=form,
@@ -683,6 +780,10 @@ class FormsCog(commands.Cog):
         if not guild:
             return
 
+        now = int(time.time())
+        # Record submission cooldown upon actual final submission!
+        self.cooldowns[(form["id"], user.id)] = now
+
         review_enabled = bool(form.get("review_enabled", False))
         status = "pending" if review_enabled else "submitted"
 
@@ -691,9 +792,9 @@ class FormsCog(commands.Cog):
             form_id=form["id"],
             guild_id=guild.id,
             user_id=user.id,
-            user_name=user.name,
-            user_discriminator=getattr(user, "discriminator", "0"),
-            user_avatar_url=user.display_avatar.url,
+            user_name=str(user.name),
+            user_discriminator=str(getattr(user, "discriminator", "0") or "0"),
+            user_avatar_url=str(user.display_avatar.url) if getattr(user, "display_avatar", None) else None,
             answers=answers,
             status=status
         )
@@ -759,7 +860,9 @@ class FormsCog(commands.Cog):
                     view=review_view,
                     allowed_mentions=discord.AllowedMentions.none()
                 )
-                await self.db.update_submission_dest_msg(sub_id, dest_msg.id)
+                msg_id = getattr(dest_msg, "id", None)
+                if isinstance(msg_id, int):
+                    await self.db.update_submission_dest_msg(sub_id, msg_id)
             except Exception as e:
                 logger.error("Failed to post submission to dest_channel #%s: %s", dest_ch_id, e)
 
