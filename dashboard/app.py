@@ -309,6 +309,9 @@ def create_dashboard(bot, meeting_bot=None):
     from dashboard.meetings_api import meetings_bp
     app.register_blueprint(meetings_bp)
 
+    from dashboard.inbox_api import inbox_bp
+    app.register_blueprint(inbox_bp)
+
     # ──── Helper: Record Security Event ────
     async def record_audit_event(action: str, target: str, details: str):
         user_id = session.get("user_id", "anonymous")

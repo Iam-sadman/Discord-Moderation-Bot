@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/qc_faults.css') }}?v=2.4">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/tickets.css') }}?v=4.3">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/meetings.css') }}?v=1.0">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/inbox.css') }}?v=1.0">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/guild.css') }}?v=2.4">
 {% endblock %}
 
@@ -94,6 +95,9 @@
     </button>
     <button class="tab-btn" onclick="switchGuildTab('qc-faults', this)" id="tab-btn-qc-faults">
         🎯 QC & Fault Tracker
+    </button>
+    <button class="tab-btn" onclick="switchGuildTab('inbox', this)" id="tab-btn-inbox">
+        📥 Direct Inbox <span class="inbox-unread-pill" id="inbox-unread-badge" style="display:none;">0</span>
     </button>
     <button class="tab-btn" onclick="switchGuildTab('tickets', this)" id="tab-btn-tickets">
         🎫 Support Tickets
@@ -4473,6 +4477,172 @@
     </div>
 </div>
 
+<!-- ========================================== -->
+<!-- DIRECT MESSAGES INBOX TAB                  -->
+<!-- ========================================== -->
+<div class="tab-content" id="tab-inbox">
+    <!-- Header Bar -->
+    <div class="inbox-header-bar">
+        <div>
+            <h2 class="inbox-header-title">
+                <span>📥</span> Direct Messages Inbox
+                <span class="role-badge admin">2-Way Sync</span>
+            </h2>
+            <p class="inbox-header-subtitle">
+                Unified live inbox for member direct messages. Read incoming DMs, reply directly via the bot, configure automated replies, and sync with your Discord staff channel.
+            </p>
+        </div>
+        <div class="d-flex align-center gap-2">
+            <span class="text-xs text-muted" style="margin-right: 8px;">
+                Unread: <strong id="inbox-header-unread-count" style="color: #ed4245;">0</strong>
+            </span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openInboxSettingsModal()">
+                ⚙️ Inbox Settings
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="loadConversations(false)" title="Refresh inbox">
+                🔄 Refresh
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="openNewDMModal()">
+                ➕ New Direct Message
+            </button>
+        </div>
+    </div>
+
+    <!-- 2-Column Messenger Workspace -->
+    <div class="inbox-workspace">
+        <!-- Left: Conversations List -->
+        <div class="inbox-sidebar">
+            <div class="inbox-sidebar-search">
+                <input type="text" class="inbox-search-input" placeholder="🔍 Search member or text..." oninput="handleInboxSearch(this.value)">
+            </div>
+            <div class="inbox-filter-bar">
+                <button type="button" class="inbox-filter-btn active" onclick="handleInboxFilter('all', this)">All</button>
+                <button type="button" class="inbox-filter-btn" onclick="handleInboxFilter('unread', this)">Unread</button>
+                <button type="button" class="inbox-filter-btn" onclick="handleInboxFilter('open', this)">Open</button>
+                <button type="button" class="inbox-filter-btn" onclick="handleInboxFilter('closed', this)">Closed</button>
+            </div>
+            <div class="inbox-conv-list" id="inbox-conv-list">
+                <div class="text-muted text-center p-4 text-xs">Loading conversations...</div>
+            </div>
+        </div>
+
+        <!-- Right: Active Chat Stream & Composer -->
+        <div class="inbox-chat-pane">
+            <!-- Chat Header -->
+            <div class="inbox-chat-header" id="inbox-chat-header">
+                <span class="text-muted text-sm">Select a conversation from the left to start messaging.</span>
+            </div>
+
+            <!-- Messages Stream -->
+            <div class="inbox-chat-stream" id="inbox-chat-stream">
+                <div class="inbox-chat-empty">
+                    <div class="inbox-chat-empty-icon">📥</div>
+                    <h3>Direct Messages Inbox</h3>
+                    <p class="text-xs text-muted">Select an existing member conversation on the left, or click "➕ New Direct Message" above to message any server member.</p>
+                </div>
+            </div>
+
+            <!-- Bottom Composer -->
+            <div class="inbox-composer-pane" id="inbox-composer-pane" style="display: none;">
+                <!-- Canned Responses Bar -->
+                <div class="inbox-canned-bar">
+                    <span class="text-xs text-muted" style="flex-shrink:0;">Quick Replies:</span>
+                    <button type="button" class="inbox-canned-chip" onclick="insertCannedReply('Thank you for reaching out! Our staff team has received your message and will review it shortly.')">👋 Acknowledged</button>
+                    <button type="button" class="inbox-canned-chip" onclick="insertCannedReply('Could you please provide more details or screenshots regarding your inquiry?')">🔍 Request Info</button>
+                    <button type="button" class="inbox-canned-chip" onclick="insertCannedReply('For technical and official support, please open a private ticket in our support channel.')">🎫 Open Ticket</button>
+                    <button type="button" class="inbox-canned-chip" onclick="insertCannedReply('Your issue has been resolved. Please let us know if you need anything else!')">✅ Resolved</button>
+                </div>
+
+                <!-- Input & Action -->
+                <div class="inbox-composer-input-row">
+                    <textarea id="inbox-reply-input" class="inbox-reply-textarea" placeholder="Type an official DM reply to this member... (Enter to send, Shift+Enter for new line)" rows="1" oninput="autoExpandTextarea(this)" onkeydown="handleComposerKeydown(event)"></textarea>
+                    <button type="button" id="inbox-btn-send" class="inbox-send-btn" onclick="sendInboxReply()">
+                        <span>Send DM</span> <span>➤</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: START NEW DIRECT MESSAGE            -->
+<!-- ========================================== -->
+<div id="modal-inbox-new" class="inbox-modal-backdrop">
+    <div class="inbox-modal-box">
+        <div class="inbox-modal-header">
+            <h3 class="modal-title" style="margin:0; font-size:1.1rem; color:#f2f3f5;">➕ Start New Direct Message</h3>
+            <button type="button" onclick="closeNewDMModal()" class="modal-close-btn">&times;</button>
+        </div>
+        <form onsubmit="submitNewDM(event)">
+            <div class="inbox-modal-body">
+                <div class="form-group mb-3">
+                    <label class="form-label" for="inbox-new-userid">
+                        Member Discord User ID <span class="required-star">*</span>
+                    </label>
+                    <input type="text" id="inbox-new-userid" class="form-input" placeholder="e.g. 567890123456789012" required>
+                    <small class="text-muted">Enter the 17-19 digit Discord User ID of the member you want to message.</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="inbox-new-message">
+                        Message Content <span class="required-star">*</span>
+                    </label>
+                    <textarea id="inbox-new-message" class="form-textarea" rows="4" placeholder="Type the message that will be delivered to the member via bot DM..." required></textarea>
+                </div>
+            </div>
+            <div class="inbox-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeNewDMModal()">Cancel</button>
+                <button type="submit" id="inbox-btn-submit-new" class="btn btn-primary">Send Direct Message</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL: INBOX & AUTO-REPLY SETTINGS         -->
+<!-- ========================================== -->
+<div id="modal-inbox-settings" class="inbox-modal-backdrop">
+    <div class="inbox-modal-box">
+        <div class="inbox-modal-header">
+            <h3 class="modal-title" style="margin:0; font-size:1.1rem; color:#f2f3f5;">⚙️ Direct Messages & Relay Settings</h3>
+            <button type="button" onclick="closeInboxSettingsModal()" class="modal-close-btn">&times;</button>
+        </div>
+        <form onsubmit="submitInboxSettings(event)">
+            <div class="inbox-modal-body">
+                <div class="form-group mb-3">
+                    <label class="form-label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="inbox-setting-autoreply-toggle" style="width:18px; height:18px; accent-color:#5865F2;">
+                        <span>Enable Automated Welcome / Acknowledgement DM</span>
+                    </label>
+                    <small class="text-muted">When a member first DMs the bot, automatically send an acknowledgement message (with a 10-minute cooldown per member).</small>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label class="form-label" for="inbox-setting-autoreply-text">
+                        Auto-Reply Message Text
+                    </label>
+                    <textarea id="inbox-setting-autoreply-text" class="form-textarea" rows="3" placeholder="Thank you for your message! Our team has received it on our dashboard..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="inbox-setting-channel-select">
+                        Staff Relay & Alert Discord Channel
+                    </label>
+                    <select id="inbox-setting-channel-select" class="form-select">
+                        <option value="">-- No Relay Channel --</option>
+                    </select>
+                    <small class="text-muted">Channel where incoming member DMs are posted with a persistent [💬 Reply] button (Default: <code>1566408437603237898</code>).</small>
+                </div>
+            </div>
+            <div class="inbox-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeInboxSettingsModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+            </div>
+        </form>
+    </div>
+</div>
+<!-- End Inbox Modals -->
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -4574,12 +4744,15 @@
             loadGuildForms();
         } else if (tabName === 'qc-faults') {
             initQCTrackerTab();
+        } else if (tabName === 'inbox') {
+            initInboxTab();
         } else if (tabName === 'tickets') {
             initTicketsTab();
         } else if (tabName === 'meetings') {
             initMeetingsTab();
         } else {
             stopMusicAutoPolling();
+            if (typeof stopInboxSmartPolling === 'function') stopInboxSmartPolling();
         }
     }
 
@@ -8499,9 +8672,20 @@ async function saveCurrentTemplate() {
         handleMentionChange();
         updateAnnouncementPreview();
         initModerationSystem();
+        try {
+            const pollInboxBadge = async () => {
+                const res = await apiRequest(`/api/guild/${guildId}/inbox/unread_count`, 'GET');
+                if (res && res.success && typeof updateUnreadBadges === 'function') {
+                    updateUnreadBadges(res.unread_count || 0);
+                }
+            };
+            pollInboxBadge();
+            setInterval(pollInboxBadge, 30000);
+        } catch (e) {}
     });
 </script>
 <script src="{{ url_for('static', filename='js/qc_faults.js') }}?v=2.4"></script>
 <script src="{{ url_for('static', filename='js/tickets.js') }}?v=4.4"></script>
 <script src="{{ url_for('static', filename='js/meetings.js') }}?v=1.0"></script>
+<script src="{{ url_for('static', filename='js/inbox.js') }}?v=1.0"></script>
 {% endblock %}

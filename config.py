@@ -21,6 +21,8 @@ class Config:
     FORMS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "forms.db")
     QC_FAULTS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "qc_faults.db")
     TICKETS_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "tickets.db")
+    INBOX_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "inbox.db")
+    DEFAULT_INBOX_RELAY_CHANNEL_ID = int(os.getenv("INBOX_RELAY_CHANNEL_ID", "1566408437603237898"))
     INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", os.getenv("WEB_SECRET_KEY", "forms_internal_bridge_secret"))
 
     # Meeting Assistant Bot (Secondary Bot Instance)
